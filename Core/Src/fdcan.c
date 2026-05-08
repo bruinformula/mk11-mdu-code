@@ -19,6 +19,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "fdcan.h"
+#include <string.h>
 
 /* USER CODE BEGIN 0 */
 volatile uint32_t fdcan_tx_count = 0U;
