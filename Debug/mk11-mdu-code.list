@@ -745,7 +745,7 @@ int main(void) {
  80005fc:	f000 fa80 	bl	8000b00 <HAL_GetTick>
  8000600:	6178      	str	r0, [r7, #20]
         // Standard frame, ID=0x123, Length=4, Data=DEADBEEF
-        char dummy_msg[] = "t1234DEADBEEF\r";
+        char dummy_msg[] = "hellotonywang\r";
  8000602:	4b09      	ldr	r3, [pc, #36]	@ (8000628 <main+0x88>)
  8000604:	1d3c      	adds	r4, r7, #4
  8000606:	cb0f      	ldmia	r3, {r0, r1, r2, r3}

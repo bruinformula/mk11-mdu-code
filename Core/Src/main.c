@@ -23,13 +23,13 @@
 #include "icache.h"
 #include "usb_device.h"
 
-
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "can.h"
 #include "../../Drivers/BFR_Krill_Drivers/Inc/usb_driver.h"
+#include "can.h"
 #include "usbd_cdc_if.h"
 #include <stdio.h>
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
