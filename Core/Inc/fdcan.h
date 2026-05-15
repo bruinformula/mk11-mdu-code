@@ -34,10 +34,6 @@ extern "C" {
 /* USER CODE END Includes */
 
 extern FDCAN_HandleTypeDef hfdcan1;
-extern volatile uint32_t fdcan_tx_count;
-extern volatile uint32_t fdcan_rx_count;
-extern volatile uint32_t fdcan_rx_error_count;
-extern volatile uint32_t fdcan1_debug_cb;
 
 /* USER CODE BEGIN Private defines */
 #define FDCAN_RX_QUEUE_SIZE           8U
