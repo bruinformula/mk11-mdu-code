@@ -1,0 +1,54 @@
+# MDU Debug GUI
+
+Electron app for the USB CDC stream emitted by the STM32 firmware in this repository.
+
+## What it does
+
+- Auto-detects the STM32 Virtual ComPort device (`VID:PID = 0483:5740`)
+- Treats the USB2514 side as a USB hub and mirrors the STM32's USB CDC child endpoint, not Bluetooth pseudo ports
+- Reads the USB CDC stream from the MCU's native USB connection
+- On macOS, also scans System Information so the app can show when the USB2514 hub itself is present even if no CDC child endpoint has enumerated yet
+- Parses the firmware's SLCAN-like frames (`t...` / `T...` terminated by `\r`)
+- Shows live diagnostics such as bytes/sec, frames/sec, parse errors, active CAN IDs, and last activity
+- Keeps a rolling on-screen log of raw USB lines and parsed CAN frames
+- Writes structured session logs to JSONL files for later analysis
+
+## Important protocol detail
+
+The firmware is close to SLCAN, but not strict SLCAN. The CAN length field is emitted as decimal with `%u`, so lengths above 9 can appear as two digits. Example:
+
+```text
+t077120102030405060708090A0B0C\r
+```
+
+The parser in this app handles both 1-digit and 2-digit decimal lengths.
+
+## Transport note
+
+The MCU is still accessed through the host's USB CDC device node even when it is plugged through the USB2514 hub. This app therefore mirrors the STM32 CDC endpoint exposed by macOS and filters out non-USB entries such as Bluetooth pseudo ports.
+
+If System Information shows only the USB2514 hub and no STM32 child device, the app now reports that state explicitly. In that condition there is no mirrorable USB CDC endpoint yet, so live traffic capture cannot start until the MCU enumerates a child interface that macOS exposes.
+
+## Usage
+
+```bash
+npm install
+npm start
+```
+
+## Package A macOS App
+
+```bash
+npm install
+npm run dist
+```
+
+Build artifacts are written to the `dist/` folder. The package script currently creates unsigned macOS `dmg` and `zip` outputs for local use.
+
+## Log format
+
+Logging writes newline-delimited JSON (`.jsonl`). Each line is either:
+
+- `session_start` / `session_end`
+- `runtime` for connect/disconnect/errors
+- `frame` for each received USB line, including the raw string and parsed frame fields when decoding succeeds

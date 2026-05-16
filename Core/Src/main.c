@@ -25,6 +25,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "../../Drivers/BFR_Krill_Drivers/Inc/usb_driver.h"
+#include "usbd_conf.h"
 #include "usbd_cdc_if.h"
 #include <stdio.h>
 #include <string.h>
@@ -37,6 +39,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define FDCAN_SELF_TEST_MODE 0U
 
 /* USER CODE END PD */
 
@@ -49,16 +52,15 @@
 static FDCAN_TxHeaderTypeDef Tx_header;
 
 /* USER CODE BEGIN PV */
-uint8_t Tx[12];
-uint8_t Rx[12];
+uint8_t Tx[64];
+uint8_t Rx[64];
 
-/* Live-expression probes (volatile so the debugger always reloads them). */
+/* Live-expression probes. USB probes live under usbdiag. */
 volatile uint32_t fdcan_rx_msg_count   = 0U;
 volatile uint32_t fdcan_tx_msg_count   = 0U;
 volatile uint32_t fdcan_tx_err_count   = 0U;
 volatile uint32_t fdcan_rx_err_count   = 0U;
 volatile uint32_t fdcan_notif_err_count = 0U;
-volatile uint32_t usb_tx_drop_count    = 0U;
 volatile uint32_t fdcan_rx_last_id     = 0U;
 volatile uint8_t  fdcan_rx_last_len    = 0U;
 volatile uint8_t  fdcan_rx_pending     = 0U;
@@ -102,6 +104,11 @@ static void CAN_Frame_To_USB(const FDCAN_RxHeaderTypeDef *hdr, const uint8_t *da
 {
   char buf[160];
   int n = 0;
+
+  if (!USB_Driver_IsConfigured()) {
+    return;
+  }
+
   uint8_t len = FDCAN_DlcToBytes(hdr->DataLength);
   if (len > sizeof(Rx)) {
     len = (uint8_t)sizeof(Rx);
@@ -123,7 +130,7 @@ static void CAN_Frame_To_USB(const FDCAN_RxHeaderTypeDef *hdr, const uint8_t *da
 
   uint8_t usb_status = CDC_Transmit_FS((uint8_t *)buf, (uint16_t)n);
   if (usb_status != USBD_OK) {
-    usb_tx_drop_count++;
+    usbdiag.tx_drop_count++;
   }
 }
 /* USER CODE END 0 */
@@ -159,6 +166,7 @@ int main(void)
   MX_GPIO_Init();
   MX_FDCAN1_Init();
   MX_ICACHE_Init();
+  USB_Driver_Init();
   MX_USB_Device_Init();
   /* USER CODE BEGIN 2 */
   Tx_header.Identifier = 0x77;
@@ -166,10 +174,14 @@ int main(void)
   Tx_header.TxFrameType = FDCAN_DATA_FRAME;
   Tx_header.DataLength = FDCAN_DLC_BYTES_12;
   Tx_header.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
-  Tx_header.BitRateSwitch = FDCAN_BRS_OFF;
+  Tx_header.BitRateSwitch = FDCAN_BRS_ON;
   Tx_header.FDFormat = FDCAN_FD_CAN;
   Tx_header.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
   Tx_header.MessageMarker = 0;
+
+  if (FDCAN_App_Init() != HAL_OK) {
+    Error_Handler();
+  }
 
   if (HAL_FDCAN_Start(&hfdcan1) != HAL_OK) {
     Error_Handler();
@@ -183,6 +195,7 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1) {
+#if FDCAN_SELF_TEST_MODE
     for (int i = 0; i < 12; i++) {
       Tx[i]++;
     }
@@ -192,13 +205,18 @@ int main(void)
     } else {
       fdcan_tx_msg_count++;
     }
+#endif
+
+    if (USB_Driver_IsConfigured()) {
+      usbdiag.configured_seen_count++;
+    }
 
     if (fdcan_rx_pending) {
       fdcan_rx_pending = 0U;
       CAN_Frame_To_USB(&LastRxHeader, Rx);
     }
 
-    HAL_Delay(1000);
+    HAL_Delay(10);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -230,11 +248,12 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSE
-                              |RCC_OSCILLATORTYPE_MSI;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_HSI48
+                              |RCC_OSCILLATORTYPE_LSE|RCC_OSCILLATORTYPE_MSI;
   RCC_OscInitStruct.LSEState = RCC_LSE_ON;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+  RCC_OscInitStruct.HSI48State = RCC_HSI48_ON;
   RCC_OscInitStruct.MSIState = RCC_MSI_ON;
   RCC_OscInitStruct.MSICalibrationValue = RCC_MSICALIBRATION_DEFAULT;
   RCC_OscInitStruct.MSIClockRange = RCC_MSIRANGE_6;

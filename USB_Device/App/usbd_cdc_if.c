@@ -152,6 +152,7 @@ USBD_CDC_ItfTypeDef USBD_Interface_fops_FS =
 static int8_t CDC_Init_FS(void)
 {
   /* USER CODE BEGIN 3 */
+  USB_Driver_Init();
   USB_Driver_SetConfigured(true);
   /* Set Application Buffers */
   USBD_CDC_SetTxBuffer(&hUsbDeviceFS, UserTxBufferFS, 0);
@@ -167,7 +168,7 @@ static int8_t CDC_Init_FS(void)
 static int8_t CDC_DeInit_FS(void)
 {
   /* USER CODE BEGIN 4 */
-  USB_Driver_SetConfigured(false);
+  USB_Driver_Init();
   return (USBD_OK);
   /* USER CODE END 4 */
 }
@@ -263,6 +264,7 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
 static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
 {
   /* USER CODE BEGIN 6 */
+  USB_Driver_RxHandler(Buf, (Len != NULL) ? *Len : 0U);
   USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &Buf[0]);
   USBD_CDC_ReceivePacket(&hUsbDeviceFS);
   return (USBD_OK);
@@ -284,9 +286,17 @@ uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len)
 {
   uint8_t result = USBD_OK;
   /* USER CODE BEGIN 7 */
+  if ((Buf == NULL) || (Len == 0U)) {
+    return USBD_FAIL;
+  }
+
+  if (!USB_Driver_IsConfigured() || (hUsbDeviceFS.pClassData == NULL)) {
+    return USBD_FAIL;
+  }
+
   USBD_CDC_HandleTypeDef *hcdc =
       (USBD_CDC_HandleTypeDef *)hUsbDeviceFS.pClassData;
-  if (hcdc->TxState != 0) {
+  if (hcdc->TxState != 0U) {
     return USBD_BUSY;
   }
   USBD_CDC_SetTxBuffer(&hUsbDeviceFS, Buf, Len);

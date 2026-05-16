@@ -9,4 +9,4 @@
 ../Core/Src/stm32l5xx_it.c:184:6:SysTick_Handler	8	static
 ../Core/Src/stm32l5xx_it.c:205:6:FDCAN1_IT0_IRQHandler	8	static
 ../Core/Src/stm32l5xx_it.c:219:6:FDCAN1_IT1_IRQHandler	8	static
-../Core/Src/stm32l5xx_it.c:233:6:USB_FS_IRQHandler	8	static
+../Core/Src/stm32l5xx_it.c:233:6:USB_FS_IRQHandler	16	static

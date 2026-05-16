@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MDU Debug GUI</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="background-grid"></div>
+  <main class="app-shell">
+    <header class="hero panel stagger-1">
+      <div>
+        <p class="eyebrow">MK11 MDU USB Diagnostics</p>
+        <h1>MDU Debug Console</h1>
+        <p class="hero-copy">
+          Live monitoring for the STM32 native USB CDC debug stream behind the USB2514 hub.
+          The app mirrors the MCU's USB broadcast, decodes the SLCAN-style payload, and records structured logs when you need a capture.
+        </p>
+      </div>
+      <div class="hero-status">
+        <div class="status-chip" id="connection-chip">Disconnected</div>
+        <div class="status-chip muted" id="target-chip">Looking for USB2514 hub 0424:2514</div>
+      </div>
+    </header>
+
+    <section class="panel controls stagger-2">
+      <div class="controls-row">
+        <label class="field-group field-wide">
+          <span>USB CDC endpoint</span>
+          <select id="port-select"></select>
+        </label>
+
+        <label class="field-group field-compact">
+          <span>CDC line coding</span>
+          <input id="baud-input" type="number" min="300" step="100" value="115200">
+        </label>
+
+        <label class="toggle-group">
+          <input id="auto-connect-toggle" type="checkbox" checked>
+          <span>Auto-connect STM32 USB CDC endpoint</span>
+        </label>
+      </div>
+
+      <div class="controls-row action-row">
+        <button id="refresh-button" class="secondary-button">Refresh ports</button>
+        <button id="connect-button" class="primary-button">Connect</button>
+        <button id="disconnect-button" class="secondary-button">Disconnect</button>
+        <button id="clear-session-button" class="ghost-button">Clear session stats</button>
+        <button id="clear-log-button" class="ghost-button">Clear on-screen log</button>
+      </div>
+
+      <div class="controls-row logging-row">
+        <label class="field-group field-wide">
+          <span>Log file</span>
+          <input id="log-path" type="text" readonly placeholder="Choose a .jsonl file for captures">
+        </label>
+
+        <button id="choose-log-button" class="secondary-button">Choose file</button>
+        <button id="start-log-button" class="primary-button">Start logging</button>
+        <button id="stop-log-button" class="secondary-button">Stop logging</button>
+      </div>
+
+      <p class="helper-text" id="status-line">
+        Waiting for the USB2514 hub and its STM32 USB CDC child endpoint. Bluetooth-style pseudo ports are ignored.
+      </p>
+    </section>
+
+    <section class="dashboard-grid">
+      <section class="panel metrics-panel stagger-3">
+        <div class="panel-heading">
+          <h2>Session Diagnostics</h2>
+          <p>Host-side metrics derived from the live USB CDC stream.</p>
+        </div>
+
+        <div class="metrics-grid">
+          <article class="metric-card accent-orange">
+            <span class="metric-label">Frames / sec</span>
+            <strong class="metric-value" id="metric-fps">0.0</strong>
+            <span class="metric-subtext" id="metric-fps-sub">Average 0.0</span>
+          </article>
+
+          <article class="metric-card accent-teal">
+            <span class="metric-label">Bytes / sec</span>
+            <strong class="metric-value" id="metric-bps">0 B</strong>
+            <span class="metric-subtext" id="metric-bps-sub">Average 0 B/s</span>
+          </article>
+
+          <article class="metric-card accent-slate">
+            <span class="metric-label">Total frames</span>
+            <strong class="metric-value" id="metric-total-frames">0</strong>
+            <span class="metric-subtext" id="metric-total-lines">0 raw lines</span>
+          </article>
+
+          <article class="metric-card accent-olive">
+            <span class="metric-label">Unique IDs</span>
+            <strong class="metric-value" id="metric-unique-ids">0</strong>
+            <span class="metric-subtext" id="metric-id-breakdown">0 standard / 0 extended</span>
+          </article>
+
+          <article class="metric-card accent-rust">
+            <span class="metric-label">Parse errors</span>
+            <strong class="metric-value" id="metric-parse-errors">0</strong>
+            <span class="metric-subtext" id="metric-last-frame-age">No frames yet</span>
+          </article>
+
+          <article class="metric-card accent-indigo">
+            <span class="metric-label">Mean payload</span>
+            <strong class="metric-value" id="metric-payload-size">0.0 B</strong>
+            <span class="metric-subtext" id="metric-total-bytes">0 B received</span>
+          </article>
+
+          <article class="metric-card accent-gold">
+            <span class="metric-label">Connection uptime</span>
+            <strong class="metric-value" id="metric-uptime">00:00</strong>
+            <span class="metric-subtext" id="metric-port-label">No port connected</span>
+          </article>
+
+          <article class="metric-card accent-ink">
+            <span class="metric-label">Log status</span>
+            <strong class="metric-value" id="metric-log-status">Idle</strong>
+            <span class="metric-subtext" id="metric-log-detail">0 lines written</span>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel charts-panel stagger-4">
+        <div class="panel-heading">
+          <h2>Throughput History</h2>
+          <p>Rolling 60-second view of host-observed traffic.</p>
+        </div>
+
+        <div class="chart-grid">
+          <article class="chart-card">
+            <div class="chart-header">
+              <span>Frames / sec</span>
+              <strong id="chart-fps-current">0.0</strong>
+            </div>
+            <svg id="frames-chart" viewBox="0 0 360 120" preserveAspectRatio="none"></svg>
+          </article>
+
+          <article class="chart-card">
+            <div class="chart-header">
+              <span>Bytes / sec</span>
+              <strong id="chart-bps-current">0 B/s</strong>
+            </div>
+            <svg id="bytes-chart" viewBox="0 0 360 120" preserveAspectRatio="none"></svg>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel ids-panel stagger-5">
+        <div class="panel-heading">
+          <h2>Active CAN IDs</h2>
+          <p>Most active identifiers over the last 10 seconds.</p>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Type</th>
+                <th>Total</th>
+                <th>Recent Hz</th>
+                <th>DLC</th>
+                <th>Last payload</th>
+              </tr>
+            </thead>
+            <tbody id="top-ids-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel log-panel stagger-6">
+        <div class="panel-heading">
+          <h2>Running USB Log</h2>
+          <p>Newest entries first. Both parsed frames and connection/runtime events appear here.</p>
+        </div>
+
+        <div class="table-wrap log-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Status</th>
+                <th>ID / Event</th>
+                <th>DLC</th>
+                <th>Value</th>
+                <th>Raw</th>
+              </tr>
+            </thead>
+            <tbody id="log-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script src="./app.js"></script>
+</body>
+</html>

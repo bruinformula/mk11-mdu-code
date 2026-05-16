@@ -22,6 +22,7 @@
 #include "stm32l5xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "usbd_conf.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -58,7 +59,6 @@
 extern PCD_HandleTypeDef hpcd_USB_FS;
 extern FDCAN_HandleTypeDef hfdcan1;
 /* USER CODE BEGIN EV */
-
 /* USER CODE END EV */
 
 /******************************************************************************/
@@ -233,6 +233,39 @@ void FDCAN1_IT1_IRQHandler(void)
 void USB_FS_IRQHandler(void)
 {
   /* USER CODE BEGIN USB_FS_IRQn 0 */
+  uint32_t istr = USB->ISTR;
+
+  usbdiag.irq_count++;
+  usbdiag.last_istr_snapshot = istr;
+  usbdiag.last_bcdr_snapshot = USB->BCDR;
+  if ((istr & USB_ISTR_CTR) != 0U)
+  {
+    usbdiag.ctr_irq_flag_count++;
+  }
+  if ((istr & USB_ISTR_RESET) != 0U)
+  {
+    usbdiag.reset_irq_flag_count++;
+  }
+  if ((istr & USB_ISTR_SUSP) != 0U)
+  {
+    usbdiag.susp_irq_flag_count++;
+  }
+  if ((istr & USB_ISTR_ESOF) != 0U)
+  {
+    usbdiag.esof_irq_flag_count++;
+  }
+  if ((istr & USB_ISTR_WKUP) != 0U)
+  {
+    usbdiag.wkup_irq_flag_count++;
+  }
+  if ((istr & USB_ISTR_ERR) != 0U)
+  {
+    usbdiag.err_irq_flag_count++;
+  }
+  if ((istr & USB_ISTR_PMAOVR) != 0U)
+  {
+    usbdiag.pmaovr_irq_flag_count++;
+  }
 
   /* USER CODE END USB_FS_IRQn 0 */
   HAL_PCD_IRQHandler(&hpcd_USB_FS);

@@ -1,0 +1,36 @@
+{
+  "name": "mdu-debug-gui",
+  "productName": "MDU Debug GUI",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Electron diagnostics console for the mk11 MDU USB CDC debug stream",
+  "main": "src/main/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "electron .",
+    "check": "node scripts/check.js",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --mac",
+    "build": "npm run dist"
+  },
+  "build": {
+    "appId": "com.bfr.mk11.mdu-debug-gui",
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    }
+  },
+  "dependencies": {
+    "serialport": "^12.0.0"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^26.8.1"
+  }
+}

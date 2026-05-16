@@ -54,7 +54,7 @@ void CAN_Process(uint32_t now_ms) {
 
 void CAN_To_USB_Process(void) {
   FDCAN_RxMessage msg;
-  char slcan_buf[64];
+  char slcan_buf[160];
   uint8_t usb_status;
 
   if (FDCAN_GetRxMessage(&msg)) {

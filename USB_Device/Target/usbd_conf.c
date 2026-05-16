@@ -19,6 +19,7 @@
 /* USER CODE END Header */
 
 /* Includes ------------------------------------------------------------------*/
+#include "usbd_conf.h"
 #include "stm32l5xx.h"
 #include "stm32l5xx_hal.h"
 #include "usbd_def.h"
@@ -43,6 +44,7 @@ PCD_HandleTypeDef hpcd_USB_FS;
 void Error_Handler(void);
 
 /* USER CODE BEGIN 0 */
+volatile USB_Diag_t usbdiag = {0};
 
 /* USER CODE END 0 */
 
@@ -79,14 +81,7 @@ void HAL_PCD_MspInit(PCD_HandleTypeDef* pcdHandle)
   /** Initializes the peripherals clock
   */
     PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USB;
-    PeriphClkInit.UsbClockSelection = RCC_USBCLKSOURCE_PLLSAI1;
-    PeriphClkInit.PLLSAI1.PLLSAI1Source = RCC_PLLSAI1SOURCE_MSI;
-    PeriphClkInit.PLLSAI1.PLLSAI1M = 1;
-    PeriphClkInit.PLLSAI1.PLLSAI1N = 24;
-    PeriphClkInit.PLLSAI1.PLLSAI1P = RCC_PLLP_DIV7;
-    PeriphClkInit.PLLSAI1.PLLSAI1Q = RCC_PLLQ_DIV2;
-    PeriphClkInit.PLLSAI1.PLLSAI1R = RCC_PLLR_DIV2;
-    PeriphClkInit.PLLSAI1.PLLSAI1ClockOut = RCC_PLLSAI1_48M2CLK;
+    PeriphClkInit.UsbClockSelection = RCC_USBCLKSOURCE_HSI48;
     if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
     {
       Error_Handler();
@@ -153,6 +148,15 @@ void HAL_PCD_SetupStageCallback(PCD_HandleTypeDef *hpcd)
 #endif /* USE_HAL_PCD_REGISTER_CALLBACKS */
 {
   /* USER CODE BEGIN HAL_PCD_SetupStageCallback_PreTreatment */
+  uint8_t *setup = (uint8_t *)hpcd->Setup;
+
+  usbdiag.setup_stage_count++;
+  usbdiag.last_event_tick = HAL_GetTick();
+  usbdiag.last_setup_bm_request_type = setup[0];
+  usbdiag.last_setup_b_request = setup[1];
+  usbdiag.last_setup_w_value = (uint16_t)setup[2] | ((uint16_t)setup[3] << 8);
+  usbdiag.last_setup_w_index = (uint16_t)setup[4] | ((uint16_t)setup[5] << 8);
+  usbdiag.last_setup_w_length = (uint16_t)setup[6] | ((uint16_t)setup[7] << 8);
 
   /* USER CODE END  HAL_PCD_SetupStageCallback_PreTreatment */
   USBD_LL_SetupStage((USBD_HandleTypeDef*)hpcd->pData, (uint8_t *)hpcd->Setup);
@@ -174,6 +178,8 @@ void HAL_PCD_DataOutStageCallback(PCD_HandleTypeDef *hpcd, uint8_t epnum)
 #endif /* USE_HAL_PCD_REGISTER_CALLBACKS */
 {
   /* USER CODE BEGIN HAL_PCD_DataOutStageCallback_PreTreatment */
+  usbdiag.data_out_stage_count++;
+  usbdiag.last_event_tick = HAL_GetTick();
 
   /* USER CODE END HAL_PCD_DataOutStageCallback_PreTreatment */
   USBD_LL_DataOutStage((USBD_HandleTypeDef*)hpcd->pData, epnum, hpcd->OUT_ep[epnum].xfer_buff);
@@ -195,6 +201,8 @@ void HAL_PCD_DataInStageCallback(PCD_HandleTypeDef *hpcd, uint8_t epnum)
 #endif /* USE_HAL_PCD_REGISTER_CALLBACKS */
 {
   /* USER CODE BEGIN HAL_PCD_DataInStageCallback_PreTreatment */
+  usbdiag.data_in_stage_count++;
+  usbdiag.last_event_tick = HAL_GetTick();
 
   /* USER CODE END HAL_PCD_DataInStageCallback_PreTreatment */
   USBD_LL_DataInStage((USBD_HandleTypeDef*)hpcd->pData, epnum, hpcd->IN_ep[epnum].xfer_buff);
@@ -235,6 +243,8 @@ void HAL_PCD_ResetCallback(PCD_HandleTypeDef *hpcd)
 #endif /* USE_HAL_PCD_REGISTER_CALLBACKS */
 {
   /* USER CODE BEGIN HAL_PCD_ResetCallback_PreTreatment */
+  usbdiag.reset_count++;
+  usbdiag.last_event_tick = HAL_GetTick();
 
   /* USER CODE END HAL_PCD_ResetCallback_PreTreatment */
   USBD_SpeedTypeDef speed = USBD_SPEED_FULL;
@@ -266,6 +276,8 @@ void HAL_PCD_SuspendCallback(PCD_HandleTypeDef *hpcd)
 #endif /* USE_HAL_PCD_REGISTER_CALLBACKS */
 {
   /* USER CODE BEGIN HAL_PCD_SuspendCallback_PreTreatment */
+  usbdiag.suspend_count++;
+  usbdiag.last_event_tick = HAL_GetTick();
 
   /* USER CODE END HAL_PCD_SuspendCallback_PreTreatment */
   /* Inform USB library that core enters in suspend Mode. */
@@ -296,6 +308,8 @@ void HAL_PCD_ResumeCallback(PCD_HandleTypeDef *hpcd)
 #endif /* USE_HAL_PCD_REGISTER_CALLBACKS */
 {
   /* USER CODE BEGIN HAL_PCD_ResumeCallback_PreTreatment */
+  usbdiag.resume_count++;
+  usbdiag.last_event_tick = HAL_GetTick();
 
   /* USER CODE END HAL_PCD_ResumeCallback_PreTreatment */
 
@@ -368,6 +382,8 @@ void HAL_PCD_ConnectCallback(PCD_HandleTypeDef *hpcd)
 #endif /* USE_HAL_PCD_REGISTER_CALLBACKS */
 {
   /* USER CODE BEGIN HAL_PCD_ConnectCallback_PreTreatment */
+  usbdiag.connect_count++;
+  usbdiag.last_event_tick = HAL_GetTick();
 
   /* USER CODE END HAL_PCD_ConnectCallback_PreTreatment */
   USBD_LL_DevConnected((USBD_HandleTypeDef*)hpcd->pData);
@@ -388,6 +404,8 @@ void HAL_PCD_DisconnectCallback(PCD_HandleTypeDef *hpcd)
 #endif /* USE_HAL_PCD_REGISTER_CALLBACKS */
 {
   /* USER CODE BEGIN HAL_PCD_DisconnectCallback_PreTreatment */
+  usbdiag.disconnect_count++;
+  usbdiag.last_event_tick = HAL_GetTick();
 
   /* USER CODE END HAL_PCD_DisconnectCallback_PreTreatment */
   USBD_LL_DevDisconnected((USBD_HandleTypeDef*)hpcd->pData);
@@ -411,6 +429,8 @@ void HAL_PCD_DisconnectCallback(PCD_HandleTypeDef *hpcd)
   */
 USBD_StatusTypeDef USBD_LL_Init(USBD_HandleTypeDef *pdev)
 {
+  usbdiag.ll_init_count++;
+
   /* Init USB Ip. */
   hpcd_USB_FS.pData = pdev;
   /* Link the driver to the stack. */
@@ -421,6 +441,7 @@ USBD_StatusTypeDef USBD_LL_Init(USBD_HandleTypeDef *pdev)
   hpcd_USB_FS.Instance = USB;
   hpcd_USB_FS.Init.dev_endpoints = 8;
   hpcd_USB_FS.Init.speed = PCD_SPEED_FULL;
+  hpcd_USB_FS.Init.ep0_mps = PCD_EP0MPS_64;
   hpcd_USB_FS.Init.phy_itface = PCD_PHY_EMBEDDED;
   hpcd_USB_FS.Init.Sof_enable = DISABLE;
   hpcd_USB_FS.Init.low_power_enable = DISABLE;
@@ -428,6 +449,7 @@ USBD_StatusTypeDef USBD_LL_Init(USBD_HandleTypeDef *pdev)
   hpcd_USB_FS.Init.battery_charging_enable = DISABLE;
   if (HAL_PCD_Init(&hpcd_USB_FS) != HAL_OK)
   {
+    usbdiag.ll_init_error_count++;
     Error_Handler( );
   }
 
@@ -491,7 +513,24 @@ USBD_StatusTypeDef USBD_LL_Start(USBD_HandleTypeDef *pdev)
   HAL_StatusTypeDef hal_status = HAL_OK;
   USBD_StatusTypeDef usb_status = USBD_OK;
 
+  /* Force a visible disconnect window so the upstream hub/host sees a fresh attach. */
+  USB->BCDR &= (uint16_t)(~USB_BCDR_DPPU);
+  usbdiag.last_bcdr_snapshot = USB->BCDR;
+  HAL_Delay(250);
+
+  usbdiag.ll_start_count++;
   hal_status = HAL_PCD_Start(pdev->pData);
+  if (hal_status != HAL_OK)
+  {
+    usbdiag.ll_start_error_count++;
+  }
+  else
+  {
+    /* Reassert the internal full-speed D+ pull-up and capture the attach state. */
+    USB->BCDR |= (uint16_t)USB_BCDR_DPPU;
+    usbdiag.dppu_assert_count++;
+    usbdiag.last_bcdr_snapshot = USB->BCDR;
+  }
 
   usb_status =  USBD_Get_USB_Status(hal_status);
 
@@ -528,6 +567,7 @@ USBD_StatusTypeDef USBD_LL_OpenEP(USBD_HandleTypeDef *pdev, uint8_t ep_addr, uin
   HAL_StatusTypeDef hal_status = HAL_OK;
   USBD_StatusTypeDef usb_status = USBD_OK;
 
+  usbdiag.ll_open_ep_count++;
   hal_status = HAL_PCD_EP_Open(pdev->pData, ep_addr, ep_mps, ep_type);
 
   usb_status =  USBD_Get_USB_Status(hal_status);

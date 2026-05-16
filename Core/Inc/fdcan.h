@@ -43,7 +43,7 @@ extern FDCAN_HandleTypeDef hfdcan1;
 typedef struct
 {
   uint32_t identifier;
-  uint8_t data[8];
+  uint8_t data[64];
   uint8_t data_length;
   uint8_t id_type;
   uint8_t frame_type;

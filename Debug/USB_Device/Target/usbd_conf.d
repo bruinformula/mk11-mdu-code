@@ -1,4 +1,5 @@
 USB_Device/Target/usbd_conf.o: ../USB_Device/Target/usbd_conf.c \
+ ../USB_Device/Target/usbd_conf.h \
  ../Drivers/CMSIS/Device/ST/STM32L5xx/Include/stm32l5xx.h \
  ../Drivers/CMSIS/Device/ST/STM32L5xx/Include/stm32l552xx.h \
  ../Drivers/CMSIS/Include/core_cm33.h \
@@ -40,6 +41,7 @@ USB_Device/Target/usbd_conf.o: ../USB_Device/Target/usbd_conf.c \
  ../Middlewares/ST/STM32_USB_Device_Library/Core/Inc/usbd_ctlreq.h \
  ../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc/usbd_cdc.h \
  ../Middlewares/ST/STM32_USB_Device_Library/Core/Inc/usbd_ioreq.h
+../USB_Device/Target/usbd_conf.h:
 ../Drivers/CMSIS/Device/ST/STM32L5xx/Include/stm32l5xx.h:
 ../Drivers/CMSIS/Device/ST/STM32L5xx/Include/stm32l552xx.h:
 ../Drivers/CMSIS/Include/core_cm33.h:

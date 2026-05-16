@@ -43,7 +43,23 @@ static uint32_t FDCAN_EncodeDlc(uint8_t len)
     case 5: return FDCAN_DLC_BYTES_5;
     case 6: return FDCAN_DLC_BYTES_6;
     case 7: return FDCAN_DLC_BYTES_7;
-    default: return FDCAN_DLC_BYTES_8;
+    case 8: return FDCAN_DLC_BYTES_8;
+    case 12: return FDCAN_DLC_BYTES_12;
+    case 16: return FDCAN_DLC_BYTES_16;
+    case 20: return FDCAN_DLC_BYTES_20;
+    case 24: return FDCAN_DLC_BYTES_24;
+    case 32: return FDCAN_DLC_BYTES_32;
+    case 48: return FDCAN_DLC_BYTES_48;
+    case 64: return FDCAN_DLC_BYTES_64;
+    default:
+      if (len <= 8U) return FDCAN_DLC_BYTES_8;
+      if (len <= 12U) return FDCAN_DLC_BYTES_12;
+      if (len <= 16U) return FDCAN_DLC_BYTES_16;
+      if (len <= 20U) return FDCAN_DLC_BYTES_20;
+      if (len <= 24U) return FDCAN_DLC_BYTES_24;
+      if (len <= 32U) return FDCAN_DLC_BYTES_32;
+      if (len <= 48U) return FDCAN_DLC_BYTES_48;
+      return FDCAN_DLC_BYTES_64;
   }
 }
 
@@ -60,6 +76,13 @@ static uint8_t FDCAN_DecodeDlc(uint32_t dlc)
     case FDCAN_DLC_BYTES_6: return 6;
     case FDCAN_DLC_BYTES_7: return 7;
     case FDCAN_DLC_BYTES_8: return 8;
+    case FDCAN_DLC_BYTES_12: return 12;
+    case FDCAN_DLC_BYTES_16: return 16;
+    case FDCAN_DLC_BYTES_20: return 20;
+    case FDCAN_DLC_BYTES_24: return 24;
+    case FDCAN_DLC_BYTES_32: return 32;
+    case FDCAN_DLC_BYTES_48: return 48;
+    case FDCAN_DLC_BYTES_64: return 64;
     default: return 8;
   }
 }
@@ -119,21 +142,21 @@ void MX_FDCAN1_Init(void)
   /* USER CODE END FDCAN1_Init 1 */
   hfdcan1.Instance = FDCAN1;
   hfdcan1.Init.ClockDivider = FDCAN_CLOCK_DIV1;
-  hfdcan1.Init.FrameFormat = FDCAN_FRAME_FD_NO_BRS;
-  hfdcan1.Init.Mode = FDCAN_MODE_INTERNAL_LOOPBACK;
-  hfdcan1.Init.AutoRetransmission = DISABLE;
+  hfdcan1.Init.FrameFormat = FDCAN_FRAME_FD_BRS;
+  hfdcan1.Init.Mode = FDCAN_MODE_NORMAL;
+  hfdcan1.Init.AutoRetransmission = ENABLE;
   hfdcan1.Init.TransmitPause = DISABLE;
   hfdcan1.Init.ProtocolException = DISABLE;
-  hfdcan1.Init.NominalPrescaler = 32;
-  hfdcan1.Init.NominalSyncJumpWidth = 2;
-  hfdcan1.Init.NominalTimeSeg1 = 20;
+  hfdcan1.Init.NominalPrescaler = 10;
+  hfdcan1.Init.NominalSyncJumpWidth = 4;
+  hfdcan1.Init.NominalTimeSeg1 = 17;
   hfdcan1.Init.NominalTimeSeg2 = 4;
-  hfdcan1.Init.DataPrescaler = 32;
+  hfdcan1.Init.DataPrescaler = 2;
   hfdcan1.Init.DataSyncJumpWidth = 2;
-  hfdcan1.Init.DataTimeSeg1 = 20;
-  hfdcan1.Init.DataTimeSeg2 = 4;
+  hfdcan1.Init.DataTimeSeg1 = 8;
+  hfdcan1.Init.DataTimeSeg2 = 2;
   hfdcan1.Init.StdFiltersNbr = 1;
-  hfdcan1.Init.ExtFiltersNbr = 0;
+  hfdcan1.Init.ExtFiltersNbr = 1;
   hfdcan1.Init.TxFifoQueueMode = FDCAN_TX_FIFO_OPERATION;
   if (HAL_FDCAN_Init(&hfdcan1) != HAL_OK)
   {
@@ -221,6 +244,7 @@ void HAL_FDCAN_MspDeInit(FDCAN_HandleTypeDef* fdcanHandle)
 HAL_StatusTypeDef FDCAN_App_Init(void)
 {
   FDCAN_FilterTypeDef std_filter = {0};
+  FDCAN_FilterTypeDef ext_filter = {0};
 
   std_filter.IdType = FDCAN_STANDARD_ID;
   std_filter.FilterIndex = 0;
@@ -230,6 +254,18 @@ HAL_StatusTypeDef FDCAN_App_Init(void)
   std_filter.FilterID2 = FDCAN_ACCEPTED_STD_ID_MASK;
 
   if (HAL_FDCAN_ConfigFilter(&hfdcan1, &std_filter) != HAL_OK)
+  {
+    return HAL_ERROR;
+  }
+
+  ext_filter.IdType = FDCAN_EXTENDED_ID;
+  ext_filter.FilterIndex = 0;
+  ext_filter.FilterType = FDCAN_FILTER_RANGE_NO_EIDM;
+  ext_filter.FilterConfig = FDCAN_FILTER_TO_RXFIFO0;
+  ext_filter.FilterID1 = 0x00000000U;
+  ext_filter.FilterID2 = 0x1FFFFFFFU;
+
+  if (HAL_FDCAN_ConfigFilter(&hfdcan1, &ext_filter) != HAL_OK)
   {
     return HAL_ERROR;
   }
@@ -255,11 +291,11 @@ HAL_StatusTypeDef FDCAN_App_Init(void)
 HAL_StatusTypeDef FDCAN_Send_Message(uint32_t id, const uint8_t *data, uint8_t len)
 {
   FDCAN_TxHeaderTypeDef tx_header = {0};
-  uint8_t tx_data[8] = {0};
+  uint8_t tx_data[64] = {0};
 
-  if (len > 8U)
+  if (len > 64U)
   {
-    len = 8U;
+    len = 64U;
   }
 
   if ((len > 0U) && (data == NULL))
@@ -277,8 +313,8 @@ HAL_StatusTypeDef FDCAN_Send_Message(uint32_t id, const uint8_t *data, uint8_t l
   tx_header.TxFrameType = FDCAN_DATA_FRAME;
   tx_header.DataLength = FDCAN_EncodeDlc(len);
   tx_header.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
-  tx_header.BitRateSwitch = FDCAN_BRS_OFF;
-  tx_header.FDFormat = FDCAN_CLASSIC_CAN;
+  tx_header.BitRateSwitch = FDCAN_BRS_ON;
+  tx_header.FDFormat = FDCAN_FD_CAN;
   tx_header.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
   tx_header.MessageMarker = 0U;
 
@@ -294,7 +330,7 @@ HAL_StatusTypeDef FDCAN_Send_Message(uint32_t id, const uint8_t *data, uint8_t l
 void FDCAN_Receive_Callback(FDCAN_HandleTypeDef *hfdcan)
 {
   FDCAN_RxHeaderTypeDef rx_header = {0};
-  uint8_t rx_data[8] = {0};
+  uint8_t rx_data[64] = {0};
   FDCAN_RxMessage message = {0};
 
   if (HAL_FDCAN_GetRxMessage(hfdcan, FDCAN_RX_FIFO0, &rx_header, rx_data) != HAL_OK)
