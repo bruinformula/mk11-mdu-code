@@ -114,39 +114,52 @@ static void CAN_Frame_To_USB(const FDCAN_RxHeaderTypeDef *hdr, const uint8_t *da
     len = (uint8_t)sizeof(Rx);
   }
 
-  if ((hdr->Identifier == 0x100 || hdr->Identifier == 0x200) && len >= 64) {
+  /* SDU frames are 0x100+boardId (fast) and 0x200+boardId (slow). Each board
+   * gets its own pair of display lines so the two streams don't overwrite each
+   * other on the terminal. */
+  uint32_t id = hdr->Identifier;
+  uint32_t base = id & 0xF00U;
+  uint32_t board = id & 0x00FU;
+  const uint32_t MAX_BOARD_ID = 1U; /* bump this if more SDUs join the bus */
+
+  if ((base == 0x100U || base == 0x200U) && board <= MAX_BOARD_ID && len >= 64) {
     uint16_t time_ms = data[0] | (data[1] << 8);
-    if (hdr->Identifier == 0x100 || hdr->Identifier == 0x200) {
-      int16_t vals[15];
-      for (int i = 0; i < 15; i++) {
-        vals[i] = (int16_t)(data[2 + i*4] | (data[3 + i*4] << 8));
-      }
-      
-      if (hdr->Identifier == 0x100) {
-        int16_t shock = vals[6];
-        n += snprintf(buf + n, sizeof(buf) - (size_t)n, 
-                      "\033[1;1H\033[K[ID 100 Fast] dT:%ums | SG[mV]: %d, %d, %d, %d, %d, %d | Shock: %d.%02d mm\r\n", 
-                      time_ms,
-                      vals[0], vals[1], vals[2], vals[3], vals[4], vals[5],
-                      shock / 100, (shock > 0 ? shock : -shock) % 100);
-      } else {
-        int16_t rpm = vals[0];
-        int16_t maxT = vals[1];
-        int16_t minT = vals[2];
-        int16_t ctrT = vals[3];
-        int16_t tAmb = vals[4];
-        int16_t brk  = vals[5];
-        int16_t bAmb = vals[6];
-        n += snprintf(buf + n, sizeof(buf) - (size_t)n, 
-                      "\033[2;1H\033[K[ID 200 Slow] dT:%ums | RPM: %d | Tire[Max:%d.%d Min:%d.%d Ctr:%d.%d Amb:%d.%d] Brk:%d.%d Amb:%d.%d\r\n", 
-                      time_ms, rpm,
-                      maxT/10, (maxT>0?maxT:-maxT)%10,
-                      minT/10, (minT>0?minT:-minT)%10,
-                      ctrT/10, (ctrT>0?ctrT:-ctrT)%10,
-                      tAmb/10, (tAmb>0?tAmb:-tAmb)%10,
-                      brk/10, (brk>0?brk:-brk)%10,
-                      bAmb/10, (bAmb>0?bAmb:-bAmb)%10);
-      }
+    int16_t vals[15];
+    for (int i = 0; i < 15; i++) {
+      vals[i] = (int16_t)(data[2 + i*4] | (data[3 + i*4] << 8));
+    }
+
+    /* Lines: board 0 fast=1, board 0 slow=2, board 1 fast=3, board 1 slow=4 ... */
+    int line = (int)(board * 2U + (base == 0x200U ? 2U : 1U));
+
+    if (base == 0x100U) {
+      int16_t shock = vals[6];
+      n += snprintf(buf + n, sizeof(buf) - (size_t)n,
+                    "\033[%d;1H\033[K[B%lu ID %03lX Fast] dT:%ums | SG[mV]: %d, %d, %d, %d, %d, %d | Shock: %d.%02d mm\r\n",
+                    line,
+                    (unsigned long)board, (unsigned long)id,
+                    time_ms,
+                    vals[0], vals[1], vals[2], vals[3], vals[4], vals[5],
+                    shock / 100, (shock > 0 ? shock : -shock) % 100);
+    } else {
+      int16_t rpm = vals[0];
+      int16_t maxT = vals[1];
+      int16_t minT = vals[2];
+      int16_t ctrT = vals[3];
+      int16_t tAmb = vals[4];
+      int16_t brk  = vals[5];
+      int16_t bAmb = vals[6];
+      n += snprintf(buf + n, sizeof(buf) - (size_t)n,
+                    "\033[%d;1H\033[K[B%lu ID %03lX Slow] dT:%ums | RPM: %d | Tire[Max:%d.%d Min:%d.%d Ctr:%d.%d Amb:%d.%d] Brk:%d.%d Amb:%d.%d\r\n",
+                    line,
+                    (unsigned long)board, (unsigned long)id,
+                    time_ms, rpm,
+                    maxT/10, (maxT>0?maxT:-maxT)%10,
+                    minT/10, (minT>0?minT:-minT)%10,
+                    ctrT/10, (ctrT>0?ctrT:-ctrT)%10,
+                    tAmb/10, (tAmb>0?tAmb:-tAmb)%10,
+                    brk/10, (brk>0?brk:-brk)%10,
+                    bAmb/10, (bAmb>0?bAmb:-bAmb)%10);
     }
   } else {
     // Fallback to standard SLCAN
