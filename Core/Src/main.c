@@ -102,7 +102,7 @@ static uint8_t FDCAN_DlcToBytes(uint32_t dlc)
 
 static void CAN_Frame_To_USB(const FDCAN_RxHeaderTypeDef *hdr, const uint8_t *data)
 {
-  char buf[160];
+  char buf[512];
   int n = 0;
 
   if (!USB_Driver_IsConfigured()) {
@@ -114,21 +114,71 @@ static void CAN_Frame_To_USB(const FDCAN_RxHeaderTypeDef *hdr, const uint8_t *da
     len = (uint8_t)sizeof(Rx);
   }
 
-  if (hdr->IdType == FDCAN_STANDARD_ID) {
-    n += snprintf(buf + n, sizeof(buf) - (size_t)n, "t%03lX%u",
-                  (unsigned long)hdr->Identifier, (unsigned)len);
+  if ((hdr->Identifier == 0x100 || hdr->Identifier == 0x200) && len >= 64) {
+    uint16_t time_ms = data[0] | (data[1] << 8);
+    if (hdr->Identifier == 0x100 || hdr->Identifier == 0x200) {
+      int16_t vals[15];
+      for (int i = 0; i < 15; i++) {
+        vals[i] = (int16_t)(data[2 + i*4] | (data[3 + i*4] << 8));
+      }
+      
+      if (hdr->Identifier == 0x100) {
+        int16_t shock = vals[6];
+        n += snprintf(buf + n, sizeof(buf) - (size_t)n, 
+                      "\033[1;1H\033[K[ID 100 Fast] dT:%ums | SG[mV]: %d, %d, %d, %d, %d, %d | Shock: %d.%02d mm\r\n", 
+                      time_ms,
+                      vals[0], vals[1], vals[2], vals[3], vals[4], vals[5],
+                      shock / 100, (shock > 0 ? shock : -shock) % 100);
+      } else {
+        int16_t rpm = vals[0];
+        int16_t maxT = vals[1];
+        int16_t minT = vals[2];
+        int16_t ctrT = vals[3];
+        int16_t tAmb = vals[4];
+        int16_t brk  = vals[5];
+        int16_t bAmb = vals[6];
+        n += snprintf(buf + n, sizeof(buf) - (size_t)n, 
+                      "\033[2;1H\033[K[ID 200 Slow] dT:%ums | RPM: %d | Tire[Max:%d.%d Min:%d.%d Ctr:%d.%d Amb:%d.%d] Brk:%d.%d Amb:%d.%d\r\n", 
+                      time_ms, rpm,
+                      maxT/10, (maxT>0?maxT:-maxT)%10,
+                      minT/10, (minT>0?minT:-minT)%10,
+                      ctrT/10, (ctrT>0?ctrT:-ctrT)%10,
+                      tAmb/10, (tAmb>0?tAmb:-tAmb)%10,
+                      brk/10, (brk>0?brk:-brk)%10,
+                      bAmb/10, (bAmb>0?bAmb:-bAmb)%10);
+      }
+    }
   } else {
-    n += snprintf(buf + n, sizeof(buf) - (size_t)n, "T%08lX%u",
-                  (unsigned long)hdr->Identifier, (unsigned)len);
-  }
-  for (uint8_t i = 0U; i < len; i++) {
-    n += snprintf(buf + n, sizeof(buf) - (size_t)n, "%02X", data[i]);
-  }
-  if (n < (int)sizeof(buf) - 1) {
-    buf[n++] = '\r';
+    // Fallback to standard SLCAN
+    if (hdr->IdType == FDCAN_STANDARD_ID) {
+      n += snprintf(buf + n, sizeof(buf) - (size_t)n, "t%03lX%u",
+                    (unsigned long)hdr->Identifier, (unsigned)len);
+    } else {
+      n += snprintf(buf + n, sizeof(buf) - (size_t)n, "T%08lX%u",
+                    (unsigned long)hdr->Identifier, (unsigned)len);
+    }
+    for (uint8_t i = 0U; i < len; i++) {
+      n += snprintf(buf + n, sizeof(buf) - (size_t)n, "%02X", data[i]);
+    }
+    if (n < (int)sizeof(buf) - 2) {
+      buf[n++] = '\r';
+      buf[n++] = '\n';
+    }
   }
 
-  uint8_t usb_status = CDC_Transmit_FS((uint8_t *)buf, (uint16_t)n);
+  if (n > (int)sizeof(buf)) {
+    n = (int)sizeof(buf);
+  }
+
+  uint8_t usb_status;
+  uint32_t timeout = 100000;
+  do {
+    usb_status = CDC_Transmit_FS((uint8_t *)buf, (uint16_t)n);
+    if (usb_status == USBD_BUSY) {
+      timeout--;
+    }
+  } while (usb_status == USBD_BUSY && timeout > 0);
+
   if (usb_status != USBD_OK) {
     usbdiag.tx_drop_count++;
   }
@@ -183,6 +233,7 @@ int main(void)
     Error_Handler();
   }
 
+
   if (HAL_FDCAN_Start(&hfdcan1) != HAL_OK) {
     Error_Handler();
   }
@@ -212,8 +263,14 @@ int main(void)
     }
 
     if (fdcan_rx_pending) {
+      __disable_irq();
+      FDCAN_RxHeaderTypeDef local_hdr = LastRxHeader;
+      uint8_t local_rx[64];
+      memcpy(local_rx, Rx, sizeof(Rx));
       fdcan_rx_pending = 0U;
-      CAN_Frame_To_USB(&LastRxHeader, Rx);
+      __enable_irq();
+
+      CAN_Frame_To_USB(&local_hdr, local_rx);
     }
 
     HAL_Delay(10);
