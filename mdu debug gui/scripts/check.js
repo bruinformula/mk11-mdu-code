@@ -11,6 +11,7 @@ const filesToCheck = [
   'src/main/device-monitor.js',
   'src/main/log-writer.js',
   'src/main/slcan.js',
+  'src/main/mdu-frame.js',
   'src/main/usb-topology.js',
   'src/renderer/app.js',
 ];

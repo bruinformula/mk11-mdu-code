@@ -40,8 +40,8 @@ const elements = {
   metricBpsSub: document.getElementById('metric-bps-sub'),
   metricTotalFrames: document.getElementById('metric-total-frames'),
   metricTotalLines: document.getElementById('metric-total-lines'),
-  metricUniqueIds: document.getElementById('metric-unique-ids'),
-  metricIdBreakdown: document.getElementById('metric-id-breakdown'),
+  metricBoardsSeen: document.getElementById('metric-boards-seen'),
+  metricBoardFrames: document.getElementById('metric-board-frames'),
   metricParseErrors: document.getElementById('metric-parse-errors'),
   metricLastFrameAge: document.getElementById('metric-last-frame-age'),
   metricPayloadSize: document.getElementById('metric-payload-size'),
@@ -55,6 +55,7 @@ const elements = {
   framesChart: document.getElementById('frames-chart'),
   bytesChart: document.getElementById('bytes-chart'),
   topIdsBody: document.getElementById('top-ids-body'),
+  boardsGrid: document.getElementById('boards-grid'),
   logBody: document.getElementById('log-body'),
 };
 
@@ -264,8 +265,9 @@ function renderDiagnostics() {
   elements.metricBpsSub.textContent = `Average ${formatBytes(diagnostics.averageBytesPerSecond)}/s`;
   elements.metricTotalFrames.textContent = String(diagnostics.totalFrames ?? 0);
   elements.metricTotalLines.textContent = `${diagnostics.totalLines ?? 0} raw lines`;
-  elements.metricUniqueIds.textContent = String(diagnostics.uniqueIds ?? 0);
-  elements.metricIdBreakdown.textContent = `${diagnostics.standardFrames ?? 0} standard / ${diagnostics.extendedFrames ?? 0} extended`;
+  const boards = diagnostics.boards ?? [];
+  elements.metricBoardsSeen.textContent = String(boards.length);
+  elements.metricBoardFrames.textContent = `${diagnostics.boardFrames ?? 0} board / ${diagnostics.slcanFrames ?? 0} SLCAN`;
   elements.metricParseErrors.textContent = String(diagnostics.parseErrors ?? 0);
   elements.metricLastFrameAge.textContent = diagnostics.timeSinceLastFrameMs == null
     ? 'No frames yet'
@@ -292,21 +294,111 @@ function renderDiagnostics() {
 function renderTopIds() {
   const topIds = state.diagnostics?.topIds ?? [];
   if (topIds.length === 0) {
-    elements.topIdsBody.innerHTML = '<tr><td class="empty-state" colspan="6">No frames decoded yet.</td></tr>';
+    elements.topIdsBody.innerHTML = '<tr><td class="empty-state" colspan="7">No frames decoded yet.</td></tr>';
     return;
   }
 
   elements.topIdsBody.innerHTML = topIds
     .map((entry) => {
+      const sourceLabel = entry.source === 'board' ? 'Board' : 'SLCAN';
       return `
         <tr>
           <td class="mono">${escapeHtml(entry.idText)}</td>
+          <td><span class="pill ${entry.source === 'board' ? 'ok' : 'info'}">${escapeHtml(sourceLabel)}</span></td>
           <td>${escapeHtml(entry.idType)}</td>
           <td>${entry.count}</td>
           <td>${formatRate(entry.recentHz)}</td>
           <td>${entry.lastDataLength}</td>
           <td class="mono">${escapeHtml(entry.lastDataHex || '--')}</td>
         </tr>
+      `;
+    })
+    .join('');
+}
+
+function formatSigned(value, digits) {
+  if (value == null || Number.isNaN(value)) {
+    return '--';
+  }
+  return value.toFixed(digits);
+}
+
+function formatBoardAge(ageMs) {
+  if (ageMs == null) {
+    return 'never';
+  }
+  if (ageMs < 1000) {
+    return 'just now';
+  }
+  if (ageMs < 60000) {
+    return `${Math.floor(ageMs / 1000)}s ago`;
+  }
+  return `${Math.floor(ageMs / 60000)}m ago`;
+}
+
+function renderFastBlock(fast) {
+  if (!fast) {
+    return '<p class="board-empty">Waiting for fast frame...</p>';
+  }
+
+  const sgRows = fast.strainGaugesMv
+    .map((mv, index) => `<dt>SG${index + 1}</dt><dd>${mv} mV</dd>`)
+    .join('');
+
+  return `
+    <p class="board-meta">${escapeHtml(fast.idText)} · Δt ${fast.timeSinceLastMs} ms · ${escapeHtml(formatBoardAge(fast.ageMs))}</p>
+    <dl class="board-readings">
+      ${sgRows}
+      <dt>Shock</dt><dd>${formatSigned(fast.shockMm, 2)} mm</dd>
+    </dl>
+  `;
+}
+
+function renderSlowBlock(slow) {
+  if (!slow) {
+    return '<p class="board-empty">Waiting for slow frame...</p>';
+  }
+
+  return `
+    <p class="board-meta">${escapeHtml(slow.idText)} · Δt ${slow.timeSinceLastMs} ms · ${escapeHtml(formatBoardAge(slow.ageMs))}</p>
+    <dl class="board-readings">
+      <dt>RPM</dt><dd>${slow.rpm}</dd>
+      <dt>Tire max</dt><dd>${formatSigned(slow.tireC?.max, 1)} &deg;C</dd>
+      <dt>Tire min</dt><dd>${formatSigned(slow.tireC?.min, 1)} &deg;C</dd>
+      <dt>Tire ctr</dt><dd>${formatSigned(slow.tireC?.center, 1)} &deg;C</dd>
+      <dt>Tire amb</dt><dd>${formatSigned(slow.tireC?.ambient, 1)} &deg;C</dd>
+      <dt>Brake</dt><dd>${formatSigned(slow.brakeC, 1)} &deg;C</dd>
+      <dt>Brake amb</dt><dd>${formatSigned(slow.brakeAmbientC, 1)} &deg;C</dd>
+    </dl>
+  `;
+}
+
+function renderBoards() {
+  const boards = state.diagnostics?.boards ?? [];
+  if (boards.length === 0) {
+    elements.boardsGrid.innerHTML = '<p class="empty-state">No board telemetry frames decoded yet.</p>';
+    return;
+  }
+
+  elements.boardsGrid.innerHTML = boards
+    .map((board) => {
+      return `
+        <article class="board-card">
+          <header class="board-card-header">
+            <strong>Board ${board.boardId}</strong>
+            <span class="board-age">${escapeHtml(formatBoardAge(board.lastSeenAgeMs))}</span>
+          </header>
+          <div class="board-cols">
+            <div class="board-col">
+              <h3>Fast (0x${(0x100 + board.boardId).toString(16).toUpperCase().padStart(3, '0')})</h3>
+              ${renderFastBlock(board.fast)}
+            </div>
+            <div class="board-col">
+              <h3>Slow (0x${(0x200 + board.boardId).toString(16).toUpperCase().padStart(3, '0')})</h3>
+              ${renderSlowBlock(board.slow)}
+            </div>
+          </div>
+        </article>
       `;
     })
     .join('');
@@ -346,10 +438,27 @@ function renderLog() {
         `;
       }
 
+      if (entry.source === 'board' && entry.board) {
+        const idLabel = `B${entry.board.boardId} · ${entry.board.kind === 'fast' ? 'Fast' : 'Slow'} · ${entry.frame.idText}`;
+        const summary = entry.board.kind === 'fast'
+          ? `SG ${entry.board.strainGaugesMv.join('/')} mV · Shock ${formatSigned(entry.board.shockMm, 2)} mm`
+          : `RPM ${entry.board.rpm} · Tire ${formatSigned(entry.board.tireC?.max, 1)}/${formatSigned(entry.board.tireC?.min, 1)}/${formatSigned(entry.board.tireC?.center, 1)}/${formatSigned(entry.board.tireC?.ambient, 1)} · Brk ${formatSigned(entry.board.brakeC, 1)}/${formatSigned(entry.board.brakeAmbientC, 1)}`;
+        return `
+          <tr>
+            <td>${escapeHtml(formatTimestamp(entry.timestamp))}</td>
+            <td><span class="pill ok">${escapeHtml(entry.board.kind)}</span></td>
+            <td class="mono">${escapeHtml(idLabel)}</td>
+            <td>${entry.board.timeSinceLastMs} ms</td>
+            <td>${escapeHtml(summary)}</td>
+            <td class="mono">${escapeHtml(entry.raw)}</td>
+          </tr>
+        `;
+      }
+
       return `
         <tr>
           <td>${escapeHtml(formatTimestamp(entry.timestamp))}</td>
-          <td><span class="pill ok">frame</span></td>
+          <td><span class="pill info">slcan</span></td>
           <td class="mono">${escapeHtml(entry.frame.idText)}</td>
           <td>${entry.frame.dataLength}</td>
           <td class="mono">${escapeHtml(entry.frame.dataHex)}</td>
@@ -371,6 +480,7 @@ function renderLoggingControls() {
 function renderAll() {
   renderConnection();
   renderDiagnostics();
+  renderBoards();
   renderTopIds();
   renderLog();
   renderLoggingControls();
@@ -471,6 +581,7 @@ function wireEvents() {
     appendChartValue(state.charts.frames, diagnostics.framesPerSecond ?? 0);
     appendChartValue(state.charts.bytes, diagnostics.bytesPerSecond ?? 0);
     renderDiagnostics();
+    renderBoards();
     renderTopIds();
   });
 

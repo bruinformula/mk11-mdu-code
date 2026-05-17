@@ -15,7 +15,7 @@
         <h1>MDU Debug Console</h1>
         <p class="hero-copy">
           Live monitoring for the STM32 native USB CDC debug stream behind the USB2514 hub.
-          The app mirrors the MCU's USB broadcast, decodes the SLCAN-style payload, and records structured logs when you need a capture.
+          The app mirrors the MCU's USB broadcast, decodes the per-board SDU telemetry frames (Fast 0x100+B, Slow 0x200+B) and falls back to SLCAN for other CAN IDs.
         </p>
       </div>
       <div class="hero-status">
@@ -93,9 +93,9 @@
           </article>
 
           <article class="metric-card accent-olive">
-            <span class="metric-label">Unique IDs</span>
-            <strong class="metric-value" id="metric-unique-ids">0</strong>
-            <span class="metric-subtext" id="metric-id-breakdown">0 standard / 0 extended</span>
+            <span class="metric-label">Boards seen</span>
+            <strong class="metric-value" id="metric-boards-seen">0</strong>
+            <span class="metric-subtext" id="metric-board-frames">0 board frames · 0 SLCAN</span>
           </article>
 
           <article class="metric-card accent-rust">
@@ -149,10 +149,21 @@
         </div>
       </section>
 
-      <section class="panel ids-panel stagger-5">
+      <section class="panel boards-panel stagger-5">
+        <div class="panel-heading">
+          <h2>Live Board Telemetry</h2>
+          <p>Latest Fast (0x100+B) and Slow (0x200+B) frames decoded from each SDU on the CAN bus.</p>
+        </div>
+
+        <div id="boards-grid" class="boards-grid">
+          <p class="empty-state">No board telemetry frames decoded yet.</p>
+        </div>
+      </section>
+
+      <section class="panel ids-panel stagger-6">
         <div class="panel-heading">
           <h2>Active CAN IDs</h2>
-          <p>Most active identifiers over the last 10 seconds.</p>
+          <p>Most active identifiers over the last 10 seconds. Board frames are decoded from the MDU's per-board lines; other IDs are SLCAN fallbacks.</p>
         </div>
 
         <div class="table-wrap">
@@ -160,6 +171,7 @@
             <thead>
               <tr>
                 <th>ID</th>
+                <th>Source</th>
                 <th>Type</th>
                 <th>Total</th>
                 <th>Recent Hz</th>
@@ -172,7 +184,7 @@
         </div>
       </section>
 
-      <section class="panel log-panel stagger-6">
+      <section class="panel log-panel stagger-7">
         <div class="panel-heading">
           <h2>Running USB Log</h2>
           <p>Newest entries first. Both parsed frames and connection/runtime events appear here.</p>

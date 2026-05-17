@@ -71,6 +71,7 @@ body {
 .controls,
 .metrics-panel,
 .charts-panel,
+.boards-panel,
 .ids-panel,
 .log-panel {
   animation: rise-in 500ms ease both;
@@ -82,6 +83,7 @@ body {
 .stagger-4 { animation-delay: 220ms; }
 .stagger-5 { animation-delay: 280ms; }
 .stagger-6 { animation-delay: 340ms; }
+.stagger-7 { animation-delay: 400ms; }
 
 @keyframes rise-in {
   from {
@@ -278,11 +280,13 @@ button:disabled {
 
 .metrics-panel,
 .charts-panel,
+.boards-panel,
 .ids-panel,
 .log-panel {
   padding: 24px 28px;
 }
 
+.boards-panel,
 .ids-panel,
 .log-panel {
   grid-column: 1 / -1;
@@ -382,6 +386,98 @@ svg {
   width: 100%;
   height: 140px;
   display: block;
+}
+
+.boards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: 14px;
+}
+
+.board-card {
+  padding: 18px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  display: grid;
+  gap: 12px;
+}
+
+.board-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.board-card-header strong {
+  font-size: 1.2rem;
+  letter-spacing: 0.02em;
+}
+
+.board-card-header .board-age {
+  font-size: 0.86rem;
+  color: var(--ink-soft);
+}
+
+.board-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.board-col {
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(36, 52, 63, 0.04);
+  display: grid;
+  gap: 8px;
+}
+
+.board-col h3 {
+  margin: 0;
+  font-size: 0.96rem;
+  font-family: "Avenir Next Condensed", "Avenir Next", sans-serif;
+  letter-spacing: 0.02em;
+  color: var(--ink-panel);
+}
+
+.board-col .board-meta {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+
+.board-col .board-empty {
+  margin: 0;
+  font-size: 0.86rem;
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+.board-readings {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  font-size: 0.88rem;
+}
+
+.board-readings dt {
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+
+.board-readings dd {
+  margin: 0;
+  font-family: "SF Mono", "Menlo", monospace;
+  color: var(--ink);
+}
+
+@media (max-width: 720px) {
+  .board-cols {
+    grid-template-columns: 1fr;
+  }
 }
 
 .table-wrap {

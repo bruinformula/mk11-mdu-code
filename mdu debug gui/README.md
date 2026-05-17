@@ -8,20 +8,25 @@ Electron app for the USB CDC stream emitted by the STM32 firmware in this reposi
 - Treats the USB2514 side as a USB hub and mirrors the STM32's USB CDC child endpoint, not Bluetooth pseudo ports
 - Reads the USB CDC stream from the MCU's native USB connection
 - On macOS, also scans System Information so the app can show when the USB2514 hub itself is present even if no CDC child endpoint has enumerated yet
-- Parses the firmware's SLCAN-like frames (`t...` / `T...` terminated by `\r`)
-- Shows live diagnostics such as bytes/sec, frames/sec, parse errors, active CAN IDs, and last activity
-- Keeps a rolling on-screen log of raw USB lines and parsed CAN frames
+- Decodes the per-board SDU telemetry the MDU prints to USB:
+  - Fast frames `[B<board> ID <hex> Fast] dT:<ms>ms | SG[mV]: ... | Shock: ... mm` for CAN IDs `0x100 + boardId`
+  - Slow frames `[B<board> ID <hex> Slow] dT:<ms>ms | RPM: ... | Tire[...] Brk:... Amb:...` for CAN IDs `0x200 + boardId`
+- Falls back to the firmware's SLCAN-style frames (`t...` / `T...` terminated by `\r`) for everything else
+- Shows live diagnostics such as bytes/sec, frames/sec, parse errors, per-board readings, active CAN IDs, and last activity
+- Keeps a rolling on-screen log of raw USB lines and decoded frames
 - Writes structured session logs to JSONL files for later analysis
 
-## Important protocol detail
+## Important protocol details
 
-The firmware is close to SLCAN, but not strict SLCAN. The CAN length field is emitted as decimal with `%u`, so lengths above 9 can appear as two digits. Example:
+The MDU prints SDU board lines with ANSI cursor positioning (`\033[<line>;1H\033[K...`) so terminals can pin each board to its own row. The GUI strips those escapes before parsing and stores ANSI-free strings in the log.
+
+The SLCAN fallback is close to SLCAN but not strict — the firmware emits the CAN length field as decimal with `%u`, so lengths above 9 appear as two digits, e.g.:
 
 ```text
 t077120102030405060708090A0B0C\r
 ```
 
-The parser in this app handles both 1-digit and 2-digit decimal lengths.
+The parser handles both 1-digit and 2-digit decimal lengths.
 
 ## Transport note
 

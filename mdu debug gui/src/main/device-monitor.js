@@ -4,7 +4,7 @@ const { EventEmitter } = require('events');
 const { SerialPort } = require('serialport');
 
 const { LogWriter } = require('./log-writer');
-const { parseSlcanFrame } = require('./slcan');
+const { parseMduLine } = require('./mdu-frame');
 const { TARGET_HUB_PID, TARGET_HUB_VID, scanUsbTopology } = require('./usb-topology');
 
 const TARGET_VID = '0483';
@@ -113,6 +113,8 @@ class DiagnosticsTracker {
     this.totalBytes = 0;
     this.totalLines = 0;
     this.totalFrames = 0;
+    this.boardFrames = 0;
+    this.slcanFrames = 0;
     this.payloadBytes = 0;
     this.parseErrors = 0;
     this.standardFrames = 0;
@@ -155,6 +157,12 @@ class DiagnosticsTracker {
     this.lastFrameAt = now;
     this.frameEvents.push({ now });
 
+    if (parsedFrame.source === 'board') {
+      this.boardFrames += 1;
+    } else {
+      this.slcanFrames += 1;
+    }
+
     if (parsedFrame.idType === 'standard') {
       this.standardFrames += 1;
     } else {
@@ -164,6 +172,7 @@ class DiagnosticsTracker {
     const idStats = this.ids.get(parsedFrame.idText) ?? {
       idText: parsedFrame.idText,
       idType: parsedFrame.idType,
+      source: parsedFrame.source,
       count: 0,
       recentTimestamps: [],
       lastSeenAt: 0,
@@ -173,8 +182,9 @@ class DiagnosticsTracker {
 
     idStats.count += 1;
     idStats.lastSeenAt = now;
-    idStats.lastDataHex = parsedFrame.dataHex;
+    idStats.lastDataHex = parsedFrame.dataHex ?? '';
     idStats.lastDataLength = parsedFrame.dataLength;
+    idStats.source = parsedFrame.source;
     idStats.recentTimestamps.push(now);
     this.ids.set(parsedFrame.idText, idStats);
   }
@@ -204,6 +214,7 @@ class DiagnosticsTracker {
       .map((entry) => ({
         idText: entry.idText,
         idType: entry.idType,
+        source: entry.source,
         count: entry.count,
         recentHz: entry.recentTimestamps.length / 10,
         lastSeenAt: entry.lastSeenAt,
@@ -232,6 +243,8 @@ class DiagnosticsTracker {
       totalBytes: this.totalBytes,
       totalLines: this.totalLines,
       totalFrames: this.totalFrames,
+      boardFrames: this.boardFrames,
+      slcanFrames: this.slcanFrames,
       parseErrors: this.parseErrors,
       payloadBytes: this.payloadBytes,
       standardFrames: this.standardFrames,
@@ -251,6 +264,62 @@ class DiagnosticsTracker {
   }
 }
 
+class BoardStateTracker {
+  constructor() {
+    this.boards = new Map();
+  }
+
+  reset() {
+    this.boards = new Map();
+  }
+
+  record(boardPayload, now = Date.now()) {
+    if (!boardPayload || typeof boardPayload.boardId !== 'number') {
+      return;
+    }
+
+    const id = boardPayload.boardId;
+    const state = this.boards.get(id) ?? {
+      boardId: id,
+      fast: null,
+      slow: null,
+      lastSeenAt: 0,
+      fastCount: 0,
+      slowCount: 0,
+    };
+
+    state.lastSeenAt = now;
+
+    if (boardPayload.kind === 'fast') {
+      state.fast = { ...boardPayload, receivedAt: now };
+      state.fastCount += 1;
+    } else if (boardPayload.kind === 'slow') {
+      state.slow = { ...boardPayload, receivedAt: now };
+      state.slowCount += 1;
+    }
+
+    this.boards.set(id, state);
+  }
+
+  snapshot(now = Date.now()) {
+    return [...this.boards.values()]
+      .sort((left, right) => left.boardId - right.boardId)
+      .map((state) => ({
+        boardId: state.boardId,
+        lastSeenAt: state.lastSeenAt,
+        lastSeenAgeMs: state.lastSeenAt ? now - state.lastSeenAt : null,
+        fastCount: state.fastCount,
+        slowCount: state.slowCount,
+        fast: state.fast
+          ? { ...state.fast, ageMs: now - state.fast.receivedAt }
+          : null,
+        slow: state.slow
+          ? { ...state.slow, ageMs: now - state.slow.receivedAt }
+          : null,
+      }));
+  }
+}
+
 class DeviceMonitor extends EventEmitter {
   constructor() {
     super();
@@ -265,6 +334,7 @@ class DeviceMonitor extends EventEmitter {
     this.baudRate = DEFAULT_BAUD_RATE;
     this.lastError = null;
     this.stats = new DiagnosticsTracker();
+    this.boardStates = new BoardStateTracker();
     this.usbTopology = {
       hub: null,
       devices: [],
@@ -360,8 +430,10 @@ class DeviceMonitor extends EventEmitter {
   }
 
   getDiagnosticsSnapshot() {
+    const now = Date.now();
     return {
-      ...this.stats.snapshot(),
+      ...this.stats.snapshot(now),
+      boards: this.boardStates.snapshot(now),
       hub: this.usbTopology.hub,
       logging: this.logWriter.getStatus(),
     };
@@ -621,6 +693,7 @@ class DeviceMonitor extends EventEmitter {
 
   async clearSession() {
     this.stats.clearSession();
+    this.boardStates.reset();
     this.emit('diagnostics', this.getDiagnosticsSnapshot());
     this.handleRuntime('info', 'Session counters cleared.', {});
     return this.getDiagnosticsSnapshot();
@@ -652,18 +725,23 @@ class DeviceMonitor extends EventEmitter {
     this.pendingText = parts.pop() ?? '';
 
     for (const part of parts) {
-      if (!part) {
+      const parsedFrame = parseMduLine(part);
+      if (!parsedFrame.raw) {
         continue;
       }
 
-      const parsedFrame = parseSlcanFrame(part);
       this.stats.recordLine(parsedFrame, now);
+      if (parsedFrame.ok && parsedFrame.source === 'board' && parsedFrame.board) {
+        this.boardStates.record(parsedFrame.board, now);
+      }
 
       const event = {
         timestamp: new Date(now).toISOString(),
-        raw: part,
+        raw: parsedFrame.raw,
         ok: parsedFrame.ok,
         reason: parsedFrame.ok ? null : parsedFrame.reason,
+        source: parsedFrame.ok ? parsedFrame.source : null,
+        board: parsedFrame.ok && parsedFrame.source === 'board' ? parsedFrame.board : null,
         frame: parsedFrame.ok
           ? {
               idText: parsedFrame.idText,
