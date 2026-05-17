@@ -4,9 +4,9 @@ const { parseSlcanFrame } = require('./slcan');
 
 const ANSI_ESCAPE = /\x1B\[[0-9;?]*[ -/]*[@-~]/g;
 
-const FAST_PATTERN = /^\[B(\d+)\s+ID\s+([0-9A-Fa-f]+)\s+Fast\]\s+dT:(\d+)ms\s*\|\s*SG\[mV\]:\s*(-?\d+),\s*(-?\d+),\s*(-?\d+),\s*(-?\d+),\s*(-?\d+),\s*(-?\d+)\s*\|\s*Shock:\s*(-?\d+)\.(\d{2})\s*mm$/;
+const FAST_PATTERN = /^\[B(\d+)\s+ID\s+([0-9A-Fa-f]+)\s+Fast\]\s+Seq:(\d+)\s*\|\s*dT:(\d+)ms\s*\|\s*SG\[mV\]:\s*(-?\d+),\s*(-?\d+),\s*(-?\d+),\s*(-?\d+),\s*(-?\d+),\s*(-?\d+)\s*\|\s*Shock:\s*(-?\d+)\.(\d{2})\s*mm$/;
 
-const SLOW_PATTERN = /^\[B(\d+)\s+ID\s+([0-9A-Fa-f]+)\s+Slow\]\s+dT:(\d+)ms\s*\|\s*RPM:\s*(-?\d+)\s*\|\s*Tire\[Max:\s*(-?\d+)\.(\d+)\s+Min:\s*(-?\d+)\.(\d+)\s+Ctr:\s*(-?\d+)\.(\d+)\s+Amb:\s*(-?\d+)\.(\d+)\]\s+Brk:\s*(-?\d+)\.(\d+)\s+Amb:\s*(-?\d+)\.(\d+)$/;
+const SLOW_PATTERN = /^\[B(\d+)\s+ID\s+([0-9A-Fa-f]+)\s+Slow\]\s+Seq:(\d+)\s*\|\s*dT:(\d+)ms\s*\|\s*RPM:\s*(-?\d+)\s*\|\s*Tire\[Max:\s*(-?\d+)\.(\d+)\s+Min:\s*(-?\d+)\.(\d+)\s+Ctr:\s*(-?\d+)\.(\d+)\s+Amb:\s*(-?\d+)\.(\d+)\]\s+Brk:\s*(-?\d+)\.(\d+)\s+Amb:\s*(-?\d+)\.(\d+)$/;
 
 const THERMAL_PATTERN = /^\[B(\d+)\s+ID\s+([0-9A-Fa-f]+)\s+Thermal\]\s+Px:\s+(.*)$/;
 
@@ -40,21 +40,23 @@ function buildIdMeta(idHex) {
 function parseFast(match) {
   const board = Number.parseInt(match[1], 10);
   const id = buildIdMeta(match[2]);
-  const timeSinceLastMs = Number.parseInt(match[3], 10);
+  const seq = Number.parseInt(match[3], 10);
+  const timeSinceLastMs = Number.parseInt(match[4], 10);
   const strainGaugesMv = [
-    Number.parseInt(match[4], 10),
     Number.parseInt(match[5], 10),
     Number.parseInt(match[6], 10),
     Number.parseInt(match[7], 10),
     Number.parseInt(match[8], 10),
     Number.parseInt(match[9], 10),
+    Number.parseInt(match[10], 10),
   ];
-  const shockMm = combineSignedDecimal(match[10], match[11]);
+  const shockMm = combineSignedDecimal(match[11], match[12]);
 
   return {
     boardId: board,
     kind: 'fast',
     ...id,
+    seq,
     timeSinceLastMs,
     strainGaugesMv,
     shockMm,
@@ -64,21 +66,23 @@ function parseFast(match) {
 function parseSlow(match) {
   const board = Number.parseInt(match[1], 10);
   const id = buildIdMeta(match[2]);
-  const timeSinceLastMs = Number.parseInt(match[3], 10);
-  const rpm = Number.parseInt(match[4], 10);
+  const seq = Number.parseInt(match[3], 10);
+  const timeSinceLastMs = Number.parseInt(match[4], 10);
+  const rpm = Number.parseInt(match[5], 10);
   const tireC = {
-    max: combineSignedDecimal(match[5], match[6]),
-    min: combineSignedDecimal(match[7], match[8]),
-    center: combineSignedDecimal(match[9], match[10]),
-    ambient: combineSignedDecimal(match[11], match[12]),
+    max: combineSignedDecimal(match[6], match[7]),
+    min: combineSignedDecimal(match[8], match[9]),
+    center: combineSignedDecimal(match[10], match[11]),
+    ambient: combineSignedDecimal(match[12], match[13]),
   };
-  const brakeC = combineSignedDecimal(match[13], match[14]);
-  const brakeAmbientC = combineSignedDecimal(match[15], match[16]);
+  const brakeC = combineSignedDecimal(match[14], match[15]);
+  const brakeAmbientC = combineSignedDecimal(match[16], match[17]);
 
   return {
     boardId: board,
     kind: 'slow',
     ...id,
+    seq,
     timeSinceLastMs,
     rpm,
     tireC,

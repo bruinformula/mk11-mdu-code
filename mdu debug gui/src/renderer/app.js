@@ -358,7 +358,8 @@ function renderDiagnostics() {
   const boards = diagnostics.boards ?? [];
   elements.metricBoardsSeen.textContent = String(boards.length);
   elements.metricBoardFrames.textContent = `${diagnostics.boardFrames ?? 0} board / ${diagnostics.slcanFrames ?? 0} SLCAN`;
-  elements.metricParseErrors.textContent = String(diagnostics.parseErrors ?? 0);
+  const totalDropped = boards.reduce((sum, b) => sum + (b.droppedFrames || 0), 0);
+  elements.metricParseErrors.textContent = `${diagnostics.parseErrors ?? 0} errors / ${totalDropped} drops`;
   elements.metricLastFrameAge.textContent = diagnostics.timeSinceLastFrameMs == null
     ? 'No frames yet'
     : `Last frame ${formatAge(diagnostics.timeSinceLastFrameMs)}`;
@@ -502,6 +503,7 @@ function renderBoards() {
           <header class="board-card-header">
             <strong>Board ${board.boardId}</strong>
             <span class="board-age">${escapeHtml(formatBoardAge(board.lastSeenAgeMs))}</span>
+            ${board.droppedFrames > 0 ? `<span class="pill error" style="margin-left: 8px;">${board.droppedFrames} Drops</span>` : ''}
           </header>
           <div class="board-cols">
             <div class="board-col">

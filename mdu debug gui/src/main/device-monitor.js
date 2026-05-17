@@ -289,6 +289,9 @@ class BoardStateTracker {
       fastCount: 0,
       slowCount: 0,
       thermalCount: 0,
+      lastFastSeq: null,
+      lastSlowSeq: null,
+      droppedFrames: 0,
     };
 
     state.lastSeenAt = now;
@@ -296,9 +299,27 @@ class BoardStateTracker {
     if (boardPayload.kind === 'fast') {
       state.fast = { ...boardPayload, receivedAt: now };
       state.fastCount += 1;
+      if (typeof boardPayload.seq === 'number') {
+        if (state.lastFastSeq !== null) {
+          const expected = (state.lastFastSeq + 1) % 256;
+          if (boardPayload.seq !== expected) {
+            state.droppedFrames += (boardPayload.seq - expected + 256) % 256;
+          }
+        }
+        state.lastFastSeq = boardPayload.seq;
+      }
     } else if (boardPayload.kind === 'slow') {
       state.slow = { ...boardPayload, receivedAt: now };
       state.slowCount += 1;
+      if (typeof boardPayload.seq === 'number') {
+        if (state.lastSlowSeq !== null) {
+          const expected = (state.lastSlowSeq + 1) % 256;
+          if (boardPayload.seq !== expected) {
+            state.droppedFrames += (boardPayload.seq - expected + 256) % 256;
+          }
+        }
+        state.lastSlowSeq = boardPayload.seq;
+      }
     } else if (boardPayload.kind === 'thermal') {
       state.thermal = { ...boardPayload, receivedAt: now };
       state.thermalCount += 1;
@@ -317,6 +338,7 @@ class BoardStateTracker {
         fastCount: state.fastCount,
         slowCount: state.slowCount,
         thermalCount: state.thermalCount,
+        droppedFrames: state.droppedFrames,
         fast: state.fast
           ? { ...state.fast, ageMs: now - state.fast.receivedAt }
           : null,

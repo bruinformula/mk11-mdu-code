@@ -154,9 +154,9 @@ static void CAN_Frame_To_USB(const FDCAN_RxHeaderTypeDef *hdr,
     if (base == 0x100U) {
       int16_t shock = vals[6];
       n += snprintf(buf + n, sizeof(buf) - (size_t)n,
-                    "\033[%d;1H\033[K[B%lu ID %03lX Fast] dT:%ums | SG[mV]: "
+                    "\033[%d;1H\033[K[B%lu ID %03lX Fast] Seq:%u | dT:%ums | SG[mV]: "
                     "%d, %d, %d, %d, %d, %d | Shock: %d.%02d mm\r\n",
-                    line, (unsigned long)board, (unsigned long)id, time_ms,
+                    line, (unsigned long)board, (unsigned long)id, data[63], time_ms,
                     vals[0], vals[1], vals[2], vals[3], vals[4], vals[5],
                     shock / 100, (shock > 0 ? shock : -shock) % 100);
     } else {
@@ -168,10 +168,10 @@ static void CAN_Frame_To_USB(const FDCAN_RxHeaderTypeDef *hdr,
       int16_t brk = vals[5];
       int16_t bAmb = vals[6];
       n += snprintf(buf + n, sizeof(buf) - (size_t)n,
-                    "\033[%d;1H\033[K[B%lu ID %03lX Slow] dT:%ums | RPM: %d | "
+                    "\033[%d;1H\033[K[B%lu ID %03lX Slow] Seq:%u | dT:%ums | RPM: %d | "
                     "Tire[Max:%d.%d Min:%d.%d Ctr:%d.%d Amb:%d.%d] Brk:%d.%d "
                     "Amb:%d.%d\r\n",
-                    line, (unsigned long)board, (unsigned long)id, time_ms, rpm,
+                    line, (unsigned long)board, (unsigned long)id, data[63], time_ms, rpm,
                     maxT / 10, (maxT > 0 ? maxT : -maxT) % 10, minT / 10,
                     (minT > 0 ? minT : -minT) % 10, ctrT / 10,
                     (ctrT > 0 ? ctrT : -ctrT) % 10, tAmb / 10,
