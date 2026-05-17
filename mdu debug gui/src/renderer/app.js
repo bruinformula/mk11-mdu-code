@@ -2,8 +2,9 @@
 
 const MAX_LOG_ROWS = 400;
 const MAX_CHART_POINTS = 60;
-const MAX_GRAPH_POINTS_PER_SERIES = 1200;
-const MAX_THROUGHPUT_GRAPH_POINTS = 600;
+const MAX_GRAPH_HISTORY_MS = 700_000;
+const MAX_POINTS_PER_SERIES = 200_000;
+const RENDER_POINT_LIMIT = 1500;
 const GRAPH_FAVORITES_KEY = 'mdu-graph-favorites';
 const GRAPH_ORDER_KEY = 'mdu-graph-order';
 
@@ -51,6 +52,7 @@ const state = {
       board: {},
     },
     dragging: false,
+    hover: { plotId: null, fraction: null },
   },
 };
 
@@ -568,16 +570,16 @@ function pruneSeries(series, cutoff) {
 }
 
 function recordThroughputSample(now, diagnostics) {
-  const cutoff = now - MAX_THROUGHPUT_GRAPH_POINTS * 1000;
+  const cutoff = now - MAX_GRAPH_HISTORY_MS;
   state.graphs.throughput.fps.push({ t: now, v: Number(diagnostics?.framesPerSecond) || 0 });
   state.graphs.throughput.bps.push({ t: now, v: Number(diagnostics?.bytesPerSecond) || 0 });
   pruneSeries(state.graphs.throughput.fps, cutoff);
   pruneSeries(state.graphs.throughput.bps, cutoff);
-  if (state.graphs.throughput.fps.length > MAX_THROUGHPUT_GRAPH_POINTS) {
-    state.graphs.throughput.fps.splice(0, state.graphs.throughput.fps.length - MAX_THROUGHPUT_GRAPH_POINTS);
+  if (state.graphs.throughput.fps.length > MAX_POINTS_PER_SERIES) {
+    state.graphs.throughput.fps.splice(0, state.graphs.throughput.fps.length - MAX_POINTS_PER_SERIES);
   }
-  if (state.graphs.throughput.bps.length > MAX_THROUGHPUT_GRAPH_POINTS) {
-    state.graphs.throughput.bps.splice(0, state.graphs.throughput.bps.length - MAX_THROUGHPUT_GRAPH_POINTS);
+  if (state.graphs.throughput.bps.length > MAX_POINTS_PER_SERIES) {
+    state.graphs.throughput.bps.splice(0, state.graphs.throughput.bps.length - MAX_POINTS_PER_SERIES);
   }
 }
 
@@ -601,7 +603,7 @@ function appendBoardSample(frameEvent) {
   }
   const entry = getOrCreateBoardHistory(board.boardId);
   entry.lastSeenAt = now;
-  const cutoff = now - MAX_GRAPH_POINTS_PER_SERIES * 1000;
+  const cutoff = now - MAX_GRAPH_HISTORY_MS;
 
   if (board.kind === 'fast') {
     entry.fast.push({
@@ -610,8 +612,8 @@ function appendBoardSample(frameEvent) {
       shockMm: Number(board.shockMm),
     });
     pruneSeries(entry.fast, cutoff);
-    if (entry.fast.length > MAX_GRAPH_POINTS_PER_SERIES) {
-      entry.fast.splice(0, entry.fast.length - MAX_GRAPH_POINTS_PER_SERIES);
+    if (entry.fast.length > MAX_POINTS_PER_SERIES) {
+      entry.fast.splice(0, entry.fast.length - MAX_POINTS_PER_SERIES);
     }
   } else if (board.kind === 'slow') {
     entry.slow.push({
@@ -625,8 +627,8 @@ function appendBoardSample(frameEvent) {
       brakeAmbientC: Number(board.brakeAmbientC),
     });
     pruneSeries(entry.slow, cutoff);
-    if (entry.slow.length > MAX_GRAPH_POINTS_PER_SERIES) {
-      entry.slow.splice(0, entry.slow.length - MAX_GRAPH_POINTS_PER_SERIES);
+    if (entry.slow.length > MAX_POINTS_PER_SERIES) {
+      entry.slow.splice(0, entry.slow.length - MAX_POINTS_PER_SERIES);
     }
   }
 }
@@ -761,7 +763,8 @@ function renderMultiLinePlot(svgElement, lines, options) {
         const cy = yScale(visible[0].v).toFixed(2);
         return `<circle cx="${cx}" cy="${cy}" r="2.5" fill="${line.color}"></circle>`;
       }
-      const points = visible
+      const renderPoints = downsampleForRender(visible, RENDER_POINT_LIMIT);
+      const points = renderPoints
         .map((p) => `${xScale(p.t).toFixed(2)},${yScale(p.v).toFixed(2)}`)
         .join(' ');
       return `<polyline points="${points}" fill="none" stroke="${line.color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></polyline>`;
@@ -776,7 +779,175 @@ function renderMultiLinePlot(svgElement, lines, options) {
     ${linesMarkup}
     ${yTickLabels}
     ${xLabelMarkup}
+    <rect class="hover-capture" x="${padLeft}" y="${padTop}" width="${plotWidth}" height="${plotHeight}" fill="transparent" pointer-events="all"></rect>
+    <g class="hover-layer"></g>
   `;
+}
+
+function downsampleForRender(points, maxOut) {
+  if (points.length <= maxOut) return points;
+  const stride = Math.ceil(points.length / maxOut);
+  const out = [];
+  for (let i = 0; i < points.length; i += stride) {
+    out.push(points[i]);
+  }
+  if (out[out.length - 1] !== points[points.length - 1]) {
+    out.push(points[points.length - 1]);
+  }
+  return out;
+}
+
+function findNearestPointIndex(points, t) {
+  if (!points.length) return -1;
+  let lo = 0;
+  let hi = points.length - 1;
+  if (t <= points[lo].t) return lo;
+  if (t >= points[hi].t) return hi;
+  while (lo < hi - 1) {
+    const mid = (lo + hi) >> 1;
+    if (points[mid].t <= t) lo = mid;
+    else hi = mid;
+  }
+  return (t - points[lo].t) < (points[hi].t - t) ? lo : hi;
+}
+
+function computePlotYRange(def) {
+  const opts = def.plotOptions || {};
+  const start = opts.now - opts.windowMs;
+  let yMin = Infinity;
+  let yMax = -Infinity;
+  for (const line of def.lines) {
+    for (const p of line.points) {
+      if (p.t < start) continue;
+      if (!Number.isFinite(p.v)) continue;
+      if (p.v < yMin) yMin = p.v;
+      if (p.v > yMax) yMax = p.v;
+    }
+  }
+  if (!Number.isFinite(yMin) || !Number.isFinite(yMax)) {
+    yMin = 0;
+    yMax = 1;
+  }
+  if (opts.yMinClamp != null && yMin > opts.yMinClamp) {
+    yMin = opts.yMinClamp;
+  }
+  if (yMin === yMax) {
+    const pad = Math.max(1, Math.abs(yMin) * 0.1);
+    yMin -= pad;
+    yMax += pad;
+  } else {
+    const pad = (yMax - yMin) * 0.08;
+    yMin -= pad;
+    yMax += pad;
+  }
+  return { yMin, yMax };
+}
+
+function applyHoverToCard(card, def, fraction) {
+  if (!card || !def) return;
+  const svg = card.querySelector('svg.graph-svg');
+  if (!svg) return;
+  const layer = svg.querySelector('.hover-layer');
+  if (!layer) return;
+  if (fraction == null || !Number.isFinite(fraction)) {
+    layer.innerHTML = '';
+    return;
+  }
+  const width = 720;
+  const height = 220;
+  const padLeft = 44;
+  const padRight = 12;
+  const padTop = 14;
+  const padBottom = 26;
+  const plotWidth = width - padLeft - padRight;
+  const plotHeight = height - padTop - padBottom;
+  const clamped = Math.max(0, Math.min(1, fraction));
+  const x = padLeft + clamped * plotWidth;
+  const opts = def.plotOptions || {};
+  const now = opts.now;
+  const windowMs = opts.windowMs;
+  const start = now - windowMs;
+  const t = start + clamped * windowMs;
+
+  const { yMin, yMax } = computePlotYRange(def);
+  const yScale = (v) => padTop + (1 - (v - yMin) / (yMax - yMin)) * plotHeight;
+
+  const readouts = [];
+  const dotsMarkup = [];
+  for (const line of def.lines) {
+    if (!line.points || !line.points.length) continue;
+    const idx = findNearestPointIndex(line.points, t);
+    if (idx < 0) continue;
+    const p = line.points[idx];
+    if (!Number.isFinite(p.v)) continue;
+    if (p.t < start - windowMs * 0.05 || p.t > now + windowMs * 0.05) continue;
+    const cx = padLeft + ((p.t - start) / windowMs) * plotWidth;
+    const cy = yScale(p.v);
+    dotsMarkup.push(`<circle cx="${cx.toFixed(2)}" cy="${cy.toFixed(2)}" r="3.2" fill="${line.color}" stroke="rgba(10,16,28,0.95)" stroke-width="1"></circle>`);
+    const valueLabel = def.legendFormatter ? def.legendFormatter(p.v) : p.v.toFixed(2);
+    readouts.push({ color: line.color, name: line.label, value: valueLabel });
+  }
+
+  const relSec = (t - now) / 1000;
+  const timeLabel = Math.abs(relSec) < 0.05 ? 'now' : `${relSec >= 0 ? '+' : ''}${relSec.toFixed(2)}s`;
+
+  const rowHeight = 14;
+  const tipPad = 6;
+  const charWidth = 6.6;
+  const rowLabels = [timeLabel, ...readouts.map((r) => `${r.name}: ${r.value}`)];
+  const maxLen = rowLabels.reduce((m, s) => Math.max(m, s.length), 0);
+  const tipW = Math.min(280, maxLen * charWidth + tipPad * 2 + 14);
+  const tipH = rowLabels.length * rowHeight + tipPad * 2;
+  let tipX = x + 10;
+  if (tipX + tipW > width - padRight - 2) {
+    tipX = x - 10 - tipW;
+  }
+  if (tipX < padLeft + 2) {
+    tipX = padLeft + 2;
+  }
+  let tipY = padTop + 4;
+  if (tipY + tipH > padTop + plotHeight - 2) {
+    tipY = padTop + plotHeight - 2 - tipH;
+  }
+
+  let textMarkup = `<rect x="${tipX.toFixed(1)}" y="${tipY.toFixed(1)}" width="${tipW.toFixed(1)}" height="${tipH.toFixed(1)}" rx="6" fill="rgba(10,16,28,0.92)" stroke="rgba(255,255,255,0.18)"></rect>`;
+  textMarkup += `<text x="${(tipX + tipPad + 2).toFixed(1)}" y="${(tipY + tipPad + 11).toFixed(1)}" fill="rgba(255,255,255,0.85)" font-size="11" font-family="SF Mono, Menlo, monospace">${escapeHtml(timeLabel)}</text>`;
+  for (let i = 0; i < readouts.length; i += 1) {
+    const r = readouts[i];
+    const ty = tipY + tipPad + 11 + (i + 1) * rowHeight;
+    textMarkup += `<circle cx="${(tipX + tipPad + 4).toFixed(1)}" cy="${(ty - 4).toFixed(1)}" r="3" fill="${r.color}"></circle>`;
+    textMarkup += `<text x="${(tipX + tipPad + 12).toFixed(1)}" y="${ty.toFixed(1)}" fill="rgba(255,255,255,0.92)" font-size="11" font-family="SF Mono, Menlo, monospace">${escapeHtml(`${r.name}: ${r.value}`)}</text>`;
+  }
+
+  layer.innerHTML = `
+    <line x1="${x.toFixed(2)}" y1="${padTop}" x2="${x.toFixed(2)}" y2="${(padTop + plotHeight).toFixed(1)}" stroke="rgba(255,255,255,0.35)" stroke-dasharray="3,3" stroke-width="1"></line>
+    ${dotsMarkup.join('')}
+    ${textMarkup}
+  `;
+}
+
+function attachHoverHandlers(card, def) {
+  const svg = card.querySelector('svg.graph-svg');
+  if (!svg) return;
+  const width = 720;
+  const padLeft = 44;
+  const padRight = 12;
+  const plotWidth = width - padLeft - padRight;
+
+  const handleMove = (event) => {
+    const rect = svg.getBoundingClientRect();
+    if (rect.width === 0) return;
+    const vbX = (event.clientX - rect.left) * (width / rect.width);
+    const fraction = (vbX - padLeft) / plotWidth;
+    state.graphs.hover = { plotId: def.id, fraction };
+    applyHoverToCard(card, def, fraction);
+  };
+  const handleLeave = () => {
+    state.graphs.hover = { plotId: null, fraction: null };
+    applyHoverToCard(card, def, null);
+  };
+  svg.addEventListener('mousemove', handleMove);
+  svg.addEventListener('mouseleave', handleLeave);
 }
 
 function buildLegend(lines, formatValue) {
@@ -887,11 +1058,13 @@ function buildPlotCard(def) {
     ${buildLegend(def.lines, def.legendFormatter)}
   `;
   renderMultiLinePlot(card.querySelector('svg'), def.lines, def.plotOptions);
+  card._plotDef = def;
   card.querySelector('.favorite-btn').addEventListener('click', (event) => {
     event.stopPropagation();
     toggleFavorite(def.id);
   });
   wireCardDrag(card);
+  attachHoverHandlers(card, def);
   return card;
 }
 
@@ -1148,6 +1321,18 @@ function renderGraphs() {
   renderFavoritesSection(favDefs);
   renderThroughputSection(throughputDefs);
   renderBoardSection(boardIds, boardDefsByBoard, now);
+  reapplyHoverAfterRender();
+}
+
+function reapplyHoverAfterRender() {
+  const hover = state.graphs.hover;
+  if (!hover || !hover.plotId || hover.fraction == null) return;
+  const escaped = (window.CSS && CSS.escape) ? CSS.escape(hover.plotId) : hover.plotId.replace(/"/g, '\\"');
+  const card = document.querySelector(`.graph-card[data-plot-id="${escaped}"]`);
+  if (!card) return;
+  const def = card._plotDef;
+  if (!def) return;
+  applyHoverToCard(card, def, hover.fraction);
 }
 
 function renderAll() {
