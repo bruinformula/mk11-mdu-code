@@ -2,6 +2,24 @@
 
 const MAX_LOG_ROWS = 400;
 const MAX_CHART_POINTS = 60;
+const MAX_GRAPH_POINTS_PER_SERIES = 1200;
+const MAX_THROUGHPUT_GRAPH_POINTS = 600;
+
+const SG_COLORS = ['#f7a35c', '#6ce0e6', '#b9c47a', '#e6b657', '#9badd9', '#ef7457'];
+const TIRE_COLORS = {
+  max: '#ef7457',
+  min: '#6ce0e6',
+  center: '#f7a35c',
+  ambient: '#b9c47a',
+};
+const BRAKE_COLORS = {
+  brakeC: '#ef7457',
+  brakeAmbientC: '#9badd9',
+};
+const SHOCK_COLOR = '#f7a35c';
+const RPM_COLOR = '#6ce0e6';
+const FPS_COLOR = '#f7a35c';
+const BPS_COLOR = '#6ce0e6';
 
 const api = window.mduDebug;
 
@@ -16,6 +34,15 @@ const state = {
     frames: [],
     bytes: [],
   },
+  graphs: {
+    activeTab: 'dashboard',
+    windowSeconds: 60,
+    boards: new Map(),
+    throughput: {
+      fps: [],
+      bps: [],
+    },
+  },
 };
 
 const pendingRenders = {
@@ -23,6 +50,7 @@ const pendingRenders = {
   diagnostics: false,
   boards: false,
   topIds: false,
+  graphs: false,
 };
 
 function scheduleRender(kind, fn) {
@@ -77,6 +105,19 @@ const elements = {
   logBody: document.getElementById('log-body'),
   themeToggle: document.getElementById('theme-toggle'),
   themeToggleLabel: document.querySelector('#theme-toggle .theme-toggle-label'),
+  tabButtons: Array.from(document.querySelectorAll('.tab-button')),
+  tabPanes: {
+    dashboard: document.getElementById('tab-dashboard'),
+    graphs: document.getElementById('tab-graphs'),
+  },
+  graphsWindowSelect: document.getElementById('graphs-window-select'),
+  graphsClearButton: document.getElementById('graphs-clear-button'),
+  graphsStatusLine: document.getElementById('graphs-status-line'),
+  graphFps: document.getElementById('graph-fps'),
+  graphFpsCurrent: document.getElementById('graph-fps-current'),
+  graphBps: document.getElementById('graph-bps'),
+  graphBpsCurrent: document.getElementById('graph-bps-current'),
+  boardGraphs: document.getElementById('board-graphs'),
 };
 
 function applyTheme(theme) {
@@ -509,6 +550,400 @@ function renderLoggingControls() {
   elements.stopLogButton.disabled = !logStatus.active;
 }
 
+function pruneSeries(series, cutoff) {
+  let removeCount = 0;
+  while (removeCount < series.length && series[removeCount].t < cutoff) {
+    removeCount += 1;
+  }
+  if (removeCount > 0) {
+    series.splice(0, removeCount);
+  }
+}
+
+function recordThroughputSample(now, diagnostics) {
+  const cutoff = now - MAX_THROUGHPUT_GRAPH_POINTS * 1000;
+  state.graphs.throughput.fps.push({ t: now, v: Number(diagnostics?.framesPerSecond) || 0 });
+  state.graphs.throughput.bps.push({ t: now, v: Number(diagnostics?.bytesPerSecond) || 0 });
+  pruneSeries(state.graphs.throughput.fps, cutoff);
+  pruneSeries(state.graphs.throughput.bps, cutoff);
+  if (state.graphs.throughput.fps.length > MAX_THROUGHPUT_GRAPH_POINTS) {
+    state.graphs.throughput.fps.splice(0, state.graphs.throughput.fps.length - MAX_THROUGHPUT_GRAPH_POINTS);
+  }
+  if (state.graphs.throughput.bps.length > MAX_THROUGHPUT_GRAPH_POINTS) {
+    state.graphs.throughput.bps.splice(0, state.graphs.throughput.bps.length - MAX_THROUGHPUT_GRAPH_POINTS);
+  }
+}
+
+function getOrCreateBoardHistory(boardId) {
+  let entry = state.graphs.boards.get(boardId);
+  if (!entry) {
+    entry = { fast: [], slow: [], lastSeenAt: 0 };
+    state.graphs.boards.set(boardId, entry);
+  }
+  return entry;
+}
+
+function appendBoardSample(frameEvent) {
+  if (!frameEvent || !frameEvent.ok || frameEvent.source !== 'board' || !frameEvent.board) {
+    return;
+  }
+  const board = frameEvent.board;
+  const now = frameEvent.timestamp ? Date.parse(frameEvent.timestamp) : Date.now();
+  if (!Number.isFinite(now)) {
+    return;
+  }
+  const entry = getOrCreateBoardHistory(board.boardId);
+  entry.lastSeenAt = now;
+  const cutoff = now - MAX_GRAPH_POINTS_PER_SERIES * 1000;
+
+  if (board.kind === 'fast') {
+    entry.fast.push({
+      t: now,
+      sg: Array.isArray(board.strainGaugesMv) ? board.strainGaugesMv.slice() : [],
+      shockMm: Number(board.shockMm),
+    });
+    pruneSeries(entry.fast, cutoff);
+    if (entry.fast.length > MAX_GRAPH_POINTS_PER_SERIES) {
+      entry.fast.splice(0, entry.fast.length - MAX_GRAPH_POINTS_PER_SERIES);
+    }
+  } else if (board.kind === 'slow') {
+    entry.slow.push({
+      t: now,
+      rpm: Number(board.rpm),
+      tireMax: Number(board.tireC?.max),
+      tireMin: Number(board.tireC?.min),
+      tireCtr: Number(board.tireC?.center),
+      tireAmb: Number(board.tireC?.ambient),
+      brakeC: Number(board.brakeC),
+      brakeAmbientC: Number(board.brakeAmbientC),
+    });
+    pruneSeries(entry.slow, cutoff);
+    if (entry.slow.length > MAX_GRAPH_POINTS_PER_SERIES) {
+      entry.slow.splice(0, entry.slow.length - MAX_GRAPH_POINTS_PER_SERIES);
+    }
+  }
+}
+
+function activeWindowSeconds() {
+  const value = Number(state.graphs.windowSeconds);
+  return Number.isFinite(value) && value > 0 ? value : 60;
+}
+
+function setActiveTab(tab) {
+  const next = tab === 'graphs' ? 'graphs' : 'dashboard';
+  state.graphs.activeTab = next;
+  for (const button of elements.tabButtons) {
+    const isActive = button.dataset.tab === next;
+    button.classList.toggle('active', isActive);
+    button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+  }
+  for (const [name, pane] of Object.entries(elements.tabPanes)) {
+    if (!pane) continue;
+    const isActive = name === next;
+    pane.classList.toggle('active', isActive);
+    if (isActive) {
+      pane.removeAttribute('hidden');
+    } else {
+      pane.setAttribute('hidden', '');
+    }
+  }
+  if (next === 'graphs') {
+    renderGraphs();
+  }
+}
+
+function pickWindowedPoints(series, now, windowMs) {
+  if (!series.length) return [];
+  const cutoff = now - windowMs;
+  let startIdx = 0;
+  while (startIdx < series.length && series[startIdx].t < cutoff) {
+    startIdx += 1;
+  }
+  const sliceStart = startIdx > 0 ? startIdx - 1 : 0;
+  return series.slice(sliceStart);
+}
+
+function renderMultiLinePlot(svgElement, lines, options) {
+  const width = 720;
+  const height = 220;
+  const padLeft = 44;
+  const padRight = 12;
+  const padTop = 14;
+  const padBottom = 26;
+  const plotWidth = width - padLeft - padRight;
+  const plotHeight = height - padTop - padBottom;
+
+  const now = options.now;
+  const windowMs = options.windowMs;
+  const start = now - windowMs;
+
+  const hasData = lines.some((line) => line.points && line.points.length > 0);
+  if (!hasData) {
+    svgElement.innerHTML = `
+      <rect x="0" y="0" width="${width}" height="${height}" rx="14" fill="rgba(255,255,255,0.02)"></rect>
+      <text x="${width / 2}" y="${height / 2}" text-anchor="middle" fill="rgba(255,255,255,0.45)" font-size="14" font-family="Avenir Next, sans-serif">${escapeHtml(options.emptyText || 'No samples yet')}</text>
+    `;
+    return;
+  }
+
+  let yMin = Infinity;
+  let yMax = -Infinity;
+  for (const line of lines) {
+    for (const point of line.points) {
+      if (point.t < start) continue;
+      if (!Number.isFinite(point.v)) continue;
+      if (point.v < yMin) yMin = point.v;
+      if (point.v > yMax) yMax = point.v;
+    }
+  }
+  if (!Number.isFinite(yMin) || !Number.isFinite(yMax)) {
+    yMin = 0;
+    yMax = 1;
+  }
+  if (options.yMinClamp != null && yMin > options.yMinClamp) {
+    yMin = options.yMinClamp;
+  }
+  if (yMin === yMax) {
+    const pad = Math.max(1, Math.abs(yMin) * 0.1);
+    yMin -= pad;
+    yMax += pad;
+  } else {
+    const pad = (yMax - yMin) * 0.08;
+    yMin -= pad;
+    yMax += pad;
+  }
+
+  const xScale = (t) => padLeft + ((t - start) / windowMs) * plotWidth;
+  const yScale = (v) => padTop + (1 - (v - yMin) / (yMax - yMin)) * plotHeight;
+
+  const tickCount = 4;
+  const yTicks = [];
+  for (let i = 0; i <= tickCount; i += 1) {
+    const value = yMin + ((yMax - yMin) * i) / tickCount;
+    yTicks.push({ value, y: yScale(value) });
+  }
+
+  const yTickLines = yTicks
+    .map(({ y }) => `<line x1="${padLeft}" y1="${y.toFixed(1)}" x2="${(width - padRight).toFixed(1)}" y2="${y.toFixed(1)}" stroke="rgba(255,255,255,0.07)" stroke-width="1"></line>`)
+    .join('');
+
+  const yTickLabels = yTicks
+    .map(({ value, y }) => {
+      const label = options.formatY ? options.formatY(value) : value.toFixed(1);
+      return `<text x="${padLeft - 6}" y="${(y + 4).toFixed(1)}" text-anchor="end" fill="rgba(255,255,255,0.55)" font-size="10" font-family="SF Mono, Menlo, monospace">${escapeHtml(label)}</text>`;
+    })
+    .join('');
+
+  const windowSec = windowMs / 1000;
+  const xLabels = [`-${windowSec.toFixed(0)}s`, `-${(windowSec / 2).toFixed(0)}s`, 'now'];
+  const xLabelMarkup = xLabels
+    .map((label, idx) => {
+      const x = padLeft + (idx / (xLabels.length - 1)) * plotWidth;
+      return `<text x="${x.toFixed(1)}" y="${(height - 8).toFixed(1)}" text-anchor="middle" fill="rgba(255,255,255,0.55)" font-size="10" font-family="SF Mono, Menlo, monospace">${escapeHtml(label)}</text>`;
+    })
+    .join('');
+
+  const linesMarkup = lines
+    .map((line) => {
+      const visible = line.points.filter((p) => p.t >= start - windowMs * 0.05 && Number.isFinite(p.v));
+      if (visible.length === 0) {
+        return '';
+      }
+      if (visible.length === 1) {
+        const cx = xScale(visible[0].t).toFixed(2);
+        const cy = yScale(visible[0].v).toFixed(2);
+        return `<circle cx="${cx}" cy="${cy}" r="2.5" fill="${line.color}"></circle>`;
+      }
+      const points = visible
+        .map((p) => `${xScale(p.t).toFixed(2)},${yScale(p.v).toFixed(2)}`)
+        .join(' ');
+      return `<polyline points="${points}" fill="none" stroke="${line.color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></polyline>`;
+    })
+    .join('');
+
+  svgElement.innerHTML = `
+    <rect x="0" y="0" width="${width}" height="${height}" rx="14" fill="rgba(255,255,255,0.02)"></rect>
+    ${yTickLines}
+    <line x1="${padLeft}" y1="${padTop}" x2="${padLeft}" y2="${padTop + plotHeight}" stroke="rgba(255,255,255,0.18)" stroke-width="1"></line>
+    <line x1="${padLeft}" y1="${(padTop + plotHeight).toFixed(1)}" x2="${(width - padRight).toFixed(1)}" y2="${(padTop + plotHeight).toFixed(1)}" stroke="rgba(255,255,255,0.18)" stroke-width="1"></line>
+    ${linesMarkup}
+    ${yTickLabels}
+    ${xLabelMarkup}
+  `;
+}
+
+function buildLegend(lines, formatValue) {
+  return `
+    <div class="graph-legend">
+      ${lines
+        .map((line) => {
+          const last = line.points.length > 0 ? line.points[line.points.length - 1].v : null;
+          const valueLabel = last == null || !Number.isFinite(last)
+            ? '--'
+            : formatValue
+              ? formatValue(last)
+              : last.toFixed(2);
+          return `
+            <span class="legend-item">
+              <span class="legend-swatch" style="background:${line.color}"></span>
+              <span>${escapeHtml(line.label)}</span>
+              <span class="legend-value">${escapeHtml(valueLabel)}</span>
+            </span>
+          `;
+        })
+        .join('')}
+    </div>
+  `;
+}
+
+function renderThroughputGraphs(now, windowMs) {
+  const fpsPoints = pickWindowedPoints(state.graphs.throughput.fps, now, windowMs);
+  const bpsPoints = pickWindowedPoints(state.graphs.throughput.bps, now, windowMs);
+
+  const latestFps = fpsPoints.length ? fpsPoints[fpsPoints.length - 1].v : 0;
+  const latestBps = bpsPoints.length ? bpsPoints[bpsPoints.length - 1].v : 0;
+  elements.graphFpsCurrent.textContent = `${formatRate(latestFps)} fps`;
+  elements.graphBpsCurrent.textContent = `${formatBytes(latestBps)}/s`;
+
+  renderMultiLinePlot(elements.graphFps, [{ label: 'fps', color: FPS_COLOR, points: fpsPoints.map((p) => ({ t: p.t, v: p.v })) }], {
+    now,
+    windowMs,
+    yMinClamp: 0,
+    formatY: (v) => v.toFixed(v >= 100 ? 0 : 1),
+    emptyText: 'No throughput samples yet',
+  });
+
+  renderMultiLinePlot(elements.graphBps, [{ label: 'bytes/s', color: BPS_COLOR, points: bpsPoints.map((p) => ({ t: p.t, v: p.v })) }], {
+    now,
+    windowMs,
+    yMinClamp: 0,
+    formatY: (v) => formatBytes(v),
+    emptyText: 'No throughput samples yet',
+  });
+}
+
+function lineFromFast(history, accessor, color, label) {
+  return {
+    label,
+    color,
+    points: history.map((row) => ({ t: row.t, v: accessor(row) })),
+  };
+}
+
+function renderBoardGraphCard(boardId, history, now, windowMs) {
+  const fastPoints = pickWindowedPoints(history.fast, now, windowMs);
+  const slowPoints = pickWindowedPoints(history.slow, now, windowMs);
+  const ageMs = history.lastSeenAt ? now - history.lastSeenAt : null;
+
+  const sgLines = SG_COLORS.map((color, idx) => ({
+    label: `SG${idx + 1}`,
+    color,
+    points: fastPoints.map((row) => ({ t: row.t, v: Number(row.sg?.[idx]) })),
+  }));
+
+  const shockLines = [
+    { label: 'Shock', color: SHOCK_COLOR, points: fastPoints.map((row) => ({ t: row.t, v: row.shockMm })) },
+  ];
+
+  const rpmLines = [
+    { label: 'RPM', color: RPM_COLOR, points: slowPoints.map((row) => ({ t: row.t, v: row.rpm })) },
+  ];
+
+  const tireLines = [
+    { label: 'Max', color: TIRE_COLORS.max, points: slowPoints.map((row) => ({ t: row.t, v: row.tireMax })) },
+    { label: 'Min', color: TIRE_COLORS.min, points: slowPoints.map((row) => ({ t: row.t, v: row.tireMin })) },
+    { label: 'Ctr', color: TIRE_COLORS.center, points: slowPoints.map((row) => ({ t: row.t, v: row.tireCtr })) },
+    { label: 'Amb', color: TIRE_COLORS.ambient, points: slowPoints.map((row) => ({ t: row.t, v: row.tireAmb })) },
+  ];
+
+  const brakeLines = [
+    { label: 'Brake', color: BRAKE_COLORS.brakeC, points: slowPoints.map((row) => ({ t: row.t, v: row.brakeC })) },
+    { label: 'Brake Amb', color: BRAKE_COLORS.brakeAmbientC, points: slowPoints.map((row) => ({ t: row.t, v: row.brakeAmbientC })) },
+  ];
+
+  const card = document.createElement('article');
+  card.className = 'board-graph-card';
+  card.dataset.boardId = String(boardId);
+  card.innerHTML = `
+    <header>
+      <strong>Board ${boardId}</strong>
+      <span class="board-age">${escapeHtml(formatBoardAge(ageMs))} · ${history.fast.length} fast / ${history.slow.length} slow</span>
+    </header>
+    <div class="board-graph-grid">
+      <div class="graph-card">
+        <div class="graph-header"><h3>Strain Gauges (mV)</h3><strong>${fastPoints.length} pts</strong></div>
+        <svg class="graph-svg" data-plot="sg" viewBox="0 0 720 220" preserveAspectRatio="none"></svg>
+        ${buildLegend(sgLines, (v) => `${v.toFixed(0)} mV`)}
+      </div>
+      <div class="graph-card">
+        <div class="graph-header"><h3>Shock (mm)</h3><strong>${fastPoints.length} pts</strong></div>
+        <svg class="graph-svg" data-plot="shock" viewBox="0 0 720 220" preserveAspectRatio="none"></svg>
+        ${buildLegend(shockLines, (v) => `${v.toFixed(2)} mm`)}
+      </div>
+      <div class="graph-card">
+        <div class="graph-header"><h3>RPM</h3><strong>${slowPoints.length} pts</strong></div>
+        <svg class="graph-svg" data-plot="rpm" viewBox="0 0 720 220" preserveAspectRatio="none"></svg>
+        ${buildLegend(rpmLines, (v) => v.toFixed(0))}
+      </div>
+      <div class="graph-card">
+        <div class="graph-header"><h3>Tire Temps (°C)</h3><strong>${slowPoints.length} pts</strong></div>
+        <svg class="graph-svg" data-plot="tire" viewBox="0 0 720 220" preserveAspectRatio="none"></svg>
+        ${buildLegend(tireLines, (v) => `${v.toFixed(1)} °C`)}
+      </div>
+      <div class="graph-card">
+        <div class="graph-header"><h3>Brake Temps (°C)</h3><strong>${slowPoints.length} pts</strong></div>
+        <svg class="graph-svg" data-plot="brake" viewBox="0 0 720 220" preserveAspectRatio="none"></svg>
+        ${buildLegend(brakeLines, (v) => `${v.toFixed(1)} °C`)}
+      </div>
+    </div>
+  `;
+
+  renderMultiLinePlot(card.querySelector('[data-plot="sg"]'), sgLines, {
+    now, windowMs, formatY: (v) => `${v.toFixed(0)}`, emptyText: 'Waiting for fast frames',
+  });
+  renderMultiLinePlot(card.querySelector('[data-plot="shock"]'), shockLines, {
+    now, windowMs, formatY: (v) => v.toFixed(2), emptyText: 'Waiting for fast frames',
+  });
+  renderMultiLinePlot(card.querySelector('[data-plot="rpm"]'), rpmLines, {
+    now, windowMs, yMinClamp: 0, formatY: (v) => v.toFixed(0), emptyText: 'Waiting for slow frames',
+  });
+  renderMultiLinePlot(card.querySelector('[data-plot="tire"]'), tireLines, {
+    now, windowMs, formatY: (v) => v.toFixed(1), emptyText: 'Waiting for slow frames',
+  });
+  renderMultiLinePlot(card.querySelector('[data-plot="brake"]'), brakeLines, {
+    now, windowMs, formatY: (v) => v.toFixed(1), emptyText: 'Waiting for slow frames',
+  });
+
+  return card;
+}
+
+function renderGraphs() {
+  if (state.graphs.activeTab !== 'graphs') {
+    return;
+  }
+  const now = Date.now();
+  const windowMs = activeWindowSeconds() * 1000;
+
+  renderThroughputGraphs(now, windowMs);
+
+  const boardIds = [...state.graphs.boards.keys()].sort((a, b) => a - b);
+  if (boardIds.length === 0) {
+    elements.boardGraphs.innerHTML = '<p class="empty-state">No board telemetry decoded yet.</p>';
+    elements.graphsStatusLine.textContent = 'Waiting for board telemetry frames.';
+    return;
+  }
+
+  const totalFast = boardIds.reduce((sum, id) => sum + state.graphs.boards.get(id).fast.length, 0);
+  const totalSlow = boardIds.reduce((sum, id) => sum + state.graphs.boards.get(id).slow.length, 0);
+  elements.graphsStatusLine.textContent = `Tracking ${boardIds.length} board${boardIds.length === 1 ? '' : 's'} · ${totalFast} fast / ${totalSlow} slow samples buffered · window ${activeWindowSeconds()}s`;
+
+  const fragment = document.createDocumentFragment();
+  for (const id of boardIds) {
+    fragment.appendChild(renderBoardGraphCard(id, state.graphs.boards.get(id), now, windowMs));
+  }
+  elements.boardGraphs.replaceChildren(fragment);
+}
+
 function renderAll() {
   renderConnection();
   renderDiagnostics();
@@ -516,6 +951,7 @@ function renderAll() {
   renderTopIds();
   renderLog();
   renderLoggingControls();
+  renderGraphs();
 }
 
 function addLogRow(entry) {
@@ -574,7 +1010,30 @@ function wireUi() {
   elements.clearSessionButton.addEventListener('click', async () => {
     state.charts.frames = [];
     state.charts.bytes = [];
+    state.graphs.boards = new Map();
+    state.graphs.throughput.fps = [];
+    state.graphs.throughput.bps = [];
+    scheduleRender('graphs', renderGraphs);
     await api.clearSession();
+  });
+
+  for (const button of elements.tabButtons) {
+    button.addEventListener('click', () => setActiveTab(button.dataset.tab));
+  }
+
+  elements.graphsWindowSelect.addEventListener('change', (event) => {
+    const next = Number(event.target.value);
+    if (Number.isFinite(next) && next > 0) {
+      state.graphs.windowSeconds = next;
+      renderGraphs();
+    }
+  });
+
+  elements.graphsClearButton.addEventListener('click', () => {
+    state.graphs.boards = new Map();
+    state.graphs.throughput.fps = [];
+    state.graphs.throughput.bps = [];
+    renderGraphs();
   });
 
   elements.clearLogButton.addEventListener('click', () => {
@@ -619,13 +1078,16 @@ function wireEvents() {
     state.diagnostics = diagnostics;
     appendChartValue(state.charts.frames, diagnostics.framesPerSecond ?? 0);
     appendChartValue(state.charts.bytes, diagnostics.bytesPerSecond ?? 0);
+    recordThroughputSample(Date.now(), diagnostics);
     scheduleRender('diagnostics', renderDiagnostics);
     scheduleRender('boards', renderBoards);
     scheduleRender('topIds', renderTopIds);
+    scheduleRender('graphs', renderGraphs);
   });
 
   api.onFrame((frame) => {
     addLogRow(frame);
+    appendBoardSample(frame);
   });
 
   api.onRuntime((runtime) => {
@@ -649,9 +1111,15 @@ async function init() {
 
   appendChartValue(state.charts.frames, state.diagnostics?.framesPerSecond ?? 0);
   appendChartValue(state.charts.bytes, state.diagnostics?.bytesPerSecond ?? 0);
+  recordThroughputSample(Date.now(), state.diagnostics);
 
   wireUi();
   wireEvents();
+
+  if (elements.graphsWindowSelect) {
+    elements.graphsWindowSelect.value = String(state.graphs.windowSeconds);
+  }
+  setActiveTab(state.graphs.activeTab);
   renderAll();
 }
 

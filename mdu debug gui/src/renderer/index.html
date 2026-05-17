@@ -80,6 +80,12 @@
       </p>
     </section>
 
+    <nav class="tab-nav panel stagger-3" role="tablist">
+      <button class="tab-button active" data-tab="dashboard" type="button" role="tab" aria-selected="true">Dashboard</button>
+      <button class="tab-button" data-tab="graphs" type="button" role="tab" aria-selected="false">Graphs</button>
+    </nav>
+
+    <section class="tab-pane active" id="tab-dashboard" role="tabpanel">
     <section class="dashboard-grid">
       <section class="panel metrics-panel stagger-3">
         <div class="panel-heading">
@@ -217,6 +223,63 @@
             </thead>
             <tbody id="log-body"></tbody>
           </table>
+        </div>
+      </section>
+    </section>
+    </section>
+
+    <section class="tab-pane" id="tab-graphs" role="tabpanel" hidden>
+      <section class="panel graphs-controls stagger-3">
+        <div class="panel-heading">
+          <h2>Live Telemetry Graphs</h2>
+          <p>Time-series view of decoded per-board telemetry. Each board renders independently as frames arrive.</p>
+        </div>
+        <div class="graphs-toolbar">
+          <label class="field-group field-compact">
+            <span>Time window</span>
+            <select id="graphs-window-select">
+              <option value="30">Last 30s</option>
+              <option value="60" selected>Last 60s</option>
+              <option value="120">Last 2m</option>
+              <option value="300">Last 5m</option>
+              <option value="600">Last 10m</option>
+            </select>
+          </label>
+          <button id="graphs-clear-button" class="ghost-button" type="button">Clear graph history</button>
+          <p class="helper-text" id="graphs-status-line">Waiting for board telemetry frames.</p>
+        </div>
+      </section>
+
+      <section class="panel graphs-panel stagger-4">
+        <div class="panel-heading">
+          <h2>Throughput</h2>
+          <p>Host-side frame and byte rates over the selected window.</p>
+        </div>
+        <div class="graphs-grid">
+          <article class="graph-card">
+            <div class="graph-header">
+              <h3>Frames / sec</h3>
+              <strong id="graph-fps-current">0.0</strong>
+            </div>
+            <svg class="graph-svg" id="graph-fps" viewBox="0 0 720 220" preserveAspectRatio="none"></svg>
+          </article>
+          <article class="graph-card">
+            <div class="graph-header">
+              <h3>Bytes / sec</h3>
+              <strong id="graph-bps-current">0 B/s</strong>
+            </div>
+            <svg class="graph-svg" id="graph-bps" viewBox="0 0 720 220" preserveAspectRatio="none"></svg>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel graphs-panel stagger-5">
+        <div class="panel-heading">
+          <h2>Per-Board Live Plots</h2>
+          <p>Strain gauges and shock from Fast frames; RPM, tire/brake temperatures from Slow frames.</p>
+        </div>
+        <div id="board-graphs" class="board-graphs">
+          <p class="empty-state">No board telemetry decoded yet.</p>
         </div>
       </section>
     </section>

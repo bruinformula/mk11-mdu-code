@@ -656,6 +656,185 @@ tbody tr:hover {
   box-shadow: 0 0 0 3px rgba(154, 106, 29, 0.15);
 }
 
+.tab-nav {
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 999px;
+  width: max-content;
+  max-width: 100%;
+}
+
+.tab-button {
+  min-height: 40px;
+  padding: 0 22px;
+  border-radius: 999px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--ink-soft);
+  font-weight: 700;
+  font-size: 0.92rem;
+  letter-spacing: 0.04em;
+}
+
+.tab-button.active {
+  background: linear-gradient(135deg, #cf6d2f, #9f4317);
+  color: white;
+  box-shadow: 0 8px 22px rgba(159, 67, 23, 0.24);
+}
+
+.tab-button:not(.active):hover {
+  background: var(--button-secondary-bg);
+  color: var(--ink);
+}
+
+.tab-pane {
+  display: grid;
+  gap: 20px;
+}
+
+.tab-pane[hidden] {
+  display: none;
+}
+
+.graphs-controls {
+  padding: 24px 28px;
+  display: grid;
+  gap: 18px;
+}
+
+.graphs-toolbar {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.graphs-toolbar .helper-text {
+  margin: 0;
+  flex: 1 1 320px;
+}
+
+.graphs-panel {
+  padding: 24px 28px;
+}
+
+.graphs-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.graph-card {
+  padding: 18px;
+  border-radius: var(--radius-md);
+  background: var(--chart-card-bg);
+  color: var(--chart-card-ink);
+  display: grid;
+  gap: 12px;
+}
+
+.graph-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.graph-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-family: "Avenir Next Condensed", "Avenir Next", sans-serif;
+  letter-spacing: 0.04em;
+  color: var(--chart-card-muted);
+  text-transform: uppercase;
+}
+
+.graph-header strong {
+  font-family: "SF Mono", "Menlo", monospace;
+  font-size: 1.05rem;
+}
+
+.graph-svg {
+  width: 100%;
+  height: 220px;
+  display: block;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.graph-empty {
+  margin: 0;
+  padding: 30px;
+  color: var(--chart-card-muted);
+  font-style: italic;
+  text-align: center;
+}
+
+.graph-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: 0.8rem;
+  color: var(--chart-card-muted);
+}
+
+.graph-legend .legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.graph-legend .legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+.graph-legend .legend-value {
+  font-family: "SF Mono", "Menlo", monospace;
+  color: var(--chart-card-ink);
+}
+
+.board-graphs {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 18px;
+}
+
+.board-graph-card {
+  padding: 18px;
+  border-radius: var(--radius-md);
+  background: var(--board-card-bg);
+  border: 1px solid var(--board-card-border);
+  display: grid;
+  gap: 14px;
+}
+
+.board-graph-card header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.board-graph-card header strong {
+  font-size: 1.2rem;
+  letter-spacing: 0.02em;
+}
+
+.board-graph-card header .board-age {
+  font-size: 0.86rem;
+  color: var(--ink-soft);
+}
+
+.board-graph-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
 @media (max-width: 1280px) {
   .dashboard-grid {
     grid-template-columns: 1fr;
@@ -663,6 +842,11 @@ tbody tr:hover {
 
   .metrics-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .graphs-grid,
+  .board-graph-grid {
+    grid-template-columns: 1fr;
   }
 }
 
