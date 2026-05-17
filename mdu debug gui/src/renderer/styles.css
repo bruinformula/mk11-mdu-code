@@ -732,13 +732,83 @@ tbody tr:hover {
   color: var(--chart-card-ink);
   display: grid;
   gap: 12px;
+  position: relative;
+  transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+}
+
+.graph-card[draggable="true"] {
+  cursor: grab;
+}
+
+.graph-card.dragging {
+  opacity: 0.45;
+  box-shadow: 0 0 0 2px var(--accent);
+  cursor: grabbing;
+}
+
+.graphs-drop-zone.drop-target {
+  outline: 1px dashed var(--accent);
+  outline-offset: 6px;
+  border-radius: var(--radius-md);
 }
 
 .graph-header {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
   gap: 12px;
+}
+
+.graph-card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.graph-card-actions strong {
+  font-family: "SF Mono", "Menlo", monospace;
+  font-size: 1.05rem;
+}
+
+.favorite-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: var(--chart-card-muted);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 0;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.favorite-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--chart-card-ink);
+}
+
+.favorite-btn.is-favorite {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: rgba(247, 163, 92, 0.12);
+}
+
+.drag-handle {
+  user-select: none;
+  cursor: grab;
+  color: var(--chart-card-muted);
+  font-size: 0.95rem;
+  letter-spacing: -2px;
+  padding: 0 2px;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
 }
 
 .graph-header h3 {

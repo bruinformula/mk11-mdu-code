@@ -252,28 +252,23 @@
 
       <section class="panel graphs-panel stagger-4">
         <div class="panel-heading">
-          <h2>Throughput</h2>
-          <p>Host-side frame and byte rates over the selected window.</p>
+          <h2>Favorites</h2>
+          <p>Star any graph below to pin it here. Drag cards to reorder.</p>
         </div>
-        <div class="graphs-grid">
-          <article class="graph-card">
-            <div class="graph-header">
-              <h3>Frames / sec</h3>
-              <strong id="graph-fps-current">0.0</strong>
-            </div>
-            <svg class="graph-svg" id="graph-fps" viewBox="0 0 720 220" preserveAspectRatio="none"></svg>
-          </article>
-          <article class="graph-card">
-            <div class="graph-header">
-              <h3>Bytes / sec</h3>
-              <strong id="graph-bps-current">0 B/s</strong>
-            </div>
-            <svg class="graph-svg" id="graph-bps" viewBox="0 0 720 220" preserveAspectRatio="none"></svg>
-          </article>
+        <div id="favorites-grid" class="graphs-grid graphs-drop-zone" data-drop-key="favorites">
+          <p class="empty-state">Click the star on any graph to pin it here.</p>
         </div>
       </section>
 
       <section class="panel graphs-panel stagger-5">
+        <div class="panel-heading">
+          <h2>Throughput</h2>
+          <p>Host-side frame and byte rates over the selected window.</p>
+        </div>
+        <div id="throughput-grid" class="graphs-grid graphs-drop-zone" data-drop-key="throughput"></div>
+      </section>
+
+      <section class="panel graphs-panel stagger-6">
         <div class="panel-heading">
           <h2>Per-Board Live Plots</h2>
           <p>Strain gauges and shock from Fast frames; RPM, tire/brake temperatures from Slow frames.</p>

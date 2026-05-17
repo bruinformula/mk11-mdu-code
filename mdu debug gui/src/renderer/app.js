@@ -4,6 +4,8 @@ const MAX_LOG_ROWS = 400;
 const MAX_CHART_POINTS = 60;
 const MAX_GRAPH_POINTS_PER_SERIES = 1200;
 const MAX_THROUGHPUT_GRAPH_POINTS = 600;
+const GRAPH_FAVORITES_KEY = 'mdu-graph-favorites';
+const GRAPH_ORDER_KEY = 'mdu-graph-order';
 
 const SG_COLORS = ['#f7a35c', '#6ce0e6', '#b9c47a', '#e6b657', '#9badd9', '#ef7457'];
 const TIRE_COLORS = {
@@ -42,6 +44,13 @@ const state = {
       fps: [],
       bps: [],
     },
+    favorites: new Set(),
+    order: {
+      favorites: [],
+      throughput: [],
+      board: {},
+    },
+    dragging: false,
   },
 };
 
@@ -113,10 +122,8 @@ const elements = {
   graphsWindowSelect: document.getElementById('graphs-window-select'),
   graphsClearButton: document.getElementById('graphs-clear-button'),
   graphsStatusLine: document.getElementById('graphs-status-line'),
-  graphFps: document.getElementById('graph-fps'),
-  graphFpsCurrent: document.getElementById('graph-fps-current'),
-  graphBps: document.getElementById('graph-bps'),
-  graphBpsCurrent: document.getElementById('graph-bps-current'),
+  favoritesGrid: document.getElementById('favorites-grid'),
+  throughputGrid: document.getElementById('throughput-grid'),
   boardGraphs: document.getElementById('board-graphs'),
 };
 
@@ -796,152 +803,351 @@ function buildLegend(lines, formatValue) {
   `;
 }
 
-function renderThroughputGraphs(now, windowMs) {
-  const fpsPoints = pickWindowedPoints(state.graphs.throughput.fps, now, windowMs);
-  const bpsPoints = pickWindowedPoints(state.graphs.throughput.bps, now, windowMs);
-
-  const latestFps = fpsPoints.length ? fpsPoints[fpsPoints.length - 1].v : 0;
-  const latestBps = bpsPoints.length ? bpsPoints[bpsPoints.length - 1].v : 0;
-  elements.graphFpsCurrent.textContent = `${formatRate(latestFps)} fps`;
-  elements.graphBpsCurrent.textContent = `${formatBytes(latestBps)}/s`;
-
-  renderMultiLinePlot(elements.graphFps, [{ label: 'fps', color: FPS_COLOR, points: fpsPoints.map((p) => ({ t: p.t, v: p.v })) }], {
-    now,
-    windowMs,
-    yMinClamp: 0,
-    formatY: (v) => v.toFixed(v >= 100 ? 0 : 1),
-    emptyText: 'No throughput samples yet',
-  });
-
-  renderMultiLinePlot(elements.graphBps, [{ label: 'bytes/s', color: BPS_COLOR, points: bpsPoints.map((p) => ({ t: p.t, v: p.v })) }], {
-    now,
-    windowMs,
-    yMinClamp: 0,
-    formatY: (v) => formatBytes(v),
-    emptyText: 'No throughput samples yet',
-  });
+function loadGraphPrefs() {
+  try {
+    const favRaw = localStorage.getItem(GRAPH_FAVORITES_KEY);
+    if (favRaw) {
+      const arr = JSON.parse(favRaw);
+      if (Array.isArray(arr)) {
+        state.graphs.favorites = new Set(arr.map(String));
+      }
+    }
+    const orderRaw = localStorage.getItem(GRAPH_ORDER_KEY);
+    if (orderRaw) {
+      const parsed = JSON.parse(orderRaw);
+      if (parsed && typeof parsed === 'object') {
+        if (Array.isArray(parsed.favorites)) state.graphs.order.favorites = parsed.favorites.map(String);
+        if (Array.isArray(parsed.throughput)) state.graphs.order.throughput = parsed.throughput.map(String);
+        if (parsed.board && typeof parsed.board === 'object') {
+          state.graphs.order.board = {};
+          for (const [k, v] of Object.entries(parsed.board)) {
+            if (Array.isArray(v)) state.graphs.order.board[k] = v.map(String);
+          }
+        }
+      }
+    }
+  } catch (error) {
+    // ignore
+  }
 }
 
-function lineFromFast(history, accessor, color, label) {
-  return {
-    label,
-    color,
-    points: history.map((row) => ({ t: row.t, v: accessor(row) })),
-  };
+function saveGraphPrefs() {
+  try {
+    localStorage.setItem(GRAPH_FAVORITES_KEY, JSON.stringify([...state.graphs.favorites]));
+    localStorage.setItem(GRAPH_ORDER_KEY, JSON.stringify(state.graphs.order));
+  } catch (error) {
+    // ignore
+  }
 }
 
-function renderBoardGraphCard(boardId, history, now, windowMs) {
-  const fastPoints = pickWindowedPoints(history.fast, now, windowMs);
-  const slowPoints = pickWindowedPoints(history.slow, now, windowMs);
-  const ageMs = history.lastSeenAt ? now - history.lastSeenAt : null;
+function toggleFavorite(plotId) {
+  if (state.graphs.favorites.has(plotId)) {
+    state.graphs.favorites.delete(plotId);
+    state.graphs.order.favorites = state.graphs.order.favorites.filter((id) => id !== plotId);
+  } else {
+    state.graphs.favorites.add(plotId);
+    if (!state.graphs.order.favorites.includes(plotId)) {
+      state.graphs.order.favorites.push(plotId);
+    }
+  }
+  saveGraphPrefs();
+  renderGraphs();
+}
 
-  const sgLines = SG_COLORS.map((color, idx) => ({
-    label: `SG${idx + 1}`,
-    color,
-    points: fastPoints.map((row) => ({ t: row.t, v: Number(row.sg?.[idx]) })),
-  }));
+function applyOrderedSort(defs, order) {
+  if (!order || order.length === 0) return defs.slice();
+  const rank = new Map();
+  order.forEach((id, idx) => rank.set(id, idx));
+  const known = [];
+  const unknown = [];
+  for (const def of defs) {
+    if (rank.has(def.id)) known.push(def);
+    else unknown.push(def);
+  }
+  known.sort((a, b) => rank.get(a.id) - rank.get(b.id));
+  return [...known, ...unknown];
+}
 
-  const shockLines = [
-    { label: 'Shock', color: SHOCK_COLOR, points: fastPoints.map((row) => ({ t: row.t, v: row.shockMm })) },
-  ];
-
-  const rpmLines = [
-    { label: 'RPM', color: RPM_COLOR, points: slowPoints.map((row) => ({ t: row.t, v: row.rpm })) },
-  ];
-
-  const tireLines = [
-    { label: 'Max', color: TIRE_COLORS.max, points: slowPoints.map((row) => ({ t: row.t, v: row.tireMax })) },
-    { label: 'Min', color: TIRE_COLORS.min, points: slowPoints.map((row) => ({ t: row.t, v: row.tireMin })) },
-    { label: 'Ctr', color: TIRE_COLORS.center, points: slowPoints.map((row) => ({ t: row.t, v: row.tireCtr })) },
-    { label: 'Amb', color: TIRE_COLORS.ambient, points: slowPoints.map((row) => ({ t: row.t, v: row.tireAmb })) },
-  ];
-
-  const brakeLines = [
-    { label: 'Brake', color: BRAKE_COLORS.brakeC, points: slowPoints.map((row) => ({ t: row.t, v: row.brakeC })) },
-    { label: 'Brake Amb', color: BRAKE_COLORS.brakeAmbientC, points: slowPoints.map((row) => ({ t: row.t, v: row.brakeAmbientC })) },
-  ];
-
+function buildPlotCard(def) {
   const card = document.createElement('article');
-  card.className = 'board-graph-card';
-  card.dataset.boardId = String(boardId);
+  card.className = 'graph-card';
+  card.dataset.plotId = def.id;
+  card.draggable = true;
+  const isFav = state.graphs.favorites.has(def.id);
   card.innerHTML = `
-    <header>
-      <strong>Board ${boardId}</strong>
-      <span class="board-age">${escapeHtml(formatBoardAge(ageMs))} · ${history.fast.length} fast / ${history.slow.length} slow</span>
-    </header>
-    <div class="board-graph-grid">
-      <div class="graph-card">
-        <div class="graph-header"><h3>Strain Gauges (mV)</h3><strong>${fastPoints.length} pts</strong></div>
-        <svg class="graph-svg" data-plot="sg" viewBox="0 0 720 220" preserveAspectRatio="none"></svg>
-        ${buildLegend(sgLines, (v) => `${v.toFixed(0)} mV`)}
-      </div>
-      <div class="graph-card">
-        <div class="graph-header"><h3>Shock (mm)</h3><strong>${fastPoints.length} pts</strong></div>
-        <svg class="graph-svg" data-plot="shock" viewBox="0 0 720 220" preserveAspectRatio="none"></svg>
-        ${buildLegend(shockLines, (v) => `${v.toFixed(2)} mm`)}
-      </div>
-      <div class="graph-card">
-        <div class="graph-header"><h3>RPM</h3><strong>${slowPoints.length} pts</strong></div>
-        <svg class="graph-svg" data-plot="rpm" viewBox="0 0 720 220" preserveAspectRatio="none"></svg>
-        ${buildLegend(rpmLines, (v) => v.toFixed(0))}
-      </div>
-      <div class="graph-card">
-        <div class="graph-header"><h3>Tire Temps (°C)</h3><strong>${slowPoints.length} pts</strong></div>
-        <svg class="graph-svg" data-plot="tire" viewBox="0 0 720 220" preserveAspectRatio="none"></svg>
-        ${buildLegend(tireLines, (v) => `${v.toFixed(1)} °C`)}
-      </div>
-      <div class="graph-card">
-        <div class="graph-header"><h3>Brake Temps (°C)</h3><strong>${slowPoints.length} pts</strong></div>
-        <svg class="graph-svg" data-plot="brake" viewBox="0 0 720 220" preserveAspectRatio="none"></svg>
-        ${buildLegend(brakeLines, (v) => `${v.toFixed(1)} °C`)}
+    <div class="graph-header">
+      <h3>${escapeHtml(def.title)}</h3>
+      <div class="graph-card-actions">
+        <strong>${escapeHtml(def.badge ?? '')}</strong>
+        <button class="favorite-btn ${isFav ? 'is-favorite' : ''}" type="button" title="${isFav ? 'Unpin from favorites' : 'Pin to favorites'}" aria-pressed="${isFav ? 'true' : 'false'}">★</button>
+        <span class="drag-handle" title="Drag to reorder" aria-hidden="true">⋮⋮</span>
       </div>
     </div>
+    <svg class="graph-svg" viewBox="0 0 720 220" preserveAspectRatio="none"></svg>
+    ${buildLegend(def.lines, def.legendFormatter)}
   `;
-
-  renderMultiLinePlot(card.querySelector('[data-plot="sg"]'), sgLines, {
-    now, windowMs, formatY: (v) => `${v.toFixed(0)}`, emptyText: 'Waiting for fast frames',
+  renderMultiLinePlot(card.querySelector('svg'), def.lines, def.plotOptions);
+  card.querySelector('.favorite-btn').addEventListener('click', (event) => {
+    event.stopPropagation();
+    toggleFavorite(def.id);
   });
-  renderMultiLinePlot(card.querySelector('[data-plot="shock"]'), shockLines, {
-    now, windowMs, formatY: (v) => v.toFixed(2), emptyText: 'Waiting for fast frames',
-  });
-  renderMultiLinePlot(card.querySelector('[data-plot="rpm"]'), rpmLines, {
-    now, windowMs, yMinClamp: 0, formatY: (v) => v.toFixed(0), emptyText: 'Waiting for slow frames',
-  });
-  renderMultiLinePlot(card.querySelector('[data-plot="tire"]'), tireLines, {
-    now, windowMs, formatY: (v) => v.toFixed(1), emptyText: 'Waiting for slow frames',
-  });
-  renderMultiLinePlot(card.querySelector('[data-plot="brake"]'), brakeLines, {
-    now, windowMs, formatY: (v) => v.toFixed(1), emptyText: 'Waiting for slow frames',
-  });
-
+  wireCardDrag(card);
   return card;
 }
 
-function renderGraphs() {
-  if (state.graphs.activeTab !== 'graphs') {
-    return;
-  }
-  const now = Date.now();
-  const windowMs = activeWindowSeconds() * 1000;
+function wireCardDrag(card) {
+  card.addEventListener('dragstart', (event) => {
+    state.graphs.dragging = true;
+    event.dataTransfer.effectAllowed = 'move';
+    try {
+      event.dataTransfer.setData('text/plain', card.dataset.plotId);
+    } catch (error) {
+      // ignore — Safari/Edge sometimes throws on synthetic events
+    }
+    card.classList.add('dragging');
+    const container = card.parentElement;
+    if (container) container.classList.add('drop-target');
+  });
+  card.addEventListener('dragend', () => {
+    state.graphs.dragging = false;
+    card.classList.remove('dragging');
+    document.querySelectorAll('.graphs-drop-zone.drop-target, .board-graph-grid.drop-target')
+      .forEach((el) => el.classList.remove('drop-target'));
+  });
+  card.addEventListener('dragover', (event) => {
+    const container = card.parentElement;
+    if (!container) return;
+    const dragging = container.querySelector('.graph-card.dragging');
+    if (!dragging || dragging === card) return;
+    event.preventDefault();
+    const rect = card.getBoundingClientRect();
+    const before = (event.clientY - rect.top) / rect.height < 0.5;
+    if (before) {
+      container.insertBefore(dragging, card);
+    } else {
+      container.insertBefore(dragging, card.nextSibling);
+    }
+  });
+}
 
-  renderThroughputGraphs(now, windowMs);
+function wireDropZone(container, orderKey) {
+  if (!container || container.dataset.dropWired === '1') return;
+  container.dataset.dropWired = '1';
+  container.addEventListener('dragover', (event) => {
+    if (!state.graphs.dragging) return;
+    const dragging = container.querySelector('.graph-card.dragging');
+    if (!dragging) return;
+    event.preventDefault();
+    if (!dragging.parentElement || dragging.parentElement === container) {
+      // dragging within this container — handled by card dragover
+      return;
+    }
+  });
+  container.addEventListener('drop', (event) => {
+    event.preventDefault();
+    const ids = [...container.querySelectorAll(':scope > .graph-card')]
+      .map((card) => card.dataset.plotId)
+      .filter(Boolean);
+    if (orderKey === 'favorites') {
+      state.graphs.order.favorites = ids;
+    } else if (orderKey === 'throughput') {
+      state.graphs.order.throughput = ids;
+    } else if (orderKey.startsWith('board:')) {
+      state.graphs.order.board[orderKey.slice(6)] = ids;
+    }
+    saveGraphPrefs();
+  });
+}
+
+function buildAllPlotDefs(now, windowMs) {
+  const defs = [];
+
+  const fpsPoints = pickWindowedPoints(state.graphs.throughput.fps, now, windowMs);
+  const bpsPoints = pickWindowedPoints(state.graphs.throughput.bps, now, windowMs);
+
+  defs.push({
+    id: 'throughput:fps',
+    section: 'throughput',
+    title: 'Frames / sec',
+    badge: `${formatRate(fpsPoints.length ? fpsPoints[fpsPoints.length - 1].v : 0)} fps`,
+    lines: [{ label: 'fps', color: FPS_COLOR, points: fpsPoints.map((p) => ({ t: p.t, v: p.v })) }],
+    plotOptions: { now, windowMs, yMinClamp: 0, formatY: (v) => v.toFixed(v >= 100 ? 0 : 1), emptyText: 'No throughput samples yet' },
+    legendFormatter: (v) => `${formatRate(v)} fps`,
+  });
+
+  defs.push({
+    id: 'throughput:bps',
+    section: 'throughput',
+    title: 'Bytes / sec',
+    badge: `${formatBytes(bpsPoints.length ? bpsPoints[bpsPoints.length - 1].v : 0)}/s`,
+    lines: [{ label: 'bytes/s', color: BPS_COLOR, points: bpsPoints.map((p) => ({ t: p.t, v: p.v })) }],
+    plotOptions: { now, windowMs, yMinClamp: 0, formatY: (v) => formatBytes(v), emptyText: 'No throughput samples yet' },
+    legendFormatter: (v) => `${formatBytes(v)}/s`,
+  });
 
   const boardIds = [...state.graphs.boards.keys()].sort((a, b) => a - b);
-  if (boardIds.length === 0) {
-    elements.boardGraphs.innerHTML = '<p class="empty-state">No board telemetry decoded yet.</p>';
-    elements.graphsStatusLine.textContent = 'Waiting for board telemetry frames.';
+  for (const boardId of boardIds) {
+    const history = state.graphs.boards.get(boardId);
+    const fastPoints = pickWindowedPoints(history.fast, now, windowMs);
+    const slowPoints = pickWindowedPoints(history.slow, now, windowMs);
+
+    defs.push({
+      id: `board:${boardId}:sg`,
+      section: 'board',
+      boardId,
+      title: `Board ${boardId} · Strain Gauges (mV)`,
+      badge: `${fastPoints.length} pts`,
+      lines: SG_COLORS.map((color, idx) => ({
+        label: `SG${idx + 1}`,
+        color,
+        points: fastPoints.map((row) => ({ t: row.t, v: Number(row.sg?.[idx]) })),
+      })),
+      plotOptions: { now, windowMs, formatY: (v) => v.toFixed(0), emptyText: 'Waiting for fast frames' },
+      legendFormatter: (v) => `${v.toFixed(0)} mV`,
+    });
+
+    defs.push({
+      id: `board:${boardId}:shock`,
+      section: 'board',
+      boardId,
+      title: `Board ${boardId} · Shock (mm)`,
+      badge: `${fastPoints.length} pts`,
+      lines: [{ label: 'Shock', color: SHOCK_COLOR, points: fastPoints.map((row) => ({ t: row.t, v: row.shockMm })) }],
+      plotOptions: { now, windowMs, formatY: (v) => v.toFixed(2), emptyText: 'Waiting for fast frames' },
+      legendFormatter: (v) => `${v.toFixed(2)} mm`,
+    });
+
+    defs.push({
+      id: `board:${boardId}:rpm`,
+      section: 'board',
+      boardId,
+      title: `Board ${boardId} · RPM`,
+      badge: `${slowPoints.length} pts`,
+      lines: [{ label: 'RPM', color: RPM_COLOR, points: slowPoints.map((row) => ({ t: row.t, v: row.rpm })) }],
+      plotOptions: { now, windowMs, yMinClamp: 0, formatY: (v) => v.toFixed(0), emptyText: 'Waiting for slow frames' },
+      legendFormatter: (v) => v.toFixed(0),
+    });
+
+    defs.push({
+      id: `board:${boardId}:tire`,
+      section: 'board',
+      boardId,
+      title: `Board ${boardId} · Tire Temps (°C)`,
+      badge: `${slowPoints.length} pts`,
+      lines: [
+        { label: 'Max', color: TIRE_COLORS.max, points: slowPoints.map((row) => ({ t: row.t, v: row.tireMax })) },
+        { label: 'Min', color: TIRE_COLORS.min, points: slowPoints.map((row) => ({ t: row.t, v: row.tireMin })) },
+        { label: 'Ctr', color: TIRE_COLORS.center, points: slowPoints.map((row) => ({ t: row.t, v: row.tireCtr })) },
+        { label: 'Amb', color: TIRE_COLORS.ambient, points: slowPoints.map((row) => ({ t: row.t, v: row.tireAmb })) },
+      ],
+      plotOptions: { now, windowMs, formatY: (v) => v.toFixed(1), emptyText: 'Waiting for slow frames' },
+      legendFormatter: (v) => `${v.toFixed(1)} °C`,
+    });
+
+    defs.push({
+      id: `board:${boardId}:brake`,
+      section: 'board',
+      boardId,
+      title: `Board ${boardId} · Brake Temps (°C)`,
+      badge: `${slowPoints.length} pts`,
+      lines: [
+        { label: 'Brake', color: BRAKE_COLORS.brakeC, points: slowPoints.map((row) => ({ t: row.t, v: row.brakeC })) },
+        { label: 'Brake Amb', color: BRAKE_COLORS.brakeAmbientC, points: slowPoints.map((row) => ({ t: row.t, v: row.brakeAmbientC })) },
+      ],
+      plotOptions: { now, windowMs, formatY: (v) => v.toFixed(1), emptyText: 'Waiting for slow frames' },
+      legendFormatter: (v) => `${v.toFixed(1)} °C`,
+    });
+  }
+
+  return { defs, boardIds };
+}
+
+function renderFavoritesSection(favDefs) {
+  const ordered = applyOrderedSort(favDefs, state.graphs.order.favorites);
+  if (ordered.length === 0) {
+    elements.favoritesGrid.innerHTML = '<p class="empty-state">Click the star on any graph to pin it here.</p>';
     return;
   }
+  elements.favoritesGrid.replaceChildren(...ordered.map(buildPlotCard));
+}
 
-  const totalFast = boardIds.reduce((sum, id) => sum + state.graphs.boards.get(id).fast.length, 0);
-  const totalSlow = boardIds.reduce((sum, id) => sum + state.graphs.boards.get(id).slow.length, 0);
-  elements.graphsStatusLine.textContent = `Tracking ${boardIds.length} board${boardIds.length === 1 ? '' : 's'} · ${totalFast} fast / ${totalSlow} slow samples buffered · window ${activeWindowSeconds()}s`;
+function renderThroughputSection(throughputDefs) {
+  const ordered = applyOrderedSort(throughputDefs, state.graphs.order.throughput);
+  if (ordered.length === 0) {
+    elements.throughputGrid.innerHTML = '<p class="empty-state">Throughput plots are pinned to Favorites.</p>';
+    return;
+  }
+  elements.throughputGrid.replaceChildren(...ordered.map(buildPlotCard));
+}
 
+function renderBoardSection(boardIds, defsByBoard, now) {
+  if (boardIds.length === 0) {
+    elements.boardGraphs.innerHTML = '<p class="empty-state">No board telemetry decoded yet.</p>';
+    return;
+  }
   const fragment = document.createDocumentFragment();
-  for (const id of boardIds) {
-    fragment.appendChild(renderBoardGraphCard(id, state.graphs.boards.get(id), now, windowMs));
+  for (const boardId of boardIds) {
+    const history = state.graphs.boards.get(boardId);
+    const defsForBoard = defsByBoard.get(boardId) || [];
+    if (defsForBoard.length === 0) continue;
+    const ageMs = history.lastSeenAt ? now - history.lastSeenAt : null;
+    const card = document.createElement('article');
+    card.className = 'board-graph-card';
+    card.dataset.boardId = String(boardId);
+    card.innerHTML = `
+      <header>
+        <strong>Board ${boardId}</strong>
+        <span class="board-age">${escapeHtml(formatBoardAge(ageMs))} · ${history.fast.length} fast / ${history.slow.length} slow</span>
+      </header>
+      <div class="board-graph-grid graphs-drop-zone" data-drop-key="board:${boardId}"></div>
+    `;
+    const grid = card.querySelector('.board-graph-grid');
+    const ordered = applyOrderedSort(defsForBoard, state.graphs.order.board[String(boardId)]);
+    for (const def of ordered) {
+      grid.appendChild(buildPlotCard(def));
+    }
+    wireDropZone(grid, `board:${boardId}`);
+    fragment.appendChild(card);
   }
   elements.boardGraphs.replaceChildren(fragment);
+}
+
+function renderGraphs() {
+  if (state.graphs.activeTab !== 'graphs') return;
+  if (state.graphs.dragging) return;
+
+  const now = Date.now();
+  const windowMs = activeWindowSeconds() * 1000;
+  const { defs, boardIds } = buildAllPlotDefs(now, windowMs);
+
+  if (boardIds.length === 0) {
+    elements.graphsStatusLine.textContent = 'Waiting for board telemetry frames.';
+  } else {
+    const totalFast = boardIds.reduce((sum, id) => sum + state.graphs.boards.get(id).fast.length, 0);
+    const totalSlow = boardIds.reduce((sum, id) => sum + state.graphs.boards.get(id).slow.length, 0);
+    elements.graphsStatusLine.textContent = `Tracking ${boardIds.length} board${boardIds.length === 1 ? '' : 's'} · ${totalFast} fast / ${totalSlow} slow samples buffered · window ${activeWindowSeconds()}s`;
+  }
+
+  const favDefs = [];
+  const throughputDefs = [];
+  const boardDefsByBoard = new Map();
+  for (const def of defs) {
+    if (state.graphs.favorites.has(def.id)) {
+      favDefs.push(def);
+      continue;
+    }
+    if (def.section === 'throughput') {
+      throughputDefs.push(def);
+    } else if (def.section === 'board') {
+      const list = boardDefsByBoard.get(def.boardId) || [];
+      list.push(def);
+      boardDefsByBoard.set(def.boardId, list);
+    }
+  }
+
+  renderFavoritesSection(favDefs);
+  renderThroughputSection(throughputDefs);
+  renderBoardSection(boardIds, boardDefsByBoard, now);
 }
 
 function renderAll() {
@@ -1036,6 +1242,9 @@ function wireUi() {
     renderGraphs();
   });
 
+  wireDropZone(elements.favoritesGrid, 'favorites');
+  wireDropZone(elements.throughputGrid, 'throughput');
+
   elements.clearLogButton.addEventListener('click', () => {
     state.logRows = [];
     renderLog();
@@ -1102,6 +1311,8 @@ function wireEvents() {
 }
 
 async function init() {
+  loadGraphPrefs();
+
   const initialState = await api.getInitialState();
   state.ports = initialState.ports;
   state.connection = initialState.connection;
