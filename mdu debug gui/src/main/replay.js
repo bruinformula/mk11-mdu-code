@@ -55,10 +55,11 @@ function registerReplayIpcHandlers(ipcMain, monitor, broadcast) {
           const currentTime = new Date(data.timestamp).getTime();
           
           if (lastTime !== null) {
-            const delay = currentTime - lastTime;
-            if (delay > 0) {
-              // Sleep for the delay, capped at 1000ms to avoid huge hangs
-              await new Promise(resolve => setTimeout(resolve, Math.min(delay, 1000)));
+            // No real-time delay: blast data instantly for graph population.
+            // Yield event loop occasionally to avoid freezing the main process.
+            if ((Date.now() - (replayAbortController.lastYield || 0)) > 50) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+              replayAbortController.lastYield = Date.now();
             }
           }
           lastTime = currentTime;

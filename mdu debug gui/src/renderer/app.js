@@ -54,6 +54,9 @@ const state = {
     dragging: false,
     hover: { plotId: null, fraction: null },
   },
+  isReplay: false,
+  replayStart: null,
+  replayEnd: null,
 };
 
 const pendingRenders = {
@@ -117,6 +120,7 @@ const elements = {
   topIdsBody: document.getElementById('top-ids-body'),
   boardsGrid: document.getElementById('boards-grid'),
   logBody: document.getElementById('log-body'),
+  logSearchInput: document.getElementById('log-search-input'),
   themeToggle: document.getElementById('theme-toggle'),
   themeToggleLabel: document.querySelector('#theme-toggle .theme-toggle-label'),
   tabButtons: Array.from(document.querySelectorAll('.tab-button')),
@@ -525,7 +529,20 @@ function renderLog() {
     return;
   }
 
-  elements.logBody.innerHTML = state.logRows
+  const filterVal = (elements.logSearchInput && elements.logSearchInput.value) 
+    ? elements.logSearchInput.value.toLowerCase() 
+    : '';
+
+  const filtered = filterVal 
+    ? state.logRows.filter(entry => {
+        const raw = entry.raw ? entry.raw.toLowerCase() : '';
+        const msg = entry.message ? entry.message.toLowerCase() : '';
+        const idText = entry.frame && entry.frame.idText ? entry.frame.idText.toLowerCase() : '';
+        return raw.includes(filterVal) || msg.includes(filterVal) || idText.includes(filterVal);
+      })
+    : state.logRows;
+
+  elements.logBody.innerHTML = filtered
     .map((entry) => {
       if (entry.kind === 'runtime') {
         return `
@@ -614,7 +631,7 @@ function pruneSeries(series, cutoff) {
 }
 
 function recordThroughputSample(now, diagnostics) {
-  const cutoff = now - MAX_GRAPH_HISTORY_MS;
+  const cutoff = state.isReplay ? 0 : now - MAX_GRAPH_HISTORY_MS;
   state.graphs.throughput.fps.push({ t: now, v: Number(diagnostics?.framesPerSecond) || 0 });
   state.graphs.throughput.bps.push({ t: now, v: Number(diagnostics?.bytesPerSecond) || 0 });
   pruneSeries(state.graphs.throughput.fps, cutoff);
@@ -645,9 +662,15 @@ function appendBoardSample(frameEvent) {
   if (!Number.isFinite(now)) {
     return;
   }
+  
+  if (state.isReplay) {
+    if (!state.replayStart || now < state.replayStart) state.replayStart = now;
+    if (!state.replayEnd || now > state.replayEnd) state.replayEnd = now;
+  }
+
   const entry = getOrCreateBoardHistory(board.boardId);
   entry.lastSeenAt = now;
-  const cutoff = now - MAX_GRAPH_HISTORY_MS;
+  const cutoff = state.isReplay ? 0 : now - MAX_GRAPH_HISTORY_MS;
 
   if (board.kind === 'fast') {
     entry.fast.push({
@@ -1333,8 +1356,15 @@ function renderGraphs() {
   if (state.graphs.activeTab !== 'graphs') return;
   if (state.graphs.dragging) return;
 
-  const now = Date.now();
-  const windowMs = activeWindowSeconds() * 1000;
+  let now = Date.now();
+  let windowMs = activeWindowSeconds() * 1000;
+
+  if (state.isReplay && state.replayEnd && state.replayStart) {
+    now = state.replayEnd;
+    windowMs = state.replayEnd - state.replayStart;
+    if (windowMs === 0) windowMs = 1000;
+  }
+
   const { defs, boardIds } = buildAllPlotDefs(now, windowMs);
 
   if (boardIds.length === 0) {
@@ -1562,6 +1592,16 @@ function wireEvents() {
 
   api.onRuntime((runtime) => {
     addLogRow({ kind: 'runtime', ...runtime });
+    if (runtime.message === 'Replay started') {
+      state.isReplay = true;
+      state.replayStart = null;
+      state.replayEnd = null;
+    } else if (runtime.message === 'Replay stopped' || runtime.message === 'Replay finished') {
+      if (runtime.message === 'Replay finished') {
+        setActiveTab('graphs');
+        renderAll();
+      }
+    }
   });
 
   api.onLogStatus((logStatus) => {
@@ -1587,6 +1627,18 @@ async function init() {
 
   wireUi();
   wireEvents();
+
+  if (elements.logSearchInput) {
+    elements.logSearchInput.addEventListener('input', () => {
+      scheduleRender('log', renderLog);
+    });
+  }
+
+  if (elements.logSearchInput) {
+    elements.logSearchInput.addEventListener('input', () => {
+      scheduleRender('log', renderLog);
+    });
+  }
 
   if (elements.graphsWindowSelect) {
     elements.graphsWindowSelect.value = String(state.graphs.windowSeconds);
