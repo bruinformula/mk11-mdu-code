@@ -554,16 +554,27 @@ function renderLog() {
       }
 
       if (entry.source === 'board' && entry.board) {
-        const idLabel = `B${entry.board.boardId} · ${entry.board.kind === 'fast' ? 'Fast' : 'Slow'} · ${entry.frame.idText}`;
-        const summary = entry.board.kind === 'fast'
-          ? `SG ${entry.board.strainGaugesMv.join('/')} mV · Shock ${formatSigned(entry.board.shockMm, 2)} mm`
-          : `RPM ${entry.board.rpm} · Tire ${formatSigned(entry.board.tireC?.max, 1)}/${formatSigned(entry.board.tireC?.min, 1)}/${formatSigned(entry.board.tireC?.center, 1)}/${formatSigned(entry.board.tireC?.ambient, 1)} · Brk ${formatSigned(entry.board.brakeC, 1)}/${formatSigned(entry.board.brakeAmbientC, 1)}`;
+        let kindLabel = 'Slow';
+        if (entry.board.kind === 'fast') kindLabel = 'Fast';
+        if (entry.board.kind === 'thermal') kindLabel = 'Thermal';
+        
+        const idLabel = `B${entry.board.boardId} · ${kindLabel} · ${entry.frame.idText}`;
+        
+        let summary;
+        if (entry.board.kind === 'fast') {
+          summary = `SG ${entry.board.strainGaugesMv.join('/')} mV · Shock ${formatSigned(entry.board.shockMm, 2)} mm`;
+        } else if (entry.board.kind === 'slow') {
+          summary = `RPM ${entry.board.rpm} · Tire ${formatSigned(entry.board.tireC?.max, 1)}/${formatSigned(entry.board.tireC?.min, 1)}/${formatSigned(entry.board.tireC?.center, 1)}/${formatSigned(entry.board.tireC?.ambient, 1)} · Brk ${formatSigned(entry.board.brakeC, 1)}/${formatSigned(entry.board.brakeAmbientC, 1)}`;
+        } else if (entry.board.kind === 'thermal') {
+          summary = `Thermal 32-px heatmap`;
+        }
+
         return `
           <tr>
             <td>${escapeHtml(formatTimestamp(entry.timestamp))}</td>
             <td><span class="pill ok">${escapeHtml(entry.board.kind)}</span></td>
             <td class="mono">${escapeHtml(idLabel)}</td>
-            <td>${entry.board.timeSinceLastMs} ms</td>
+            <td>${entry.board.timeSinceLastMs != null ? entry.board.timeSinceLastMs + ' ms' : '--'}</td>
             <td>${escapeHtml(summary)}</td>
             <td class="mono">${escapeHtml(entry.raw)}</td>
           </tr>

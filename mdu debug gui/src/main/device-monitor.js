@@ -316,11 +316,15 @@ class BoardStateTracker {
         lastSeenAgeMs: state.lastSeenAt ? now - state.lastSeenAt : null,
         fastCount: state.fastCount,
         slowCount: state.slowCount,
+        thermalCount: state.thermalCount,
         fast: state.fast
           ? { ...state.fast, ageMs: now - state.fast.receivedAt }
           : null,
         slow: state.slow
           ? { ...state.slow, ageMs: now - state.slow.receivedAt }
+          : null,
+        thermal: state.thermal
+          ? { ...state.thermal, ageMs: now - state.thermal.receivedAt }
           : null,
       }));
   }
