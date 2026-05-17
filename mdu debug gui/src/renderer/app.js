@@ -18,6 +18,24 @@ const state = {
   },
 };
 
+const pendingRenders = {
+  log: false,
+  diagnostics: false,
+  boards: false,
+  topIds: false,
+};
+
+function scheduleRender(kind, fn) {
+  if (pendingRenders[kind]) {
+    return;
+  }
+  pendingRenders[kind] = true;
+  requestAnimationFrame(() => {
+    pendingRenders[kind] = false;
+    fn();
+  });
+}
+
 const elements = {
   portSelect: document.getElementById('port-select'),
   baudInput: document.getElementById('baud-input'),
@@ -57,7 +75,22 @@ const elements = {
   topIdsBody: document.getElementById('top-ids-body'),
   boardsGrid: document.getElementById('boards-grid'),
   logBody: document.getElementById('log-body'),
+  themeToggle: document.getElementById('theme-toggle'),
+  themeToggleLabel: document.querySelector('#theme-toggle .theme-toggle-label'),
 };
+
+function applyTheme(theme) {
+  const next = theme === 'light' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  try {
+    localStorage.setItem('mdu-theme', next);
+  } catch (error) {
+    // ignore — storage may be unavailable
+  }
+  if (elements.themeToggleLabel) {
+    elements.themeToggleLabel.textContent = next === 'dark' ? 'Dark' : 'Light';
+  }
+}
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -294,7 +327,7 @@ function renderDiagnostics() {
 function renderTopIds() {
   const topIds = state.diagnostics?.topIds ?? [];
   if (topIds.length === 0) {
-    elements.topIdsBody.innerHTML = '<tr><td class="empty-state" colspan="7">No frames decoded yet.</td></tr>';
+    elements.topIdsBody.innerHTML = '<tr><td class="empty-state" colspan="6">No frames decoded yet.</td></tr>';
     return;
   }
 
@@ -305,7 +338,6 @@ function renderTopIds() {
         <tr>
           <td class="mono">${escapeHtml(entry.idText)}</td>
           <td><span class="pill ${entry.source === 'board' ? 'ok' : 'info'}">${escapeHtml(sourceLabel)}</span></td>
-          <td>${escapeHtml(entry.idType)}</td>
           <td>${entry.count}</td>
           <td>${formatRate(entry.recentHz)}</td>
           <td>${entry.lastDataLength}</td>
@@ -491,7 +523,7 @@ function addLogRow(entry) {
   if (state.logRows.length > MAX_LOG_ROWS) {
     state.logRows.length = MAX_LOG_ROWS;
   }
-  renderLog();
+  scheduleRender('log', renderLog);
 }
 
 async function chooseAndMaybeStartLogging() {
@@ -505,6 +537,13 @@ async function chooseAndMaybeStartLogging() {
 }
 
 function wireUi() {
+  applyTheme(document.documentElement.getAttribute('data-theme') || 'dark');
+
+  elements.themeToggle.addEventListener('click', () => {
+    const current = document.documentElement.getAttribute('data-theme') || 'dark';
+    applyTheme(current === 'dark' ? 'light' : 'dark');
+  });
+
   elements.refreshButton.addEventListener('click', async () => {
     await api.listPorts();
   });
@@ -580,9 +619,9 @@ function wireEvents() {
     state.diagnostics = diagnostics;
     appendChartValue(state.charts.frames, diagnostics.framesPerSecond ?? 0);
     appendChartValue(state.charts.bytes, diagnostics.bytesPerSecond ?? 0);
-    renderDiagnostics();
-    renderBoards();
-    renderTopIds();
+    scheduleRender('diagnostics', renderDiagnostics);
+    scheduleRender('boards', renderBoards);
+    scheduleRender('topIds', renderTopIds);
   });
 
   api.onFrame((frame) => {
