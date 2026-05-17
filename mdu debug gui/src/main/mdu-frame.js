@@ -8,6 +8,8 @@ const FAST_PATTERN = /^\[B(\d+)\s+ID\s+([0-9A-Fa-f]+)\s+Fast\]\s+dT:(\d+)ms\s*\|
 
 const SLOW_PATTERN = /^\[B(\d+)\s+ID\s+([0-9A-Fa-f]+)\s+Slow\]\s+dT:(\d+)ms\s*\|\s*RPM:\s*(-?\d+)\s*\|\s*Tire\[Max:\s*(-?\d+)\.(\d+)\s+Min:\s*(-?\d+)\.(\d+)\s+Ctr:\s*(-?\d+)\.(\d+)\s+Amb:\s*(-?\d+)\.(\d+)\]\s+Brk:\s*(-?\d+)\.(\d+)\s+Amb:\s*(-?\d+)\.(\d+)$/;
 
+const THERMAL_PATTERN = /^\[B(\d+)\s+ID\s+([0-9A-Fa-f]+)\s+Thermal\]\s+Px:\s+(.*)$/;
+
 function stripAnsiAndControl(text) {
   return String(text ?? '').replace(ANSI_ESCAPE, '').replace(/[\x00\x07\x08\x0B\x0C\x0E-\x1F]/g, '');
 }
@@ -85,6 +87,23 @@ function parseSlow(match) {
   };
 }
 
+function parseThermal(match) {
+  const board = Number.parseInt(match[1], 10);
+  const id = buildIdMeta(match[2]);
+  const pxStr = match[3].trim().split(/\s+/);
+  const pixelsC = pxStr.map(s => {
+    const parts = s.split('.');
+    return combineSignedDecimal(parts[0], parts[1] || '0');
+  });
+
+  return {
+    boardId: board,
+    kind: 'thermal',
+    ...id,
+    pixelsC,
+  };
+}
+
 function parseMduLine(rawLine) {
   const cleaned = normalizeMduLine(rawLine);
   if (!cleaned) {
@@ -112,6 +131,24 @@ function parseMduLine(rawLine) {
   const slowMatch = cleaned.match(SLOW_PATTERN);
   if (slowMatch) {
     const board = parseSlow(slowMatch);
+    return {
+      ok: true,
+      source: 'board',
+      raw: cleaned,
+      idText: board.idText,
+      idType: 'standard',
+      identifier: board.identifier,
+      identifierHex: board.identifierHex,
+      dataLength: 64,
+      dataHex: '',
+      dataBytes: [],
+      board,
+    };
+  }
+
+  const thermalMatch = cleaned.match(THERMAL_PATTERN);
+  if (thermalMatch) {
+    const board = parseThermal(thermalMatch);
     return {
       ok: true,
       source: 'board',

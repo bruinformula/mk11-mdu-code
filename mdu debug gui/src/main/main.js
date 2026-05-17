@@ -4,6 +4,7 @@ const path = require('path');
 const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 
 const { DeviceMonitor } = require('./device-monitor');
+const { registerReplayIpcHandlers } = require('./replay');
 
 let mainWindow = null;
 let monitor = null;
@@ -80,6 +81,8 @@ function registerIpcHandlers() {
   });
   ipcMain.handle('log:start', async (_event, filePath) => monitor.startLogging(filePath));
   ipcMain.handle('log:stop', async () => monitor.stopLogging());
+  
+  registerReplayIpcHandlers(ipcMain, monitor, broadcast);
 }
 
 app.whenReady().then(async () => {

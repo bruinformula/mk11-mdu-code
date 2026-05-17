@@ -87,6 +87,9 @@ const elements = {
   chooseLogButton: document.getElementById('choose-log-button'),
   startLogButton: document.getElementById('start-log-button'),
   stopLogButton: document.getElementById('stop-log-button'),
+  replayStartButton: document.getElementById('replay-start-button'),
+  replayStopButton: document.getElementById('replay-stop-button'),
+  exportCsvButton: document.getElementById('export-csv-button'),
   logPath: document.getElementById('log-path'),
   statusLine: document.getElementById('status-line'),
   connectionChip: document.getElementById('connection-chip'),
@@ -455,6 +458,32 @@ function renderSlowBlock(slow) {
   `;
 }
 
+function renderThermalBlock(thermal) {
+  if (!thermal || !thermal.pixelsC || thermal.pixelsC.length !== 32) return '<p class="empty-state">No Thermal frame decoded</p>';
+  
+  const pxHtml = thermal.pixelsC.map(temp => {
+    const t = Math.max(0, Math.min(120, temp));
+    let r = 0, g = 0, b = 0;
+    if (t < 60) {
+      r = 0;
+      g = Math.floor((t / 60) * 255);
+      b = Math.floor((1 - (t / 60)) * 255);
+    } else {
+      r = Math.floor(((t - 60) / 60) * 255);
+      g = Math.floor((1 - ((t - 60) / 60)) * 255);
+      b = 0;
+    }
+    const color = `rgb(${r},${g},${b})`;
+    return `<div style="flex:1; height: 24px; background-color: ${color}; margin-right: 1px;" title="${temp}°C"></div>`;
+  }).join('');
+
+  return `
+    <div style="display: flex; flex-direction: row; width: 100%; border-radius: 4px; overflow: hidden; margin-top: 8px;">
+      ${pxHtml}
+    </div>
+  `;
+}
+
 function renderBoards() {
   const boards = state.diagnostics?.boards ?? [];
   if (boards.length === 0) {
@@ -478,6 +507,10 @@ function renderBoards() {
             <div class="board-col">
               <h3>Slow (0x${(0x200 + board.boardId).toString(16).toUpperCase().padStart(3, '0')})</h3>
               ${renderSlowBlock(board.slow)}
+            </div>
+            <div class="board-col">
+              <h3>Thermal (0x${(0x300 + board.boardId).toString(16).toUpperCase().padStart(3, '0')})</h3>
+              ${renderThermalBlock(board.thermal)}
             </div>
           </div>
         </article>
@@ -1455,6 +1488,38 @@ function wireUi() {
     state.logStatus = await api.stopLogging();
     renderLoggingControls();
   });
+
+  if (elements.replayStartButton) {
+    elements.replayStartButton.addEventListener('click', async () => {
+      const filePath = await api.pickAndStartReplay();
+      if (filePath) {
+        elements.replayStartButton.style.display = 'none';
+        elements.replayStopButton.style.display = 'inline-block';
+      }
+    });
+  }
+
+  if (elements.replayStopButton) {
+    elements.replayStopButton.addEventListener('click', async () => {
+      await api.stopReplay();
+      elements.replayStartButton.style.display = 'inline-block';
+      elements.replayStopButton.style.display = 'none';
+    });
+  }
+
+  if (elements.exportCsvButton) {
+    elements.exportCsvButton.addEventListener('click', async () => {
+      const originalText = elements.exportCsvButton.textContent;
+      elements.exportCsvButton.textContent = 'Exporting...';
+      elements.exportCsvButton.disabled = true;
+      try {
+        await api.pickAndExportCsv();
+      } finally {
+        elements.exportCsvButton.textContent = originalText;
+        elements.exportCsvButton.disabled = false;
+      }
+    });
+  }
 }
 
 function wireEvents() {

@@ -75,6 +75,12 @@
         <button id="stop-log-button" class="secondary-button">Stop logging</button>
       </div>
 
+      <div class="controls-row replay-row" style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-subtle);">
+        <button id="replay-start-button" class="primary-button">Start Offline Replay</button>
+        <button id="replay-stop-button" class="secondary-button" style="display:none;">Stop Replay</button>
+        <button id="export-csv-button" class="secondary-button">Export JSONL to CSV</button>
+      </div>
+
       <p class="helper-text" id="status-line">
         Waiting for the USB2514 hub and its STM32 USB CDC child endpoint. Bluetooth-style pseudo ports are ignored.
       </p>

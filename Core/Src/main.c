@@ -19,17 +19,19 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "fdcan.h"
+#include "gpio.h"
 #include "icache.h"
 #include "usb_device.h"
-#include "gpio.h"
+
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "../../Drivers/BFR_Krill_Drivers/Inc/usb_driver.h"
-#include "usbd_conf.h"
 #include "usbd_cdc_if.h"
+#include "usbd_conf.h"
 #include <stdio.h>
 #include <string.h>
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -56,14 +58,14 @@ uint8_t Tx[64];
 uint8_t Rx[64];
 
 /* Live-expression probes. USB probes live under usbdiag. */
-volatile uint32_t fdcan_rx_msg_count   = 0U;
-volatile uint32_t fdcan_tx_msg_count   = 0U;
-volatile uint32_t fdcan_tx_err_count   = 0U;
-volatile uint32_t fdcan_rx_err_count   = 0U;
+volatile uint32_t fdcan_rx_msg_count = 0U;
+volatile uint32_t fdcan_tx_msg_count = 0U;
+volatile uint32_t fdcan_tx_err_count = 0U;
+volatile uint32_t fdcan_rx_err_count = 0U;
 volatile uint32_t fdcan_notif_err_count = 0U;
-volatile uint32_t fdcan_rx_last_id     = 0U;
-volatile uint8_t  fdcan_rx_last_len    = 0U;
-volatile uint8_t  fdcan_rx_pending     = 0U;
+volatile uint32_t fdcan_rx_last_id = 0U;
+volatile uint8_t fdcan_rx_last_len = 0U;
+volatile uint8_t fdcan_rx_pending = 0U;
 
 static FDCAN_RxHeaderTypeDef LastRxHeader;
 /* USER CODE END PV */
@@ -76,32 +78,47 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-static uint8_t FDCAN_DlcToBytes(uint32_t dlc)
-{
-  switch (dlc)
-  {
-    case FDCAN_DLC_BYTES_0:  return 0U;
-    case FDCAN_DLC_BYTES_1:  return 1U;
-    case FDCAN_DLC_BYTES_2:  return 2U;
-    case FDCAN_DLC_BYTES_3:  return 3U;
-    case FDCAN_DLC_BYTES_4:  return 4U;
-    case FDCAN_DLC_BYTES_5:  return 5U;
-    case FDCAN_DLC_BYTES_6:  return 6U;
-    case FDCAN_DLC_BYTES_7:  return 7U;
-    case FDCAN_DLC_BYTES_8:  return 8U;
-    case FDCAN_DLC_BYTES_12: return 12U;
-    case FDCAN_DLC_BYTES_16: return 16U;
-    case FDCAN_DLC_BYTES_20: return 20U;
-    case FDCAN_DLC_BYTES_24: return 24U;
-    case FDCAN_DLC_BYTES_32: return 32U;
-    case FDCAN_DLC_BYTES_48: return 48U;
-    case FDCAN_DLC_BYTES_64: return 64U;
-    default:                 return 0U;
+static uint8_t FDCAN_DlcToBytes(uint32_t dlc) {
+  switch (dlc) {
+  case FDCAN_DLC_BYTES_0:
+    return 0U;
+  case FDCAN_DLC_BYTES_1:
+    return 1U;
+  case FDCAN_DLC_BYTES_2:
+    return 2U;
+  case FDCAN_DLC_BYTES_3:
+    return 3U;
+  case FDCAN_DLC_BYTES_4:
+    return 4U;
+  case FDCAN_DLC_BYTES_5:
+    return 5U;
+  case FDCAN_DLC_BYTES_6:
+    return 6U;
+  case FDCAN_DLC_BYTES_7:
+    return 7U;
+  case FDCAN_DLC_BYTES_8:
+    return 8U;
+  case FDCAN_DLC_BYTES_12:
+    return 12U;
+  case FDCAN_DLC_BYTES_16:
+    return 16U;
+  case FDCAN_DLC_BYTES_20:
+    return 20U;
+  case FDCAN_DLC_BYTES_24:
+    return 24U;
+  case FDCAN_DLC_BYTES_32:
+    return 32U;
+  case FDCAN_DLC_BYTES_48:
+    return 48U;
+  case FDCAN_DLC_BYTES_64:
+    return 64U;
+  default:
+    return 0U;
   }
 }
 
-static void CAN_Frame_To_USB(const FDCAN_RxHeaderTypeDef *hdr, const uint8_t *data)
-{
+static void CAN_Frame_To_USB(const FDCAN_RxHeaderTypeDef *hdr,
+                             const uint8_t *data) {
   char buf[512];
   int n = 0;
 
@@ -122,23 +139,24 @@ static void CAN_Frame_To_USB(const FDCAN_RxHeaderTypeDef *hdr, const uint8_t *da
   uint32_t board = id & 0x00FU;
   const uint32_t MAX_BOARD_ID = 1U; /* bump this if more SDUs join the bus */
 
-  if ((base == 0x100U || base == 0x200U) && board <= MAX_BOARD_ID && len >= 64) {
+  if ((base == 0x100U || base == 0x200U) && board <= MAX_BOARD_ID &&
+      len >= 64) {
     uint16_t time_ms = data[0] | (data[1] << 8);
     int16_t vals[15];
     for (int i = 0; i < 15; i++) {
-      vals[i] = (int16_t)(data[2 + i*4] | (data[3 + i*4] << 8));
+      vals[i] = (int16_t)(data[2 + i * 4] | (data[3 + i * 4] << 8));
     }
 
-    /* Lines: board 0 fast=1, board 0 slow=2, board 1 fast=3, board 1 slow=4 ... */
+    /* Lines: board 0 fast=1, board 0 slow=2, board 1 fast=3, board 1 slow=4 ...
+     */
     int line = (int)(board * 2U + (base == 0x200U ? 2U : 1U));
 
     if (base == 0x100U) {
       int16_t shock = vals[6];
       n += snprintf(buf + n, sizeof(buf) - (size_t)n,
-                    "\033[%d;1H\033[K[B%lu ID %03lX Fast] dT:%ums | SG[mV]: %d, %d, %d, %d, %d, %d | Shock: %d.%02d mm\r\n",
-                    line,
-                    (unsigned long)board, (unsigned long)id,
-                    time_ms,
+                    "\033[%d;1H\033[K[B%lu ID %03lX Fast] dT:%ums | SG[mV]: "
+                    "%d, %d, %d, %d, %d, %d | Shock: %d.%02d mm\r\n",
+                    line, (unsigned long)board, (unsigned long)id, time_ms,
                     vals[0], vals[1], vals[2], vals[3], vals[4], vals[5],
                     shock / 100, (shock > 0 ? shock : -shock) % 100);
     } else {
@@ -147,20 +165,35 @@ static void CAN_Frame_To_USB(const FDCAN_RxHeaderTypeDef *hdr, const uint8_t *da
       int16_t minT = vals[2];
       int16_t ctrT = vals[3];
       int16_t tAmb = vals[4];
-      int16_t brk  = vals[5];
+      int16_t brk = vals[5];
       int16_t bAmb = vals[6];
       n += snprintf(buf + n, sizeof(buf) - (size_t)n,
-                    "\033[%d;1H\033[K[B%lu ID %03lX Slow] dT:%ums | RPM: %d | Tire[Max:%d.%d Min:%d.%d Ctr:%d.%d Amb:%d.%d] Brk:%d.%d Amb:%d.%d\r\n",
-                    line,
-                    (unsigned long)board, (unsigned long)id,
-                    time_ms, rpm,
-                    maxT/10, (maxT>0?maxT:-maxT)%10,
-                    minT/10, (minT>0?minT:-minT)%10,
-                    ctrT/10, (ctrT>0?ctrT:-ctrT)%10,
-                    tAmb/10, (tAmb>0?tAmb:-tAmb)%10,
-                    brk/10, (brk>0?brk:-brk)%10,
-                    bAmb/10, (bAmb>0?bAmb:-bAmb)%10);
+                    "\033[%d;1H\033[K[B%lu ID %03lX Slow] dT:%ums | RPM: %d | "
+                    "Tire[Max:%d.%d Min:%d.%d Ctr:%d.%d Amb:%d.%d] Brk:%d.%d "
+                    "Amb:%d.%d\r\n",
+                    line, (unsigned long)board, (unsigned long)id, time_ms, rpm,
+                    maxT / 10, (maxT > 0 ? maxT : -maxT) % 10, minT / 10,
+                    (minT > 0 ? minT : -minT) % 10, ctrT / 10,
+                    (ctrT > 0 ? ctrT : -ctrT) % 10, tAmb / 10,
+                    (tAmb > 0 ? tAmb : -tAmb) % 10, brk / 10,
+                    (brk > 0 ? brk : -brk) % 10, bAmb / 10,
+                    (bAmb > 0 ? bAmb : -bAmb) % 10);
     }
+  } else if (base == 0x300U && board <= MAX_BOARD_ID && len >= 64) {
+    int16_t pixels[32];
+    for (int i = 0; i < 32; i++) {
+      pixels[i] = (int16_t)(data[i * 2] | (data[i * 2 + 1] << 8));
+    }
+    
+    int line = (int)(board * 3U + 3U);
+    n += snprintf(buf + n, sizeof(buf) - (size_t)n,
+                  "\033[%d;1H\033[K[B%lu ID %03lX Thermal] Px:",
+                  line, (unsigned long)board, (unsigned long)id);
+    
+    for (int i = 0; i < 32; i++) {
+      n += snprintf(buf + n, sizeof(buf) - (size_t)n, " %d.%d", pixels[i] / 10, (pixels[i] > 0 ? pixels[i] : -pixels[i]) % 10);
+    }
+    n += snprintf(buf + n, sizeof(buf) - (size_t)n, "\r\n");
   } else {
     // Fallback to standard SLCAN
     if (hdr->IdType == FDCAN_STANDARD_ID) {
@@ -199,11 +232,10 @@ static void CAN_Frame_To_USB(const FDCAN_RxHeaderTypeDef *hdr, const uint8_t *da
 /* USER CODE END 0 */
 
 /**
-  * @brief  The application entry point.
-  * @retval int
-  */
-int main(void)
-{
+ * @brief  The application entry point.
+ * @retval int
+ */
+int main(void) {
 
   /* USER CODE BEGIN 1 */
 
@@ -211,7 +243,8 @@ int main(void)
 
   /* MCU Configuration--------------------------------------------------------*/
 
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick.
+   */
   HAL_Init();
 
   /* USER CODE BEGIN Init */
@@ -245,7 +278,6 @@ int main(void)
   if (FDCAN_App_Init() != HAL_OK) {
     Error_Handler();
   }
-
 
   if (HAL_FDCAN_Start(&hfdcan1) != HAL_OK) {
     Error_Handler();
@@ -286,7 +318,7 @@ int main(void)
       CAN_Frame_To_USB(&local_hdr, local_rx);
     }
 
-    HAL_Delay(10);
+    // HAL_Delay(10);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -295,31 +327,30 @@ int main(void)
 }
 
 /**
-  * @brief System Clock Configuration
-  * @retval None
-  */
-void SystemClock_Config(void)
-{
+ * @brief System Clock Configuration
+ * @retval None
+ */
+void SystemClock_Config(void) {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
   /** Configure the main internal regulator output voltage
-  */
-  if (HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE0) != HAL_OK)
-  {
+   */
+  if (HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE0) != HAL_OK) {
     Error_Handler();
   }
 
   /** Configure LSE Drive Capability
-  */
+   */
   HAL_PWR_EnableBkUpAccess();
   __HAL_RCC_LSEDRIVE_CONFIG(RCC_LSEDRIVE_LOW);
 
   /** Initializes the RCC Oscillators according to the specified parameters
-  * in the RCC_OscInitTypeDef structure.
-  */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_HSI48
-                              |RCC_OSCILLATORTYPE_LSE|RCC_OSCILLATORTYPE_MSI;
+   * in the RCC_OscInitTypeDef structure.
+   */
+  RCC_OscInitStruct.OscillatorType =
+      RCC_OSCILLATORTYPE_HSI | RCC_OSCILLATORTYPE_HSI48 |
+      RCC_OSCILLATORTYPE_LSE | RCC_OSCILLATORTYPE_MSI;
   RCC_OscInitStruct.LSEState = RCC_LSE_ON;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
@@ -334,49 +365,43 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV7;
   RCC_OscInitStruct.PLL.PLLQ = RCC_PLLQ_DIV2;
   RCC_OscInitStruct.PLL.PLLR = RCC_PLLR_DIV2;
-  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
-  {
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
     Error_Handler();
   }
 
   /** Initializes the CPU, AHB and APB buses clocks
-  */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+   */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK |
+                                RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK)
-  {
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK) {
     Error_Handler();
   }
 
   /** Enable MSI Auto calibration
-  */
+   */
   HAL_RCCEx_EnableMSIPLLMode();
 }
 
 /* USER CODE BEGIN 4 */
 void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan,
-                               uint32_t RxFifo0ITs)
-{
-  if ((RxFifo0ITs & FDCAN_IT_RX_FIFO0_NEW_MESSAGE) != RESET)
-  {
-    if (HAL_FDCAN_GetRxMessage(hfdcan, FDCAN_RX_FIFO0, &LastRxHeader, Rx) != HAL_OK)
-    {
+                               uint32_t RxFifo0ITs) {
+  if ((RxFifo0ITs & FDCAN_IT_RX_FIFO0_NEW_MESSAGE) != RESET) {
+    if (HAL_FDCAN_GetRxMessage(hfdcan, FDCAN_RX_FIFO0, &LastRxHeader, Rx) !=
+        HAL_OK) {
       fdcan_rx_err_count++;
-    }
-    else
-    {
+    } else {
       fdcan_rx_msg_count++;
-      fdcan_rx_last_id  = LastRxHeader.Identifier;
+      fdcan_rx_last_id = LastRxHeader.Identifier;
       fdcan_rx_last_len = FDCAN_DlcToBytes(LastRxHeader.DataLength);
-      fdcan_rx_pending  = 1U;
+      fdcan_rx_pending = 1U;
     }
-    if (HAL_FDCAN_ActivateNotification(hfdcan, FDCAN_IT_RX_FIFO0_NEW_MESSAGE, 0) != HAL_OK)
-    {
+    if (HAL_FDCAN_ActivateNotification(hfdcan, FDCAN_IT_RX_FIFO0_NEW_MESSAGE,
+                                       0) != HAL_OK) {
       fdcan_notif_err_count++;
     }
   }
@@ -384,11 +409,10 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan,
 /* USER CODE END 4 */
 
 /**
-  * @brief  This function is executed in case of error occurrence.
-  * @retval None
-  */
-void Error_Handler(void)
-{
+ * @brief  This function is executed in case of error occurrence.
+ * @retval None
+ */
+void Error_Handler(void) {
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
@@ -398,14 +422,13 @@ void Error_Handler(void)
 }
 #ifdef USE_FULL_ASSERT
 /**
-  * @brief  Reports the name of the source file and the source line number
-  *         where the assert_param error has occurred.
-  * @param  file: pointer to the source file name
-  * @param  line: assert_param error line source number
-  * @retval None
-  */
-void assert_failed(uint8_t *file, uint32_t line)
-{
+ * @brief  Reports the name of the source file and the source line number
+ *         where the assert_param error has occurred.
+ * @param  file: pointer to the source file name
+ * @param  line: assert_param error line source number
+ * @retval None
+ */
+void assert_failed(uint8_t *file, uint32_t line) {
   /* USER CODE BEGIN 6 */
   /* User can add his own implementation to report the file name and line
      number, ex: printf("Wrong parameters value: file %s on line %d\r\n", file,

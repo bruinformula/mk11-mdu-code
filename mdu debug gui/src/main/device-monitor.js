@@ -281,11 +281,14 @@ class BoardStateTracker {
     const id = boardPayload.boardId;
     const state = this.boards.get(id) ?? {
       boardId: id,
+      boardId: id,
       fast: null,
       slow: null,
+      thermal: null,
       lastSeenAt: 0,
       fastCount: 0,
       slowCount: 0,
+      thermalCount: 0,
     };
 
     state.lastSeenAt = now;
@@ -296,6 +299,9 @@ class BoardStateTracker {
     } else if (boardPayload.kind === 'slow') {
       state.slow = { ...boardPayload, receivedAt: now };
       state.slowCount += 1;
+    } else if (boardPayload.kind === 'thermal') {
+      state.thermal = { ...boardPayload, receivedAt: now };
+      state.thermalCount += 1;
     }
 
     this.boards.set(id, state);
