@@ -24,6 +24,13 @@ const RPM_COLOR = '#6ce0e6';
 const FPS_COLOR = '#f7a35c';
 const BPS_COLOR = '#6ce0e6';
 
+const BOARD_NAMES = {
+  0: 'Front Left (FL)',
+  1: 'Front Right (FR)',
+  2: 'Rear Left (RL)',
+  3: 'Rear Right (RR)',
+};
+
 const api = window.mduDebug;
 
 const state = {
@@ -33,6 +40,19 @@ const state = {
   logStatus: null,
   selectedLogFile: '',
   logRows: [],
+  loadedLogFile: '',
+  loadedLogRows: [],
+  logView: 'live',
+  logPaused: false,
+  logFilters: {
+    search: '',
+    boardId: '',
+    status: 'all',
+    frameType: 'all',
+    valueField: 'none',
+    valueMin: '',
+    valueMax: '',
+  },
   charts: {
     frames: [],
     bytes: [],
@@ -53,6 +73,7 @@ const state = {
     },
     dragging: false,
     hover: { plotId: null, fraction: null },
+    yRanges: new Map(),
   },
 };
 
@@ -114,6 +135,18 @@ const elements = {
   topIdsBody: document.getElementById('top-ids-body'),
   boardsGrid: document.getElementById('boards-grid'),
   logBody: document.getElementById('log-body'),
+  logSearchInput: document.getElementById('log-search-input'),
+  logBoardFilter: document.getElementById('log-board-filter'),
+  logStatusFilter: document.getElementById('log-status-filter'),
+  logFrameTypeFilter: document.getElementById('log-frame-type-filter'),
+  logValueFieldFilter: document.getElementById('log-value-field-filter'),
+  logValueMin: document.getElementById('log-value-min'),
+  logValueMax: document.getElementById('log-value-max'),
+  logPauseToggle: document.getElementById('log-pause-toggle'),
+  loadLogButton: document.getElementById('load-log-button'),
+  exportFilteredButton: document.getElementById('export-filtered-button'),
+  liveLogButton: document.getElementById('live-log-button'),
+  loadedLogPath: document.getElementById('loaded-log-path'),
   themeToggle: document.getElementById('theme-toggle'),
   themeToggleLabel: document.querySelector('#theme-toggle .theme-toggle-label'),
   tabButtons: Array.from(document.querySelectorAll('.tab-button')),
@@ -208,6 +241,133 @@ function formatTimestamp(isoString) {
   }
 
   return new Date(isoString).toLocaleTimeString();
+}
+
+function isRuntimeEntry(entry) {
+  return entry.kind === 'runtime' || entry.type === 'runtime';
+}
+
+function getActiveLogRows() {
+  return state.logView === 'file' ? state.loadedLogRows : state.logRows;
+}
+
+function parseLogNumericValue(entry, field) {
+  if (!entry || !entry.board) {
+    return null;
+  }
+
+  switch (field) {
+    case 'rpm':
+      return Number(entry.board.rpm);
+    case 'tireMax':
+      return Number(entry.board.tireC?.max);
+    case 'tireMin':
+      return Number(entry.board.tireC?.min);
+    case 'tireCtr':
+      return Number(entry.board.tireC?.center);
+    case 'tireAmb':
+      return Number(entry.board.tireC?.ambient);
+    case 'brake':
+      return Number(entry.board.brakeC);
+    case 'brakeAmb':
+      return Number(entry.board.brakeAmbientC);
+    case 'shock':
+      return Number(entry.board.shockMm);
+    default:
+      return null;
+  }
+}
+
+function getFilteredLogRows(rows) {
+  return rows.filter((entry) => {
+    const search = state.logFilters.search.trim().toLowerCase();
+    if (search) {
+      const text = [
+        entry.raw,
+        entry.reason,
+        entry.message,
+        entry.frame?.idText,
+        entry.frame?.dataHex,
+        entry.board?.kind,
+        entry.board?.boardId,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+      if (!text.includes(search)) {
+        return false;
+      }
+    }
+
+    const boardIdFilter = state.logFilters.boardId.trim();
+    if (boardIdFilter) {
+      const boardId = Number(boardIdFilter);
+      if (!Number.isFinite(boardId) || entry.board?.boardId !== boardId) {
+        return false;
+      }
+    }
+
+    const status = state.logFilters.status;
+    if (status === 'ok' && !entry.ok) {
+      return false;
+    }
+    if (status === 'error' && entry.ok) {
+      return false;
+    }
+    if (status === 'slcan' && !(entry.source && entry.source !== 'board' && entry.frame)) {
+      return false;
+    }
+
+    const frameType = state.logFilters.frameType;
+    if (frameType === 'board-fast' && entry.board?.kind !== 'fast') {
+      return false;
+    }
+    if (frameType === 'board-slow' && entry.board?.kind !== 'slow') {
+      return false;
+    }
+    if (frameType === 'tire' && !(entry.board?.kind === 'slow' && Number.isFinite(entry.board?.tireC?.max))) {
+      return false;
+    }
+    if (frameType === 'brake' && !(entry.board?.kind === 'slow' && Number.isFinite(entry.board?.brakeC))) {
+      return false;
+    }
+    if (frameType === 'slcan' && !(entry.source && entry.source !== 'board' && entry.frame)) {
+      return false;
+    }
+
+    const valueField = state.logFilters.valueField;
+    const hasValueFilter = valueField !== 'none';
+    if (hasValueFilter) {
+      const value = parseLogNumericValue(entry, valueField);
+      if (!Number.isFinite(value)) {
+        return false;
+      }
+
+      const min = Number(state.logFilters.valueMin);
+      const max = Number(state.logFilters.valueMax);
+      if (state.logFilters.valueMin !== '' && Number.isFinite(min) && value < min) {
+        return false;
+      }
+      if (state.logFilters.valueMax !== '' && Number.isFinite(max) && value > max) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+}
+
+function renderLogViewStatus() {
+  if (elements.loadedLogPath) {
+    if (state.logView === 'file' && state.loadedLogFile) {
+      elements.loadedLogPath.textContent = `Viewing saved log: ${state.loadedLogFile}`;
+      elements.liveLogButton.hidden = false;
+    } else {
+      elements.loadedLogPath.textContent = '';
+      elements.liveLogButton.hidden = true;
+    }
+  }
 }
 
 function describePort(port) {
@@ -418,6 +578,141 @@ function formatBoardAge(ageMs) {
   return `${Math.floor(ageMs / 60000)}m ago`;
 }
 
+function renderTable(headers, rows) {
+  return `
+    <div class="board-detail-scroll">
+      <table class="board-detail-table">
+        <thead>
+          <tr>
+            ${headers.map((h) => `<th>${escapeHtml(h)}</th>`).join('')}
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function captureOpenBoardDetails() {
+  const openDetails = new Set();
+  if (!elements.boardsGrid) {
+    return openDetails;
+  }
+
+  for (const card of elements.boardsGrid.querySelectorAll('.board-card')) {
+    const boardId = card.dataset.boardId;
+    if (!boardId) {
+      continue;
+    }
+
+    for (const detail of card.querySelectorAll('details.board-detail')) {
+      if (detail.open && detail.dataset.detail) {
+        openDetails.add(`${boardId}:${detail.dataset.detail}`);
+      }
+    }
+  }
+
+  return openDetails;
+}
+
+function captureBoardDetailScroll() {
+  const scrollMap = new Map();
+  if (!elements.boardsGrid) {
+    return scrollMap;
+  }
+
+  for (const card of elements.boardsGrid.querySelectorAll('.board-card')) {
+    const boardId = card.dataset.boardId;
+    if (!boardId) {
+      continue;
+    }
+
+    for (const detail of card.querySelectorAll('details.board-detail')) {
+      const detailKey = detail.dataset.detail;
+      const scrollWrap = detail.querySelector('.board-detail-scroll');
+      if (!detailKey || !scrollWrap) {
+        continue;
+      }
+      if (scrollWrap.scrollLeft > 0) {
+        scrollMap.set(`${boardId}:${detailKey}`, scrollWrap.scrollLeft);
+      }
+    }
+  }
+
+  return scrollMap;
+}
+
+function renderStrainDetails(fast) {
+  if (!fast?.strainBlocks?.length) {
+    return '';
+  }
+
+  const rows = fast.strainBlocks.map((block) => {
+    const values = block.strainGaugesMv.map((mv) => `${mv} mV`).join(' / ');
+    return `
+      <tr>
+        <td>${block.index + 1}</td>
+        <td>${escapeHtml(values)}</td>
+        <td>${escapeHtml(String(block.jitterUs))} µs</td>
+      </tr>
+    `;
+  });
+
+  return `
+    <details class="board-detail" data-detail="strain">
+      <summary>Strain blocks (${fast.strainBlocks.length})</summary>
+      ${renderTable(['Block', 'Channel values', 'Jitter'], rows)}
+    </details>
+  `;
+}
+
+function renderSampleDetails(samples, label, unit, detailKey) {
+  if (!samples?.length) {
+    return '';
+  }
+
+  const rows = samples.map((sample) => `
+    <tr>
+      <td>${sample.index + 1}</td>
+      <td>${escapeHtml(formatSigned(sample.value, 2))}${escapeHtml(unit)}</td>
+      <td>${escapeHtml(String(sample.jitterUs))} µs</td>
+    </tr>
+  `);
+
+  return `
+    <details class="board-detail" data-detail="${escapeHtml(detailKey)}">
+      <summary>${escapeHtml(label)} (${samples.length})</summary>
+      ${renderTable(['Sample', label, 'Jitter'], rows)}
+    </details>
+  `;
+}
+
+function renderTireDetails(slow) {
+  if (!slow?.tireBlocks?.length) {
+    return '';
+  }
+
+  const rows = slow.tireBlocks.map((block) => `
+    <tr>
+      <td>${block.index + 1}</td>
+      <td>${escapeHtml(String(block.max))} °C</td>
+      <td>${escapeHtml(String(block.min))} °C</td>
+      <td>${escapeHtml(String(block.center))} °C</td>
+      <td>${escapeHtml(String(block.ambient))} °C</td>
+      <td>${escapeHtml(String(block.jitterMs))} ms</td>
+    </tr>
+  `);
+
+  return `
+    <details class="board-detail" data-detail="tire">
+      <summary>Tire history (${slow.tireBlocks.length})</summary>
+      ${renderTable(['Block', 'Max', 'Min', 'Center', 'Ambient', 'Jitter'], rows)}
+    </details>
+  `;
+}
+
 function renderFastBlock(fast) {
   if (!fast) {
     return '<p class="board-empty">Waiting for fast frame...</p>';
@@ -433,6 +728,8 @@ function renderFastBlock(fast) {
       ${sgRows}
       <dt>Shock</dt><dd>${formatSigned(fast.shockMm, 2)} mm</dd>
     </dl>
+    ${renderStrainDetails(fast)}
+    ${renderSampleDetails(fast.shockSamples, 'Shock mm', ' mm', 'shock')}
   `;
 }
 
@@ -452,6 +749,9 @@ function renderSlowBlock(slow) {
       <dt>Brake</dt><dd>${formatSigned(slow.brakeC, 1)} &deg;C</dd>
       <dt>Brake amb</dt><dd>${formatSigned(slow.brakeAmbientC, 1)} &deg;C</dd>
     </dl>
+    ${renderSampleDetails(slow.wheelSamples, 'RPM', '', 'rpm')}
+    ${renderSampleDetails(slow.brakeSamples, 'Brake °C', ' °C', 'brake')}
+    ${renderTireDetails(slow)}
   `;
 }
 
@@ -462,21 +762,34 @@ function renderBoards() {
     return;
   }
 
+  const openDetails = captureOpenBoardDetails();
+  const scrollPositions = captureBoardDetailScroll();
+
   elements.boardsGrid.innerHTML = boards
     .map((board) => {
+      const boardName = BOARD_NAMES[board.boardId] || `Board ${board.boardId}`;
+      const sduBase = 0x080 + (board.boardId << 3);
+      const sgHex = sduBase.toString(16).toUpperCase().padStart(3, '0');
+      const shockHex = (sduBase + 1).toString(16).toUpperCase().padStart(3, '0');
+      const brakeHex = (sduBase + 2).toString(16).toUpperCase().padStart(3, '0');
+      const tireHex = (sduBase + 3).toString(16).toUpperCase().padStart(3, '0');
+      const wheelHex = (sduBase + 4).toString(16).toUpperCase().padStart(3, '0');
+
       return `
-        <article class="board-card">
+        <article class="board-card" data-board-id="${board.boardId}">
           <header class="board-card-header">
-            <strong>Board ${board.boardId}</strong>
+            <strong>${escapeHtml(boardName)}</strong>
             <span class="board-age">${escapeHtml(formatBoardAge(board.lastSeenAgeMs))}</span>
+            <span class="board-counter">CNT: ${board.lastMessageCounterReceived != null ? board.lastMessageCounterReceived : '--'}</span>
+            ${board.counterMismatch ? '<span class="pill error">CNT MISMATCH</span>' : ''}
           </header>
           <div class="board-cols">
             <div class="board-col">
-              <h3>Fast (0x${(0x100 + board.boardId).toString(16).toUpperCase().padStart(3, '0')})</h3>
+              <h3>Fast (SG: 0x${sgHex}, Shock: 0x${shockHex})</h3>
               ${renderFastBlock(board.fast)}
             </div>
             <div class="board-col">
-              <h3>Slow (0x${(0x200 + board.boardId).toString(16).toUpperCase().padStart(3, '0')})</h3>
+              <h3>Slow (Brk: 0x${brakeHex}, Tire: 0x${tireHex}, Whl: 0x${wheelHex})</h3>
               ${renderSlowBlock(board.slow)}
             </div>
           </div>
@@ -484,17 +797,63 @@ function renderBoards() {
       `;
     })
     .join('');
+
+  if (openDetails.size > 0) {
+    for (const card of elements.boardsGrid.querySelectorAll('.board-card')) {
+      const boardId = card.dataset.boardId;
+      if (!boardId) {
+        continue;
+      }
+
+      for (const detail of card.querySelectorAll('details.board-detail')) {
+        if (detail.dataset.detail && openDetails.has(`${boardId}:${detail.dataset.detail}`)) {
+          detail.open = true;
+        }
+      }
+    }
+  }
+
+  if (scrollPositions.size > 0) {
+    for (const card of elements.boardsGrid.querySelectorAll('.board-card')) {
+      const boardId = card.dataset.boardId;
+      if (!boardId) {
+        continue;
+      }
+
+      for (const detail of card.querySelectorAll('details.board-detail')) {
+        const detailKey = detail.dataset.detail;
+        if (!detailKey) {
+          continue;
+        }
+        const preservedScrollLeft = scrollPositions.get(`${boardId}:${detailKey}`);
+        if (preservedScrollLeft == null) {
+          continue;
+        }
+        const scrollWrap = detail.querySelector('.board-detail-scroll');
+        if (scrollWrap) {
+          scrollWrap.scrollLeft = preservedScrollLeft;
+        }
+      }
+    }
+  }
 }
 
 function renderLog() {
-  if (state.logRows.length === 0) {
+  const rows = getActiveLogRows();
+  if (rows.length === 0) {
     elements.logBody.innerHTML = '<tr><td class="empty-state" colspan="6">No log entries yet.</td></tr>';
     return;
   }
 
-  elements.logBody.innerHTML = state.logRows
+  const filteredRows = getFilteredLogRows(rows);
+  if (filteredRows.length === 0) {
+    elements.logBody.innerHTML = '<tr><td class="empty-state" colspan="6">No log entries match the current filters.</td></tr>';
+    return;
+  }
+
+  elements.logBody.innerHTML = filteredRows
     .map((entry) => {
-      if (entry.kind === 'runtime') {
+      if (isRuntimeEntry(entry)) {
         return `
           <tr>
             <td>${escapeHtml(formatTimestamp(entry.timestamp))}</td>
@@ -557,6 +916,7 @@ function renderLoggingControls() {
   elements.logPath.value = activePath;
   elements.startLogButton.disabled = logStatus.active || (!activePath && state.ports.length === 0);
   elements.stopLogButton.disabled = !logStatus.active;
+  renderLogViewStatus();
 }
 
 function pruneSeries(series, cutoff) {
@@ -722,6 +1082,21 @@ function renderMultiLinePlot(svgElement, lines, options) {
     yMax += pad;
   }
 
+  if (options.plotId) {
+    const previousRange = state.graphs.yRanges.get(options.plotId);
+    if (previousRange && Number.isFinite(previousRange.yMin) && Number.isFinite(previousRange.yMax)) {
+      // Expand immediately for new extremes, but shrink slowly to prevent visual bouncing.
+      const SHRINK_ALPHA = 0.18;
+      yMin = yMin < previousRange.yMin
+        ? yMin
+        : previousRange.yMin + (yMin - previousRange.yMin) * SHRINK_ALPHA;
+      yMax = yMax > previousRange.yMax
+        ? yMax
+        : previousRange.yMax + (yMax - previousRange.yMax) * SHRINK_ALPHA;
+    }
+    state.graphs.yRanges.set(options.plotId, { yMin, yMax });
+  }
+
   const xScale = (t) => padLeft + ((t - start) / windowMs) * plotWidth;
   const yScale = (v) => padTop + (1 - (v - yMin) / (yMax - yMin)) * plotHeight;
 
@@ -782,6 +1157,8 @@ function renderMultiLinePlot(svgElement, lines, options) {
     <rect class="hover-capture" x="${padLeft}" y="${padTop}" width="${plotWidth}" height="${plotHeight}" fill="transparent" pointer-events="all"></rect>
     <g class="hover-layer"></g>
   `;
+
+  return { yMin, yMax };
 }
 
 function downsampleForRender(points, maxOut) {
@@ -812,6 +1189,10 @@ function findNearestPointIndex(points, t) {
 }
 
 function computePlotYRange(def) {
+  if (def && def.id && state.graphs.yRanges.has(def.id)) {
+    return state.graphs.yRanges.get(def.id);
+  }
+
   const opts = def.plotOptions || {};
   const start = opts.now - opts.windowMs;
   let yMin = Infinity;
@@ -869,7 +1250,7 @@ function applyHoverToCard(card, def, fraction) {
   const start = now - windowMs;
   const t = start + clamped * windowMs;
 
-  const { yMin, yMax } = computePlotYRange(def);
+  const { yMin, yMax } = card._plotRange || computePlotYRange(def);
   const yScale = (v) => padTop + (1 - (v - yMin) / (yMax - yMin)) * plotHeight;
 
   const readouts = [];
@@ -1057,7 +1438,10 @@ function buildPlotCard(def) {
     <svg class="graph-svg" viewBox="0 0 720 220" preserveAspectRatio="none"></svg>
     ${buildLegend(def.lines, def.legendFormatter)}
   `;
-  renderMultiLinePlot(card.querySelector('svg'), def.lines, def.plotOptions);
+  card._plotRange = renderMultiLinePlot(card.querySelector('svg'), def.lines, {
+    ...def.plotOptions,
+    plotId: def.id,
+  });
   card._plotDef = def;
   card.querySelector('.favorite-btn').addEventListener('click', (event) => {
     event.stopPropagation();
@@ -1160,6 +1544,7 @@ function buildAllPlotDefs(now, windowMs) {
 
   const boardIds = [...state.graphs.boards.keys()].sort((a, b) => a - b);
   for (const boardId of boardIds) {
+    const boardName = BOARD_NAMES[boardId] || `Board ${boardId}`;
     const history = state.graphs.boards.get(boardId);
     const fastPoints = pickWindowedPoints(history.fast, now, windowMs);
     const slowPoints = pickWindowedPoints(history.slow, now, windowMs);
@@ -1168,7 +1553,7 @@ function buildAllPlotDefs(now, windowMs) {
       id: `board:${boardId}:sg`,
       section: 'board',
       boardId,
-      title: `Board ${boardId} · Strain Gauges (mV)`,
+      title: `${boardName} · Strain Gauges (mV)`,
       badge: `${fastPoints.length} pts`,
       lines: SG_COLORS.map((color, idx) => ({
         label: `SG${idx + 1}`,
@@ -1183,7 +1568,7 @@ function buildAllPlotDefs(now, windowMs) {
       id: `board:${boardId}:shock`,
       section: 'board',
       boardId,
-      title: `Board ${boardId} · Shock (mm)`,
+      title: `${boardName} · Shock (mm)`,
       badge: `${fastPoints.length} pts`,
       lines: [{ label: 'Shock', color: SHOCK_COLOR, points: fastPoints.map((row) => ({ t: row.t, v: row.shockMm })) }],
       plotOptions: { now, windowMs, formatY: (v) => v.toFixed(2), emptyText: 'Waiting for fast frames' },
@@ -1194,7 +1579,7 @@ function buildAllPlotDefs(now, windowMs) {
       id: `board:${boardId}:rpm`,
       section: 'board',
       boardId,
-      title: `Board ${boardId} · RPM`,
+      title: `${boardName} · Wheel Speed (RPM)`,
       badge: `${slowPoints.length} pts`,
       lines: [{ label: 'RPM', color: RPM_COLOR, points: slowPoints.map((row) => ({ t: row.t, v: row.rpm })) }],
       plotOptions: { now, windowMs, yMinClamp: 0, formatY: (v) => v.toFixed(0), emptyText: 'Waiting for slow frames' },
@@ -1205,7 +1590,7 @@ function buildAllPlotDefs(now, windowMs) {
       id: `board:${boardId}:tire`,
       section: 'board',
       boardId,
-      title: `Board ${boardId} · Tire Temps (°C)`,
+      title: `${boardName} · Tire Temps (°C)`,
       badge: `${slowPoints.length} pts`,
       lines: [
         { label: 'Max', color: TIRE_COLORS.max, points: slowPoints.map((row) => ({ t: row.t, v: row.tireMax })) },
@@ -1221,7 +1606,7 @@ function buildAllPlotDefs(now, windowMs) {
       id: `board:${boardId}:brake`,
       section: 'board',
       boardId,
-      title: `Board ${boardId} · Brake Temps (°C)`,
+      title: `${boardName} · Brake Temps (°C)`,
       badge: `${slowPoints.length} pts`,
       lines: [
         { label: 'Brake', color: BRAKE_COLORS.brakeC, points: slowPoints.map((row) => ({ t: row.t, v: row.brakeC })) },
@@ -1264,12 +1649,13 @@ function renderBoardSection(boardIds, defsByBoard, now) {
     const defsForBoard = defsByBoard.get(boardId) || [];
     if (defsForBoard.length === 0) continue;
     const ageMs = history.lastSeenAt ? now - history.lastSeenAt : null;
+    const boardName = BOARD_NAMES[boardId] || `Board ${boardId}`;
     const card = document.createElement('article');
     card.className = 'board-graph-card';
     card.dataset.boardId = String(boardId);
     card.innerHTML = `
       <header>
-        <strong>Board ${boardId}</strong>
+        <strong>${escapeHtml(boardName)}</strong>
         <span class="board-age">${escapeHtml(formatBoardAge(ageMs))} · ${history.fast.length} fast / ${history.slow.length} slow</span>
       </header>
       <div class="board-graph-grid graphs-drop-zone" data-drop-key="board:${boardId}"></div>
@@ -1346,11 +1732,18 @@ function renderAll() {
 }
 
 function addLogRow(entry) {
+  if (!entry.sourceOrigin) {
+    entry.sourceOrigin = 'live';
+  }
+
   state.logRows.unshift(entry);
   if (state.logRows.length > MAX_LOG_ROWS) {
     state.logRows.length = MAX_LOG_ROWS;
   }
-  scheduleRender('log', renderLog);
+
+  if (!state.logPaused && state.logView === 'live') {
+    scheduleRender('log', renderLog);
+  }
 }
 
 async function chooseAndMaybeStartLogging() {
@@ -1404,6 +1797,7 @@ function wireUi() {
     state.graphs.boards = new Map();
     state.graphs.throughput.fps = [];
     state.graphs.throughput.bps = [];
+    state.graphs.yRanges = new Map();
     scheduleRender('graphs', renderGraphs);
     await api.clearSession();
   });
@@ -1424,6 +1818,7 @@ function wireUi() {
     state.graphs.boards = new Map();
     state.graphs.throughput.fps = [];
     state.graphs.throughput.bps = [];
+    state.graphs.yRanges = new Map();
     renderGraphs();
   });
 
@@ -1432,10 +1827,100 @@ function wireUi() {
 
   elements.clearLogButton.addEventListener('click', () => {
     state.logRows = [];
+    state.loadedLogRows = [];
+    state.logView = 'live';
+    state.loadedLogFile = '';
     renderLog();
+    renderLogViewStatus();
   });
 
   elements.chooseLogButton.addEventListener('click', chooseAndMaybeStartLogging);
+
+  elements.logSearchInput.addEventListener('input', () => {
+    state.logFilters.search = elements.logSearchInput.value;
+    renderLog();
+  });
+
+  elements.logBoardFilter.addEventListener('input', () => {
+    state.logFilters.boardId = elements.logBoardFilter.value;
+    renderLog();
+  });
+
+  elements.logStatusFilter.addEventListener('change', () => {
+    state.logFilters.status = elements.logStatusFilter.value;
+    renderLog();
+  });
+
+  elements.logFrameTypeFilter.addEventListener('change', () => {
+    state.logFilters.frameType = elements.logFrameTypeFilter.value;
+    renderLog();
+  });
+
+  elements.logValueFieldFilter.addEventListener('change', () => {
+    state.logFilters.valueField = elements.logValueFieldFilter.value;
+    renderLog();
+  });
+
+  elements.logValueMin.addEventListener('input', () => {
+    state.logFilters.valueMin = elements.logValueMin.value;
+    renderLog();
+  });
+
+  elements.logValueMax.addEventListener('input', () => {
+    state.logFilters.valueMax = elements.logValueMax.value;
+    renderLog();
+  });
+
+  elements.logPauseToggle.addEventListener('change', () => {
+    state.logPaused = elements.logPauseToggle.checked;
+    if (!state.logPaused) {
+      renderLog();
+    }
+  });
+
+  elements.loadLogButton.addEventListener('click', async () => {
+    try {
+      const result = await api.openLogFile();
+      if (!result?.entries) {
+        return;
+      }
+
+      state.loadedLogRows = result.entries
+        .map((entry) => ({ sourceOrigin: 'file', ...entry }))
+        .reverse();
+      state.loadedLogFile = result.filePath ?? '';
+      state.logView = 'file';
+      renderLog();
+      renderLogViewStatus();
+      updateStatusLine(`Loaded ${state.loadedLogRows.length} log entries from file.`);
+    } catch (error) {
+      updateStatusLine(`Failed to load log file: ${error.message}`);
+    }
+  });
+
+  elements.exportFilteredButton.addEventListener('click', async () => {
+    const rows = getFilteredLogRows(getActiveLogRows());
+    if (!rows.length) {
+      updateStatusLine('No filtered rows available to export.');
+      return;
+    }
+
+    try {
+      const filePath = await api.exportFilteredLog(rows);
+      if (filePath) {
+        updateStatusLine(`Exported ${rows.length} rows to ${filePath}`);
+      }
+    } catch (error) {
+      updateStatusLine(`Failed to export filtered log: ${error.message}`);
+    }
+  });
+
+  elements.liveLogButton.addEventListener('click', () => {
+    state.logView = 'live';
+    state.loadedLogFile = '';
+    renderLog();
+    renderLogViewStatus();
+  });
 
   elements.startLogButton.addEventListener('click', async () => {
     let filePath = state.selectedLogFile || state.logStatus?.filePath;

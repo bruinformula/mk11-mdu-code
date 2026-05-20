@@ -65,7 +65,23 @@ volatile uint32_t fdcan_rx_last_id     = 0U;
 volatile uint8_t  fdcan_rx_last_len    = 0U;
 volatile uint8_t  fdcan_rx_pending     = 0U;
 
-static FDCAN_RxHeaderTypeDef LastRxHeader;
+
+extern USBD_HandleTypeDef hUsbDeviceFS;
+//
+//#define FDCAN_RX_QUEUE_SIZE 16
+typedef struct {
+    FDCAN_RxHeaderTypeDef header;
+    uint8_t data[64];
+} FDCAN_RxFrame_t;
+
+static FDCAN_RxFrame_t fdcan_rx_queue[FDCAN_RX_QUEUE_SIZE];
+static volatile uint8_t fdcan_rx_head = 0;
+static volatile uint8_t fdcan_rx_tail = 0;
+
+#define USB_TX_RING_SIZE 4096
+static uint8_t usb_tx_ring[USB_TX_RING_SIZE];
+static volatile uint16_t usb_tx_head = 0;
+static volatile uint16_t usb_tx_tail = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -100,102 +116,192 @@ static uint8_t FDCAN_DlcToBytes(uint32_t dlc)
   }
 }
 
-static void CAN_Frame_To_USB(const FDCAN_RxHeaderTypeDef *hdr, const uint8_t *data)
+static void usb_ring_push(const char *str, uint16_t len)
 {
-  char buf[512];
-  int n = 0;
-
-  if (!USB_Driver_IsConfigured()) {
+  uint16_t head = usb_tx_head;
+  uint16_t tail = usb_tx_tail;
+  
+  // Calculate free space in ring buffer
+  uint16_t free_space;
+  if (head <= tail) {
+    free_space = USB_TX_RING_SIZE - 1 - (tail - head);
+  } else {
+    free_space = head - tail - 1;
+  }
+  
+  if (len > free_space) {
+    usbdiag.tx_drop_count++;
     return;
   }
-
-  uint8_t len = FDCAN_DlcToBytes(hdr->DataLength);
-  if (len > sizeof(Rx)) {
-    len = (uint8_t)sizeof(Rx);
+  
+  for (uint16_t i = 0; i < len; i++) {
+    usb_tx_ring[tail] = (uint8_t)str[i];
+    tail = (tail + 1) % USB_TX_RING_SIZE;
   }
-
-  /* SDU frames are 0x100+boardId (fast) and 0x200+boardId (slow). Each board
-   * gets its own pair of display lines so the two streams don't overwrite each
-   * other on the terminal. */
-  uint32_t id = hdr->Identifier;
-  uint32_t base = id & 0xF00U;
-  uint32_t board = id & 0x00FU;
-  const uint32_t MAX_BOARD_ID = 1U; /* bump this if more SDUs join the bus */
-
-  if ((base == 0x100U || base == 0x200U) && board <= MAX_BOARD_ID && len >= 64) {
-    uint16_t time_ms = data[0] | (data[1] << 8);
-    int16_t vals[15];
-    for (int i = 0; i < 15; i++) {
-      vals[i] = (int16_t)(data[2 + i*4] | (data[3 + i*4] << 8));
-    }
-
-    /* Lines: board 0 fast=1, board 0 slow=2, board 1 fast=3, board 1 slow=4 ... */
-    int line = (int)(board * 2U + (base == 0x200U ? 2U : 1U));
-
-    if (base == 0x100U) {
-      int16_t shock = vals[6];
-      n += snprintf(buf + n, sizeof(buf) - (size_t)n,
-                    "\033[%d;1H\033[K[B%lu ID %03lX Fast] dT:%ums | SG[mV]: %d, %d, %d, %d, %d, %d | Shock: %d.%02d mm\r\n",
-                    line,
-                    (unsigned long)board, (unsigned long)id,
-                    time_ms,
-                    vals[0], vals[1], vals[2], vals[3], vals[4], vals[5],
-                    shock / 100, (shock > 0 ? shock : -shock) % 100);
-    } else {
-      int16_t rpm = vals[0];
-      int16_t maxT = vals[1];
-      int16_t minT = vals[2];
-      int16_t ctrT = vals[3];
-      int16_t tAmb = vals[4];
-      int16_t brk  = vals[5];
-      int16_t bAmb = vals[6];
-      n += snprintf(buf + n, sizeof(buf) - (size_t)n,
-                    "\033[%d;1H\033[K[B%lu ID %03lX Slow] dT:%ums | RPM: %d | Tire[Max:%d.%d Min:%d.%d Ctr:%d.%d Amb:%d.%d] Brk:%d.%d Amb:%d.%d\r\n",
-                    line,
-                    (unsigned long)board, (unsigned long)id,
-                    time_ms, rpm,
-                    maxT/10, (maxT>0?maxT:-maxT)%10,
-                    minT/10, (minT>0?minT:-minT)%10,
-                    ctrT/10, (ctrT>0?ctrT:-ctrT)%10,
-                    tAmb/10, (tAmb>0?tAmb:-tAmb)%10,
-                    brk/10, (brk>0?brk:-brk)%10,
-                    bAmb/10, (bAmb>0?bAmb:-bAmb)%10);
-    }
-  } else {
-    // Fallback to standard SLCAN
-    if (hdr->IdType == FDCAN_STANDARD_ID) {
-      n += snprintf(buf + n, sizeof(buf) - (size_t)n, "t%03lX%u",
-                    (unsigned long)hdr->Identifier, (unsigned)len);
-    } else {
-      n += snprintf(buf + n, sizeof(buf) - (size_t)n, "T%08lX%u",
-                    (unsigned long)hdr->Identifier, (unsigned)len);
-    }
-    for (uint8_t i = 0U; i < len; i++) {
-      n += snprintf(buf + n, sizeof(buf) - (size_t)n, "%02X", data[i]);
-    }
-    if (n < (int)sizeof(buf) - 2) {
-      buf[n++] = '\r';
-      buf[n++] = '\n';
-    }
-  }
-
-  if (n > (int)sizeof(buf)) {
-    n = (int)sizeof(buf);
-  }
-
-  uint8_t usb_status;
-  uint32_t timeout = 100000;
-  do {
-    usb_status = CDC_Transmit_FS((uint8_t *)buf, (uint16_t)n);
-    if (usb_status == USBD_BUSY) {
-      timeout--;
-    }
-  } while (usb_status == USBD_BUSY && timeout > 0);
-
-  if (usb_status != USBD_OK) {
-    usbdiag.tx_drop_count++;
-  }
+  
+  usb_tx_tail = tail;
 }
+
+//static void CAN_Frame_To_USB(const FDCAN_RxHeaderTypeDef *hdr, const uint8_t *data)
+//{
+//  char buf[512];
+//  int n = 0;
+//
+//  if (!USB_Driver_IsConfigured()) {
+//    return;
+//  }
+//
+//  uint8_t len = FDCAN_DlcToBytes(hdr->DataLength);
+//  if (len > 64) {
+//    len = 64;
+//  }
+//
+//  uint32_t id = hdr->Identifier;
+//  uint32_t base = id & 0xF00U;
+//  uint32_t middle = id & 0x0F0U;
+//  uint32_t board = id & 0x00FU;
+//  const uint32_t MAX_BOARD_ID = 1U;
+//
+//  if ((base == 0x100U || base == 0x200U) && board <= MAX_BOARD_ID && len >= 64) {
+//    if (middle == 0x00U) {
+//      // Legacy format fallback parsing
+//      uint16_t time_ms = data[0] | (data[1] << 8);
+//      int16_t vals[15];
+//      for (int i = 0; i < 15; i++) {
+//        vals[i] = (int16_t)(data[2 + i*4] | (data[3 + i*4] << 8));
+//      }
+//
+//      int line = (int)(board * 2U + (base == 0x200U ? 2U : 1U));
+//
+//      if (base == 0x100U) {
+//        int16_t shock = vals[6];
+//        n += snprintf(buf + n, sizeof(buf) - (size_t)n,
+//                      "\033[%d;1H\033[K[B%lu ID %03lX Legacy Fast] dT:%ums | SG[mV]: %d, %d, %d, %d, %d, %d | Shock: %d.%02d mm\r\n",
+//                      line, (unsigned long)board, (unsigned long)id, time_ms,
+//                      vals[0], vals[1], vals[2], vals[3], vals[4], vals[5],
+//                      shock / 100, (shock > 0 ? shock : -shock) % 100);
+//      } else {
+//        int16_t rpm = vals[0];
+//        int16_t maxT = vals[1];
+//        int16_t minT = vals[2];
+//        int16_t ctrT = vals[3];
+//        int16_t tAmb = vals[4];
+//        int16_t brk  = vals[5];
+//        int16_t bAmb = vals[6];
+//        n += snprintf(buf + n, sizeof(buf) - (size_t)n,
+//                      "\033[%d;1H\033[K[B%lu ID %03lX Legacy Slow] dT:%ums | RPM: %d | Tire[Max:%d.%d Min:%d.%d Ctr:%d.%d Amb:%d.%d] Brk:%d.%d Amb:%d.%d\r\n",
+//                      line, (unsigned long)board, (unsigned long)id, time_ms, rpm,
+//                      maxT/10, (maxT>0?maxT:-maxT)%10,
+//                      minT/10, (minT>0?minT:-minT)%10,
+//                      ctrT/10, (ctrT>0?ctrT:-ctrT)%10,
+//                      tAmb/10, (tAmb>0?tAmb:-tAmb)%10,
+//                      brk/10, (brk>0?brk:-brk)%10,
+//                      bAmb/10, (bAmb>0?bAmb:-bAmb)%10);
+//      }
+//    } else {
+//      // High-fidelity packed parsing
+//      uint32_t base_time = data[0] | (data[1] << 8) | (data[2] << 16) | (data[3] << 24);
+//      uint16_t err = data[4] | (data[5] << 8);
+//
+//      if (base == 0x100U && middle == 0x10U) {
+//        // Strain Gauge Block
+//        uint8_t ch1_upper = data[6];
+//        uint8_t ch2_upper = data[7];
+//        uint8_t ch1_ch2_lower = data[8];
+//        uint8_t ch3_upper = data[9];
+//        uint8_t ch4_upper = data[10];
+//        uint8_t ch3_ch4_lower = data[11];
+//        uint8_t ch5_upper = data[12];
+//        uint8_t ch6_upper = data[13];
+//        uint8_t ch5_ch6_lower = data[14];
+//        int8_t jitter = (int8_t)data[15];
+//
+//        uint16_t vals[6];
+//        vals[0] = (uint16_t)((ch1_upper << 4) | (ch1_ch2_lower >> 4));
+//        vals[1] = (uint16_t)((ch2_upper << 4) | (ch1_ch2_lower & 0x0FU));
+//        vals[2] = (uint16_t)((ch3_upper << 4) | (ch3_ch4_lower >> 4));
+//        vals[3] = (uint16_t)((ch4_upper << 4) | (ch3_ch4_lower & 0x0FU));
+//        vals[4] = (uint16_t)((ch5_upper << 4) | (ch5_ch6_lower >> 4));
+//        vals[5] = (uint16_t)((ch6_upper << 4) | (ch5_ch6_lower & 0x0FU));
+//
+//        int sg_mv[6];
+//        for (int i = 0; i < 6; i++) {
+//          float v = ((float)vals[i] / 4095.0f) * 6.6f - 3.3f;
+//          sg_mv[i] = (int)(v * 1000.0f);
+//        }
+//
+//        int line = (int)(board * 5U + 1U);
+//        n += snprintf(buf + n, sizeof(buf) - (size_t)n,
+//                      "\033[%d;1H\033[K[B%lu SG ID %03lX] BaseUs:%lu | SG[mV]: %d, %d, %d, %d, %d, %d | Err:0x%04X | Jitter:%dus\r\n",
+//                      line, (unsigned long)board, (unsigned long)id, (unsigned long)base_time,
+//                      sg_mv[0], sg_mv[1], sg_mv[2], sg_mv[3], sg_mv[4], sg_mv[5],
+//                      (unsigned)err, (int)jitter);
+//
+//      } else if (base == 0x100U && middle == 0x20U) {
+//        // Shock Pot - FIXED: Reads samples[0] (bytes 6-8) instead of blank tail elements
+//        uint16_t raw_val = data[6] | (data[7] << 8);
+//        int8_t jitter = (int8_t)data[8];
+//
+//        int line = (int)(board * 5U + 2U);
+//        n += snprintf(buf + n, sizeof(buf) - (size_t)n,
+//                      "\033[%d;1H\033[K[B%lu Shock ID %03lX] BaseUs:%lu | Shock: %d.%02d mm | Err:0x%04X | Jitter:%dus\r\n",
+//                      line, (unsigned long)board, (unsigned long)id, (unsigned long)base_time,
+//                      raw_val / 100, raw_val % 100, (unsigned)err, (int)jitter * 4); // Multiplying by 4 to map back down from 4us/LSB format
+//
+//      } else if (base == 0x200U && middle == 0x10U) {
+//        // Wheel Speed - FIXED: Reads samples[0] (bytes 6-8)
+//        uint16_t raw_val = data[6] | (data[7] << 8);
+//        int8_t jitter = (int8_t)data[8];
+//
+//        int line = (int)(board * 5U + 3U);
+//        n += snprintf(buf + n, sizeof(buf) - (size_t)n,
+//                      "\033[%d;1H\033[K[B%lu Wheel ID %03lX] BaseUs:%lu | RPM: %d.%d | Err:0x%04X | Jitter:%dus\r\n",
+//                      line, (unsigned long)board, (unsigned long)id, (unsigned long)base_time,
+//                      raw_val / 10, raw_val % 10, (unsigned)err, (int)jitter * 4);
+//
+//      } else if (base == 0x200U && middle == 0x20U) {
+//        // Brake Temp - FIXED: Reads samples[0] (bytes 6-8)
+//        uint16_t raw_val = data[6] | (data[7] << 8);
+//        int8_t jitter = (int8_t)data[8];
+//
+//        int line = (int)(board * 5U + 4U);
+//        n += snprintf(buf + n, sizeof(buf) - (size_t)n,
+//                      "\033[%d;1H\033[K[B%lu Brake ID %03lX] BaseUs:%lu | Brake Temp: %d.%d C | Err:0x%04X | Jitter:%dus\r\n",
+//                      line, (unsigned long)board, (unsigned long)id, (unsigned long)base_time,
+//                      raw_val / 10, raw_val % 10, (unsigned)err, (int)jitter * 4);
+//
+//      } else if (base == 0x200U && middle == 0x30U) {
+//        // Tire Temp Block - Grabs first accumulated history block metrics
+//        uint8_t max_t = data[6];
+//        uint8_t min_t = data[7];
+//        int8_t jitter_ms = (int8_t)data[10];
+//
+//        int line = (int)(board * 5U + 5U);
+//        n += snprintf(buf + n, sizeof(buf) - (size_t)n,
+//                      "\033[%d;1H\033[K[B%lu Tire ID %03lX] BaseUs:%lu | Tire Max: %u C, Min: %u C | Err:0x%04X | Jitter:%dms\r\n",
+//                      line, (unsigned long)board, (unsigned long)id, (unsigned long)base_time,
+//                      max_t, min_t, (unsigned)err, (int)jitter_ms);
+//      }
+//    }
+//  } else {
+//    // Fallback standard SLCAN logging format
+//    if (hdr->IdType == FDCAN_STANDARD_ID) {
+//      n += snprintf(buf + n, sizeof(buf) - (size_t)n, "t%03lX%u", (unsigned long)hdr->Identifier, (unsigned)len);
+//    } else {
+//      n += snprintf(buf + n, sizeof(buf) - (size_t)n, "T%08lX%u", (unsigned long)hdr->Identifier, (unsigned)len);
+//    }
+//    for (uint8_t i = 0U; i < len; i++) {
+//      n += snprintf(buf + n, sizeof(buf) - (size_t)n, "%02X", data[i]);
+//    }
+//    if (n < (int)sizeof(buf) - 2) {
+//      buf[n++] = '\r';
+//      buf[n++] = '\n';
+//    }
+//  }
+//
+//  if (n > (int)sizeof(buf)) n = (int)sizeof(buf);
+//  usb_ring_push(buf, (uint16_t)n);
+//}
 /* USER CODE END 0 */
 
 /**
@@ -258,40 +364,32 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  /* --- IN KRILL MDU main.c background while(1) loop --- */
+  /* Infinite loop */
+    /* USER CODE BEGIN WHILE */
   while (1) {
-#if FDCAN_SELF_TEST_MODE
-    for (int i = 0; i < 12; i++) {
-      Tx[i]++;
+  #if FDCAN_SELF_TEST_MODE
+      for (int i = 0; i < 12; i++) {
+        Tx[i]++;
+      }
+      if (HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &Tx_header, Tx) != HAL_OK) {
+        fdcan_tx_err_count++;
+      } else {
+        fdcan_tx_msg_count++;
+      }
+  #endif
+
+      if (USB_Driver_IsConfigured()) {
+        usbdiag.configured_seen_count++;
+      }
+
+      // Call the SLCAN converter directly
+      CAN_To_USB_Process();
+
+      /* USER CODE END WHILE */
+      /* USER CODE BEGIN 3 */
     }
-
-    if (HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &Tx_header, Tx) != HAL_OK) {
-      fdcan_tx_err_count++;
-    } else {
-      fdcan_tx_msg_count++;
-    }
-#endif
-
-    if (USB_Driver_IsConfigured()) {
-      usbdiag.configured_seen_count++;
-    }
-
-    if (fdcan_rx_pending) {
-      __disable_irq();
-      FDCAN_RxHeaderTypeDef local_hdr = LastRxHeader;
-      uint8_t local_rx[64];
-      memcpy(local_rx, Rx, sizeof(Rx));
-      fdcan_rx_pending = 0U;
-      __enable_irq();
-
-      CAN_Frame_To_USB(&local_hdr, local_rx);
-    }
-
-    HAL_Delay(10);
-    /* USER CODE END WHILE */
-
-    /* USER CODE BEGIN 3 */
-  }
-  /* USER CODE END 3 */
+    /* USER CODE END 3 */
 }
 
 /**
@@ -359,22 +457,59 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
-void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan,
-                               uint32_t RxFifo0ITs)
+
+// Wrapper implementations allowing can.c to safely reference the ring buffer memory
+// Updated to use your exact codebase names (without s_ prefix)
+uint8_t MDU_Get_Rx_Queue_State(uint8_t *head_out, uint8_t *tail_out) {
+    *head_out = fdcan_rx_head;
+    *tail_out = fdcan_rx_tail;
+    return (fdcan_rx_head != fdcan_rx_tail);
+}
+
+void MDU_Get_Rx_Queue_Data(uint8_t index, FDCAN_RxHeaderTypeDef *hdr_out, uint8_t *data_out) {
+    *hdr_out = fdcan_rx_queue[index].header;
+    memcpy(data_out, fdcan_rx_queue[index].data, 64);
+}
+
+void MDU_Advance_Rx_Queue_Head(void) {
+    __disable_irq();
+    // Uses the official FDCAN_RX_QUEUE_SIZE from fdcan.h (8U)
+    fdcan_rx_head = (fdcan_rx_head + 1) % FDCAN_RX_QUEUE_SIZE;
+    __enable_irq();
+}
+
+void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
 {
   if ((RxFifo0ITs & FDCAN_IT_RX_FIFO0_NEW_MESSAGE) != RESET)
   {
-    if (HAL_FDCAN_GetRxMessage(hfdcan, FDCAN_RX_FIFO0, &LastRxHeader, Rx) != HAL_OK)
-    {
-      fdcan_rx_err_count++;
-    }
-    else
+    FDCAN_RxHeaderTypeDef temp_hdr;
+    uint8_t temp_data[64];
+
+    // Safely pull messages from the hardware registers into intermediate structures
+    while (HAL_FDCAN_GetRxMessage(hfdcan, FDCAN_RX_FIFO0, &temp_hdr, temp_data) == HAL_OK)
     {
       fdcan_rx_msg_count++;
-      fdcan_rx_last_id  = LastRxHeader.Identifier;
-      fdcan_rx_last_len = FDCAN_DlcToBytes(LastRxHeader.DataLength);
-      fdcan_rx_pending  = 1U;
+      fdcan_rx_last_id  = temp_hdr.Identifier;
+      fdcan_rx_last_len = FDCAN_DlcToBytes(temp_hdr.DataLength);
+
+      // Thread-safe Ring advancement write strategy
+      uint8_t current_tail = fdcan_rx_tail;
+      uint8_t next_tail = (current_tail + 1) % FDCAN_RX_QUEUE_SIZE;
+
+      // If the queue isn't full, push raw hardware frames into software buffer memory
+      if (next_tail != fdcan_rx_head)
+      {
+        fdcan_rx_queue[current_tail].header = temp_hdr;
+        memcpy(fdcan_rx_queue[current_tail].data, temp_data, 64);
+        fdcan_rx_tail = next_tail;
+      }
+      else
+      {
+        fdcan_rx_err_count++; // Track soft-drop overruns
+      }
     }
+
+    // Reactivate the interrupt configuration flag mapping
     if (HAL_FDCAN_ActivateNotification(hfdcan, FDCAN_IT_RX_FIFO0_NEW_MESSAGE, 0) != HAL_OK)
     {
       fdcan_notif_err_count++;

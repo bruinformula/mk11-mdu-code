@@ -286,16 +286,39 @@ class BoardStateTracker {
       lastSeenAt: 0,
       fastCount: 0,
       slowCount: 0,
+      // Message counter tracking for debugging: last seen 3-bit counter,
+      // whether a mismatch was observed, and last received raw counter.
+      lastMessageCounter: null,
+      counterMismatch: false,
+      lastMessageCounterReceived: null,
     };
 
     state.lastSeenAt = now;
 
     if (boardPayload.kind === 'fast') {
-      state.fast = { ...boardPayload, receivedAt: now };
+      state.fast = { ...state.fast, ...boardPayload, receivedAt: now };
       state.fastCount += 1;
     } else if (boardPayload.kind === 'slow') {
-      state.slow = { ...boardPayload, receivedAt: now };
+      state.slow = { ...state.slow, ...boardPayload, receivedAt: now };
       state.slowCount += 1;
+    }
+
+    // Extract 3-bit rolling message counter from shared error flags when available
+    // Bits 7-9 contain the counter: (errorFlags >> 7) & 0x07
+    if (boardPayload && typeof boardPayload.errorFlags === 'number') {
+      const err = boardPayload.errorFlags;
+      const counter = (err >> 7) & 0x07;
+      if (state.lastMessageCounter === null) {
+        state.lastMessageCounter = counter;
+        state.counterMismatch = false;
+      } else {
+        const expected = (state.lastMessageCounter + 1) & 0x07;
+        if (counter !== expected) {
+          state.counterMismatch = true;
+        }
+        state.lastMessageCounter = counter;
+      }
+      state.lastMessageCounterReceived = counter;
     }
 
     this.boards.set(id, state);
@@ -310,6 +333,10 @@ class BoardStateTracker {
         lastSeenAgeMs: state.lastSeenAt ? now - state.lastSeenAt : null,
         fastCount: state.fastCount,
         slowCount: state.slowCount,
+        // Expose message counter tracking for UI/debugging
+        lastMessageCounter: state.lastMessageCounter,
+        counterMismatch: state.counterMismatch,
+        lastMessageCounterReceived: state.lastMessageCounterReceived,
         fast: state.fast
           ? { ...state.fast, ageMs: now - state.fast.receivedAt }
           : null,

@@ -1,3 +1,4 @@
-../Core/Src/can.c:14:19:CAN_Init	5
-../Core/Src/can.c:51:6:CAN_Process	1
-../Core/Src/can.c:55:6:CAN_To_USB_Process	6
+../Core/Src/can.c:24:17:Convert_DLC_To_Bytes	17
+../Core/Src/can.c:51:19:CAN_Init	4
+../Core/Src/can.c:73:6:CAN_Process	1
+../Core/Src/can.c:78:6:CAN_To_USB_Process	7

@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('mduDebug', {
   pickLogFile: () => ipcRenderer.invoke('log:pick-file'),
   startLogging: (filePath) => ipcRenderer.invoke('log:start', filePath),
   stopLogging: () => ipcRenderer.invoke('log:stop'),
+  openLogFile: () => ipcRenderer.invoke('log:open-file'),
+  exportFilteredLog: (rows) => ipcRenderer.invoke('log:export-filtered-log', rows),
   onPorts: (callback) => subscribe('device:ports', callback),
   onConnection: (callback) => subscribe('device:connection', callback),
   onDiagnostics: (callback) => subscribe('device:diagnostics', callback),
