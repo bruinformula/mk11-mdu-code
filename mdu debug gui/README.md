@@ -9,8 +9,8 @@ Electron app for the USB CDC stream emitted by the STM32 firmware in this reposi
 - Reads the USB CDC stream from the MCU's native USB connection
 - On macOS, also scans System Information so the app can show when the USB2514 hub itself is present even if no CDC child endpoint has enumerated yet
 - Decodes the per-board SDU telemetry the MDU prints to USB:
-  - Fast frames `[B<board> ID <hex> Fast] dT:<ms>ms | SG[mV]: ... | Shock: ... mm` for CAN IDs `0x100 + boardId`
-  - Slow frames `[B<board> ID <hex> Slow] dT:<ms>ms | RPM: ... | Tire[...] Brk:... Amb:...` for CAN IDs `0x200 + boardId`
+  - Fast frames `[B<board> ID <hex> Fast] dT:<ms>ms | SG[mV]: ... | Shock: ... mm` for CAN IDs `0x080 + 8*boardId` (SG) and `0x081 + 8*boardId` (Shock)
+  - Slow frames `[B<board> ID <hex> Slow] dT:<ms>ms | RPM: ... | Tire[...] Brk:... Amb:...` for CAN IDs `0x082 + 8*boardId` (Brake), `0x083 + 8*boardId` (Tire), and `0x084 + 8*boardId` (Wheel Speed)
 - Falls back to the firmware's SLCAN-style frames (`t...` / `T...` terminated by `\r`) for everything else
 - Shows live diagnostics such as bytes/sec, frames/sec, parse errors, per-board readings, active CAN IDs, and last activity
 - Keeps a rolling on-screen log of raw USB lines and decoded frames

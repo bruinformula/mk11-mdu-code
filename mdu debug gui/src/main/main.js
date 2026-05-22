@@ -1,10 +1,10 @@
 'use strict';
 
+const fs = require('fs');
 const path = require('path');
 const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 
 const { DeviceMonitor } = require('./device-monitor');
-const { registerReplayIpcHandlers } = require('./replay');
 
 let mainWindow = null;
 let monitor = null;
@@ -81,8 +81,50 @@ function registerIpcHandlers() {
   });
   ipcMain.handle('log:start', async (_event, filePath) => monitor.startLogging(filePath));
   ipcMain.handle('log:stop', async () => monitor.stopLogging());
-  
-  registerReplayIpcHandlers(ipcMain, monitor, broadcast);
+  ipcMain.handle('log:open-file', async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Open saved log file',
+      properties: ['openFile'],
+      filters: [
+        { name: 'JSON Lines', extensions: ['jsonl'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    });
+
+    if (result.canceled || !result.filePaths?.length) {
+      return null;
+    }
+
+    const filePath = result.filePaths[0];
+    const content = await fs.promises.readFile(filePath, 'utf8');
+    const entries = content
+      .split(/\r?\n/)
+      .filter((line) => line.trim().length > 0)
+      .map((line) => JSON.parse(line));
+
+    return { filePath, entries };
+  });
+  ipcMain.handle('log:export-filtered-log', async (_event, rows) => {
+    const result = await dialog.showSaveDialog({
+      title: 'Export filtered log rows',
+      defaultPath: buildDefaultLogFilePath(),
+      filters: [
+        { name: 'JSON Lines', extensions: ['jsonl'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+      properties: ['createDirectory', 'showOverwriteConfirmation'],
+    });
+
+    if (result.canceled || !result.filePath) {
+      return null;
+    }
+
+    const filePath = result.filePath;
+    await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+    const data = rows.map((row) => JSON.stringify(row)).join('\n') + '\n';
+    await fs.promises.writeFile(filePath, data, 'utf8');
+    return filePath;
+  });
 }
 
 app.whenReady().then(async () => {
