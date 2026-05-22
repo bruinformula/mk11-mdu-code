@@ -39,6 +39,10 @@ function toSigned8(value) {
   return value > 127 ? value - 256 : value;
 }
 
+function toSigned16(value) {
+  return value > 32767 ? value - 65536 : value;
+}
+
 function decodeStrainGaugeBlocks(data) {
   const blocks = [];
   for (let index = 0; index < 5; index += 1) {
@@ -112,6 +116,56 @@ function decodeTireHistoryBlocks(data) {
   return blocks;
 }
 
+function decodeTspmuPressureBlocks(data) {
+  const blocks = [];
+  for (let index = 0; index < 11; index += 1) {
+    const offset = 4 + index * 5;
+    if (offset + 4 >= data.length) {
+      break;
+    }
+    const rawP1 = data[offset] | (data[offset + 1] << 8);
+    const rawP2 = data[offset + 2] | (data[offset + 3] << 8);
+    const pressure1 = toSigned16(rawP1) / 100.0;
+    const pressure2 = toSigned16(rawP2) / 100.0;
+    const jitter = data[offset + 4];
+    blocks.push({
+      index,
+      pressure1,
+      pressure2,
+      jitter,
+    });
+  }
+  return blocks;
+}
+
+function decodeTspmuTempBlocks(data) {
+  const blocks = [];
+  for (let index = 0; index < 6; index += 1) {
+    const offset = 4 + index * 9;
+    if (offset + 8 >= data.length) {
+      break;
+    }
+    const rawT1 = data[offset] | (data[offset + 1] << 8);
+    const rawT2 = data[offset + 2] | (data[offset + 3] << 8);
+    const rawT3 = data[offset + 4] | (data[offset + 5] << 8);
+    const rawT4 = data[offset + 6] | (data[offset + 7] << 8);
+    const temp1 = toSigned16(rawT1) / 10.0;
+    const temp2 = toSigned16(rawT2) / 10.0;
+    const temp3 = toSigned16(rawT3) / 10.0;
+    const temp4 = toSigned16(rawT4) / 10.0;
+    const jitterMs = toSigned8(data[offset + 8]);
+    blocks.push({
+      index,
+      temp1,
+      temp2,
+      temp3,
+      temp4,
+      jitterMs,
+    });
+  }
+  return blocks;
+}
+
 function parseFast(match) {
   const board = Number.parseInt(match[1], 10);
   const id = buildIdMeta(match[2]);
@@ -127,6 +181,7 @@ function parseFast(match) {
   const shockMm = combineSignedDecimal(match[10], match[11]);
 
   return {
+    boardType: 2,
     boardId: board,
     kind: 'fast',
     ...id,
@@ -151,6 +206,7 @@ function parseSlow(match) {
   const brakeAmbientC = combineSignedDecimal(match[15], match[16]);
 
   return {
+    boardType: 2,
     boardId: board,
     kind: 'slow',
     ...id,
@@ -232,6 +288,7 @@ function parseMduLine(rawLine) {
           dataHex: slcan.dataHex,
           dataBytes: slcan.dataBytes,
           board: {
+            boardType,
             boardId,
             kind: 'fast',
             identifier: slcan.identifier,
@@ -260,6 +317,7 @@ function parseMduLine(rawLine) {
           dataHex: slcan.dataHex,
           dataBytes: slcan.dataBytes,
           board: {
+            boardType,
             boardId,
             kind: 'fast',
             identifier: slcan.identifier,
@@ -288,6 +346,7 @@ function parseMduLine(rawLine) {
           dataHex: slcan.dataHex,
           dataBytes: slcan.dataBytes,
           board: {
+            boardType,
             boardId,
             kind: 'slow',
             identifier: slcan.identifier,
@@ -318,6 +377,7 @@ function parseMduLine(rawLine) {
           dataHex: slcan.dataHex,
           dataBytes: slcan.dataBytes,
           board: {
+            boardType,
             boardId,
             kind: 'slow',
             identifier: slcan.identifier,
@@ -351,6 +411,7 @@ function parseMduLine(rawLine) {
           dataHex: slcan.dataHex,
           dataBytes: slcan.dataBytes,
           board: {
+            boardType,
             boardId,
             kind: 'slow',
             identifier: slcan.identifier,
@@ -360,6 +421,75 @@ function parseMduLine(rawLine) {
             errorFlags: err,
             rpm: wheelSamples[0]?.value ?? 0,
             wheelSamples,
+          }
+        };
+      }
+    }
+
+    if (boardType === 6 && slcan.dataBytes.length >= 64) {
+      const data = slcan.dataBytes;
+      const err = data[62] | (data[63] << 8);
+
+      // Sensor 0: Pressure
+      if (sensorNum === 0) {
+        const pressureBlocks = decodeTspmuPressureBlocks(data);
+        return {
+          ok: true,
+          source: 'board',
+          raw: cleaned,
+          idText: slcan.idText,
+          idType: slcan.idType,
+          identifier: slcan.identifier,
+          identifierHex: slcan.identifierHex,
+          dataLength: slcan.dataLength,
+          dataHex: slcan.dataHex,
+          dataBytes: slcan.dataBytes,
+          board: {
+            boardType,
+            boardId,
+            kind: 'fast',
+            identifier: slcan.identifier,
+            identifierHex: slcan.identifierHex,
+            idText: slcan.idText,
+            timeSinceLastMs: 45,
+            errorFlags: err,
+            pressure1: pressureBlocks[0]?.pressure1 ?? 0,
+            pressure2: pressureBlocks[0]?.pressure2 ?? 0,
+            jitter: pressureBlocks[0]?.jitter ?? 0,
+            pressureBlocks,
+          }
+        };
+      }
+
+      // Sensor 1: Temperature
+      if (sensorNum === 1) {
+        const tempBlocks = decodeTspmuTempBlocks(data);
+        return {
+          ok: true,
+          source: 'board',
+          raw: cleaned,
+          idText: slcan.idText,
+          idType: slcan.idType,
+          identifier: slcan.identifier,
+          identifierHex: slcan.identifierHex,
+          dataLength: slcan.dataLength,
+          dataHex: slcan.dataHex,
+          dataBytes: slcan.dataBytes,
+          board: {
+            boardType,
+            boardId,
+            kind: 'slow',
+            identifier: slcan.identifier,
+            identifierHex: slcan.identifierHex,
+            idText: slcan.idText,
+            timeSinceLastMs: 1333,
+            errorFlags: err,
+            tspmuTemp1: tempBlocks[0]?.temp1 ?? 0,
+            tspmuTemp2: tempBlocks[0]?.temp2 ?? 0,
+            tspmuTemp3: tempBlocks[0]?.temp3 ?? 0,
+            tspmuTemp4: tempBlocks[0]?.temp4 ?? 0,
+            jitterMs: tempBlocks[0]?.jitterMs ?? 0,
+            tempBlocks,
           }
         };
       }

@@ -748,6 +748,44 @@ tbody tr:hover {
   color: var(--ink);
 }
 
+.board-selector-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+  padding: 6px;
+  background: var(--bg-accent);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--panel-border);
+  width: max-content;
+  max-width: 100%;
+}
+
+.board-tab-button {
+  min-height: 38px;
+  padding: 0 16px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--ink-soft);
+  font-weight: 600;
+  font-size: 0.88rem;
+  letter-spacing: 0.02em;
+  transition: all 150ms ease;
+}
+
+.board-tab-button:hover {
+  background: var(--button-secondary-bg);
+  color: var(--ink);
+}
+
+.board-tab-button.active {
+  background: linear-gradient(135deg, #cf6d2f, #9f4317);
+  color: white;
+  border-color: transparent;
+  box-shadow: 0 4px 12px rgba(159, 67, 23, 0.24);
+}
+
 .tab-pane {
   display: grid;
   gap: 20px;

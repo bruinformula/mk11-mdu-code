@@ -278,9 +278,12 @@ class BoardStateTracker {
       return;
     }
 
-    const id = boardPayload.boardId;
-    const state = this.boards.get(id) ?? {
-      boardId: id,
+    const boardType = boardPayload.boardType ?? 2;
+    const boardId = boardPayload.boardId;
+    const key = `${boardType}-${boardId}`;
+    const state = this.boards.get(key) ?? {
+      boardType,
+      boardId,
       fast: null,
       slow: null,
       lastSeenAt: 0,
@@ -290,6 +293,8 @@ class BoardStateTracker {
       // whether a mismatch was observed, and last received raw counter.
       lastMessageCounter: null,
       counterMismatch: false,
+      counterMismatchCount: 0,
+      consecutiveGoodFrames: 0,
       lastMessageCounterReceived: null,
     };
 
@@ -309,25 +314,43 @@ class BoardStateTracker {
       const err = boardPayload.errorFlags;
       const counter = (err >> 7) & 0x07;
       if (state.lastMessageCounter === null) {
+        // First frame seen — anchor the counter, no mismatch
         state.lastMessageCounter = counter;
+        state.consecutiveGoodFrames = 1;
         state.counterMismatch = false;
       } else {
         const expected = (state.lastMessageCounter + 1) & 0x07;
         if (counter !== expected) {
           state.counterMismatch = true;
+          state.counterMismatchCount += 1;
+          state.consecutiveGoodFrames = 0;
+          // Re-anchor so we don't cascade mismatches from this point
+          state.lastMessageCounter = counter;
+        } else {
+          state.consecutiveGoodFrames += 1;
+          state.lastMessageCounter = counter;
+          // Auto-clear after 8 consecutive good frames
+          if (state.consecutiveGoodFrames >= 8) {
+            state.counterMismatch = false;
+          }
         }
-        state.lastMessageCounter = counter;
       }
       state.lastMessageCounterReceived = counter;
     }
 
-    this.boards.set(id, state);
+    this.boards.set(key, state);
   }
 
   snapshot(now = Date.now()) {
     return [...this.boards.values()]
-      .sort((left, right) => left.boardId - right.boardId)
+      .sort((left, right) => {
+        if (left.boardType !== right.boardType) {
+          return left.boardType - right.boardType;
+        }
+        return left.boardId - right.boardId;
+      })
       .map((state) => ({
+        boardType: state.boardType,
         boardId: state.boardId,
         lastSeenAt: state.lastSeenAt,
         lastSeenAgeMs: state.lastSeenAt ? now - state.lastSeenAt : null,
@@ -336,6 +359,8 @@ class BoardStateTracker {
         // Expose message counter tracking for UI/debugging
         lastMessageCounter: state.lastMessageCounter,
         counterMismatch: state.counterMismatch,
+        counterMismatchCount: state.counterMismatchCount,
+        consecutiveGoodFrames: state.consecutiveGoodFrames,
         lastMessageCounterReceived: state.lastMessageCounterReceived,
         fast: state.fast
           ? { ...state.fast, ageMs: now - state.fast.receivedAt }

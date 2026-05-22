@@ -172,7 +172,16 @@
       <section class="panel boards-panel stagger-5">
         <div class="panel-heading">
           <h2>Live Board Telemetry</h2>
-          <p>Latest Fast (0x080+8*B for SG/Shock) and Slow (0x082+8*B to 0x084+8*B for Brake/Tire/Wheel) frames decoded from each SDU on the CAN bus.</p>
+          <p>Latest Fast (0x080+8*B for SG/Shock) and Slow (0x082+8*B to 0x084+8*B for Brake/Tire/Wheel) frames decoded from each SDU on the CAN bus, and TSPMU (0x180/0x181) CAN frames.</p>
+        </div>
+
+        <div class="board-selector-tabs" role="tablist">
+          <button class="board-tab-button active" data-filter-type="all" data-filter-id="all" type="button" role="tab" aria-selected="true">All Boards</button>
+          <button class="board-tab-button" data-filter-type="2" data-filter-id="0" type="button" role="tab" aria-selected="false">SDU 0 (FL)</button>
+          <button class="board-tab-button" data-filter-type="2" data-filter-id="1" type="button" role="tab" aria-selected="false">SDU 1 (FR)</button>
+          <button class="board-tab-button" data-filter-type="2" data-filter-id="2" type="button" role="tab" aria-selected="false">SDU 2 (RL)</button>
+          <button class="board-tab-button" data-filter-type="2" data-filter-id="3" type="button" role="tab" aria-selected="false">SDU 3 (RR)</button>
+          <button class="board-tab-button" data-filter-type="6" data-filter-id="0" type="button" role="tab" aria-selected="false">TSPMU 0</button>
         </div>
 
         <div id="boards-grid" class="boards-grid">
@@ -253,6 +262,12 @@
               <option value="brake">Brake temp</option>
               <option value="brakeAmb">Brake ambient</option>
               <option value="shock">Shock mm</option>
+              <option value="pressure1">TSPMU Pressure 1</option>
+              <option value="pressure2">TSPMU Pressure 2</option>
+              <option value="tspmuTemp1">TSPMU Temp 1</option>
+              <option value="tspmuTemp2">TSPMU Temp 2</option>
+              <option value="tspmuTemp3">TSPMU Temp 3</option>
+              <option value="tspmuTemp4">TSPMU Temp 4</option>
             </select>
           </label>
           <label class="field-group field-compact">
@@ -307,6 +322,17 @@
               <option value="120">Last 2m</option>
               <option value="300">Last 5m</option>
               <option value="600">Last 10m</option>
+            </select>
+          </label>
+          <label class="field-group field-compact">
+            <span>Board filter</span>
+            <select id="graphs-board-select">
+              <option value="all-all">All Boards</option>
+              <option value="2-0">SDU 0 (FL)</option>
+              <option value="2-1">SDU 1 (FR)</option>
+              <option value="2-2">SDU 2 (RL)</option>
+              <option value="2-3">SDU 3 (RR)</option>
+              <option value="6-0">TSPMU 0</option>
             </select>
           </label>
           <button id="graphs-clear-button" class="ghost-button" type="button">Clear graph history</button>

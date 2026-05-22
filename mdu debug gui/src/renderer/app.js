@@ -44,6 +44,7 @@ const state = {
   loadedLogRows: [],
   logView: 'live',
   logPaused: false,
+  boardFilter: { type: 'all', id: 'all' },
   logFilters: {
     search: '',
     boardId: '',
@@ -155,6 +156,7 @@ const elements = {
     graphs: document.getElementById('tab-graphs'),
   },
   graphsWindowSelect: document.getElementById('graphs-window-select'),
+  graphsBoardSelect: document.getElementById('graphs-board-select'),
   graphsClearButton: document.getElementById('graphs-clear-button'),
   graphsStatusLine: document.getElementById('graphs-status-line'),
   favoritesGrid: document.getElementById('favorites-grid'),
@@ -273,6 +275,18 @@ function parseLogNumericValue(entry, field) {
       return Number(entry.board.brakeAmbientC);
     case 'shock':
       return Number(entry.board.shockMm);
+    case 'pressure1':
+      return Number(entry.board.pressure1);
+    case 'pressure2':
+      return Number(entry.board.pressure2);
+    case 'tspmuTemp1':
+      return Number(entry.board.tspmuTemp1);
+    case 'tspmuTemp2':
+      return Number(entry.board.tspmuTemp2);
+    case 'tspmuTemp3':
+      return Number(entry.board.tspmuTemp3);
+    case 'tspmuTemp4':
+      return Number(entry.board.tspmuTemp4);
     default:
       return null;
   }
@@ -602,14 +616,14 @@ function captureOpenBoardDetails() {
   }
 
   for (const card of elements.boardsGrid.querySelectorAll('.board-card')) {
-    const boardId = card.dataset.boardId;
-    if (!boardId) {
+    const boardKey = card.dataset.boardKey;
+    if (!boardKey) {
       continue;
     }
 
     for (const detail of card.querySelectorAll('details.board-detail')) {
       if (detail.open && detail.dataset.detail) {
-        openDetails.add(`${boardId}:${detail.dataset.detail}`);
+        openDetails.add(`${boardKey}:${detail.dataset.detail}`);
       }
     }
   }
@@ -624,8 +638,8 @@ function captureBoardDetailScroll() {
   }
 
   for (const card of elements.boardsGrid.querySelectorAll('.board-card')) {
-    const boardId = card.dataset.boardId;
-    if (!boardId) {
+    const boardKey = card.dataset.boardKey;
+    if (!boardKey) {
       continue;
     }
 
@@ -636,7 +650,7 @@ function captureBoardDetailScroll() {
         continue;
       }
       if (scrollWrap.scrollLeft > 0) {
-        scrollMap.set(`${boardId}:${detailKey}`, scrollWrap.scrollLeft);
+        scrollMap.set(`${boardKey}:${detailKey}`, scrollWrap.scrollLeft);
       }
     }
   }
@@ -713,6 +727,52 @@ function renderTireDetails(slow) {
   `;
 }
 
+function renderTspmuPressureDetails(fast) {
+  if (!fast?.pressureBlocks?.length) {
+    return '';
+  }
+
+  const rows = fast.pressureBlocks.map((block) => `
+    <tr>
+      <td>${block.index + 1}</td>
+      <td>${escapeHtml(formatSigned(block.pressure1, 2))} Pa</td>
+      <td>${escapeHtml(formatSigned(block.pressure2, 2))} Pa</td>
+      <td>${escapeHtml(String(block.jitter))}</td>
+    </tr>
+  `);
+
+  return `
+    <details class="board-detail" data-detail="tspmu-pressure">
+      <summary>Pressure blocks (${fast.pressureBlocks.length})</summary>
+      ${renderTable(['Block', 'Pressure 1', 'Pressure 2', 'Jitter'], rows)}
+    </details>
+  `;
+}
+
+function renderTspmuTempDetails(slow) {
+  if (!slow?.tempBlocks?.length) {
+    return '';
+  }
+
+  const rows = slow.tempBlocks.map((block) => `
+    <tr>
+      <td>${block.index + 1}</td>
+      <td>${escapeHtml(formatSigned(block.temp1, 1))} °C</td>
+      <td>${escapeHtml(formatSigned(block.temp2, 1))} °C</td>
+      <td>${escapeHtml(formatSigned(block.temp3, 1))} °C</td>
+      <td>${escapeHtml(formatSigned(block.temp4, 1))} °C</td>
+      <td>${escapeHtml(String(block.jitterMs))} ms</td>
+    </tr>
+  `);
+
+  return `
+    <details class="board-detail" data-detail="tspmu-temp">
+      <summary>Temperature blocks (${slow.tempBlocks.length})</summary>
+      ${renderTable(['Block', 'Temp 1', 'Temp 2', 'Temp 3', 'Temp 4', 'Jitter'], rows)}
+    </details>
+  `;
+}
+
 function renderFastBlock(fast) {
   if (!fast) {
     return '<p class="board-empty">Waiting for fast frame...</p>';
@@ -755,6 +815,39 @@ function renderSlowBlock(slow) {
   `;
 }
 
+function renderTspmuFastBlock(fast) {
+  if (!fast) {
+    return '<p class="board-empty">Waiting for pressure frame...</p>';
+  }
+
+  return `
+    <p class="board-meta">${escapeHtml(fast.idText)} · Δt ${fast.timeSinceLastMs} ms · ${escapeHtml(formatBoardAge(fast.ageMs))}</p>
+    <dl class="board-readings">
+      <dt>Pressure 1</dt><dd>${formatSigned(fast.pressure1, 2)} Pa</dd>
+      <dt>Pressure 2</dt><dd>${formatSigned(fast.pressure2, 2)} Pa</dd>
+      <dt>Jitter</dt><dd>${fast.jitter}</dd>
+    </dl>
+    ${renderTspmuPressureDetails(fast)}
+  `;
+}
+
+function renderTspmuSlowBlock(slow) {
+  if (!slow) {
+    return '<p class="board-empty">Waiting for temp frame...</p>';
+  }
+
+  return `
+    <p class="board-meta">${escapeHtml(slow.idText)} · Δt ${slow.timeSinceLastMs} ms · ${escapeHtml(formatBoardAge(slow.ageMs))}</p>
+    <dl class="board-readings">
+      <dt>Temp 1</dt><dd>${formatSigned(slow.tspmuTemp1, 1)} &deg;C</dd>
+      <dt>Temp 2</dt><dd>${formatSigned(slow.tspmuTemp2, 1)} &deg;C</dd>
+      <dt>Temp 3</dt><dd>${formatSigned(slow.tspmuTemp3, 1)} &deg;C</dd>
+      <dt>Temp 4</dt><dd>${formatSigned(slow.tspmuTemp4, 1)} &deg;C</dd>
+    </dl>
+    ${renderTspmuTempDetails(slow)}
+  `;
+}
+
 function renderBoards() {
   const boards = state.diagnostics?.boards ?? [];
   if (boards.length === 0) {
@@ -762,51 +855,91 @@ function renderBoards() {
     return;
   }
 
+  let filteredBoards = boards;
+  if (state.boardFilter && state.boardFilter.type !== 'all') {
+    const filterType = Number(state.boardFilter.type);
+    const filterId = Number(state.boardFilter.id);
+    filteredBoards = boards.filter((b) => b.boardType === filterType && b.boardId === filterId);
+  }
+
+  if (filteredBoards.length === 0) {
+    elements.boardsGrid.innerHTML = '<p class="empty-state">No board telemetry decoded yet for the selected filter.</p>';
+    return;
+  }
+
   const openDetails = captureOpenBoardDetails();
   const scrollPositions = captureBoardDetailScroll();
 
-  elements.boardsGrid.innerHTML = boards
+  elements.boardsGrid.innerHTML = filteredBoards
     .map((board) => {
-      const boardName = BOARD_NAMES[board.boardId] || `Board ${board.boardId}`;
-      const sduBase = 0x080 + (board.boardId << 3);
-      const sgHex = sduBase.toString(16).toUpperCase().padStart(3, '0');
-      const shockHex = (sduBase + 1).toString(16).toUpperCase().padStart(3, '0');
-      const brakeHex = (sduBase + 2).toString(16).toUpperCase().padStart(3, '0');
-      const tireHex = (sduBase + 3).toString(16).toUpperCase().padStart(3, '0');
-      const wheelHex = (sduBase + 4).toString(16).toUpperCase().padStart(3, '0');
+      const boardKey = `${board.boardType}-${board.boardId}`;
+      if (board.boardType === 6) {
+        const boardName = `TSPMU ${board.boardId}`;
+        const pressureHex = (0x180 + (board.boardId << 3)).toString(16).toUpperCase().padStart(3, '0');
+        const tempHex = (0x181 + (board.boardId << 3)).toString(16).toUpperCase().padStart(3, '0');
 
-      return `
-        <article class="board-card" data-board-id="${board.boardId}">
-          <header class="board-card-header">
-            <strong>${escapeHtml(boardName)}</strong>
-            <span class="board-age">${escapeHtml(formatBoardAge(board.lastSeenAgeMs))}</span>
-            <span class="board-counter">CNT: ${board.lastMessageCounterReceived != null ? board.lastMessageCounterReceived : '--'}</span>
-            ${board.counterMismatch ? '<span class="pill error">CNT MISMATCH</span>' : ''}
-          </header>
-          <div class="board-cols">
-            <div class="board-col">
-              <h3>Fast (SG: 0x${sgHex}, Shock: 0x${shockHex})</h3>
-              ${renderFastBlock(board.fast)}
+        return `
+          <article class="board-card" data-board-key="${boardKey}">
+            <header class="board-card-header">
+              <strong>${escapeHtml(boardName)}</strong>
+              <span class="board-age">${escapeHtml(formatBoardAge(board.lastSeenAgeMs))}</span>
+              <span class="board-counter">CNT: ${board.lastMessageCounterReceived != null ? board.lastMessageCounterReceived : '--'}</span>
+              ${board.counterMismatch ? '<span class="pill error">CNT MISMATCH</span>' : ''}
+            </header>
+            <div class="board-cols">
+              <div class="board-col">
+                <h3>Fast (Pressure: 0x${pressureHex})</h3>
+                ${renderTspmuFastBlock(board.fast)}
+              </div>
+              <div class="board-col">
+                <h3>Slow (Temp: 0x${tempHex})</h3>
+                ${renderTspmuSlowBlock(board.slow)}
+              </div>
             </div>
-            <div class="board-col">
-              <h3>Slow (Brk: 0x${brakeHex}, Tire: 0x${tireHex}, Whl: 0x${wheelHex})</h3>
-              ${renderSlowBlock(board.slow)}
+          </article>
+        `;
+      } else {
+        const boardName = BOARD_NAMES[board.boardId] || `Board ${board.boardId}`;
+        const sduBase = 0x080 + (board.boardId << 3);
+        const sgHex = sduBase.toString(16).toUpperCase().padStart(3, '0');
+        const shockHex = (sduBase + 1).toString(16).toUpperCase().padStart(3, '0');
+        const brakeHex = (sduBase + 2).toString(16).toUpperCase().padStart(3, '0');
+        const tireHex = (sduBase + 3).toString(16).toUpperCase().padStart(3, '0');
+        const wheelHex = (sduBase + 4).toString(16).toUpperCase().padStart(3, '0');
+
+        return `
+          <article class="board-card" data-board-key="${boardKey}">
+            <header class="board-card-header">
+              <strong>${escapeHtml(boardName)}</strong>
+              <span class="board-age">${escapeHtml(formatBoardAge(board.lastSeenAgeMs))}</span>
+              <span class="board-counter">CNT: ${board.lastMessageCounterReceived != null ? board.lastMessageCounterReceived : '--'}</span>
+              ${board.counterMismatch ? '<span class="pill error">CNT MISMATCH</span>' : ''}
+            </header>
+            <div class="board-cols">
+              <div class="board-col">
+                <h3>Fast (SG: 0x${sgHex}, Shock: 0x${shockHex})</h3>
+                ${renderFastBlock(board.fast)}
+              </div>
+              <div class="board-col">
+                <h3>Slow (Brk: 0x${brakeHex}, Tire: 0x${tireHex}, Whl: 0x${wheelHex})</h3>
+                ${renderSlowBlock(board.slow)}
+              </div>
             </div>
-          </div>
-        </article>
-      `;
+          </article>
+        `;
+      }
     })
     .join('');
 
   if (openDetails.size > 0) {
     for (const card of elements.boardsGrid.querySelectorAll('.board-card')) {
-      const boardId = card.dataset.boardId;
-      if (!boardId) {
+      const boardKey = card.dataset.boardKey;
+      if (!boardKey) {
         continue;
       }
 
       for (const detail of card.querySelectorAll('details.board-detail')) {
-        if (detail.dataset.detail && openDetails.has(`${boardId}:${detail.dataset.detail}`)) {
+        if (detail.dataset.detail && openDetails.has(`${boardKey}:${detail.dataset.detail}`)) {
           detail.open = true;
         }
       }
@@ -815,8 +948,8 @@ function renderBoards() {
 
   if (scrollPositions.size > 0) {
     for (const card of elements.boardsGrid.querySelectorAll('.board-card')) {
-      const boardId = card.dataset.boardId;
-      if (!boardId) {
+      const boardKey = card.dataset.boardKey;
+      if (!boardKey) {
         continue;
       }
 
@@ -825,7 +958,7 @@ function renderBoards() {
         if (!detailKey) {
           continue;
         }
-        const preservedScrollLeft = scrollPositions.get(`${boardId}:${detailKey}`);
+        const preservedScrollLeft = scrollPositions.get(`${boardKey}:${detailKey}`);
         if (preservedScrollLeft == null) {
           continue;
         }
@@ -880,10 +1013,18 @@ function renderLog() {
       }
 
       if (entry.source === 'board' && entry.board) {
-        const idLabel = `B${entry.board.boardId} · ${entry.board.kind === 'fast' ? 'Fast' : 'Slow'} · ${entry.frame.idText}`;
-        const summary = entry.board.kind === 'fast'
-          ? `SG ${entry.board.strainGaugesMv.join('/')} mV · Shock ${formatSigned(entry.board.shockMm, 2)} mm`
-          : `RPM ${entry.board.rpm} · Tire ${formatSigned(entry.board.tireC?.max, 1)}/${formatSigned(entry.board.tireC?.min, 1)}/${formatSigned(entry.board.tireC?.center, 1)}/${formatSigned(entry.board.tireC?.ambient, 1)} · Brk ${formatSigned(entry.board.brakeC, 1)}/${formatSigned(entry.board.brakeAmbientC, 1)}`;
+        const typeLabel = entry.board.boardType === 6 ? 'TSPMU' : 'SDU';
+        const idLabel = `${typeLabel} ${entry.board.boardId} · ${entry.board.kind === 'fast' ? 'Fast' : 'Slow'} · ${entry.frame.idText}`;
+        let summary = '';
+        if (entry.board.boardType === 6) {
+          summary = entry.board.kind === 'fast'
+            ? `Pres1 ${formatSigned(entry.board.pressure1, 2)} Pa · Pres2 ${formatSigned(entry.board.pressure2, 2)} Pa · Jitter ${entry.board.jitter}`
+            : `Temp ${formatSigned(entry.board.tspmuTemp1, 1)}/${formatSigned(entry.board.tspmuTemp2, 1)}/${formatSigned(entry.board.tspmuTemp3, 1)}/${formatSigned(entry.board.tspmuTemp4, 1)} °C`;
+        } else {
+          summary = entry.board.kind === 'fast'
+            ? `SG ${entry.board.strainGaugesMv.join('/')} mV · Shock ${formatSigned(entry.board.shockMm, 2)} mm`
+            : `RPM ${entry.board.rpm} · Tire ${formatSigned(entry.board.tireC?.max, 1)}/${formatSigned(entry.board.tireC?.min, 1)}/${formatSigned(entry.board.tireC?.center, 1)}/${formatSigned(entry.board.tireC?.ambient, 1)} · Brk ${formatSigned(entry.board.brakeC, 1)}/${formatSigned(entry.board.brakeAmbientC, 1)}`;
+        }
         return `
           <tr>
             <td>${escapeHtml(formatTimestamp(entry.timestamp))}</td>
@@ -943,11 +1084,19 @@ function recordThroughputSample(now, diagnostics) {
   }
 }
 
-function getOrCreateBoardHistory(boardId) {
-  let entry = state.graphs.boards.get(boardId);
+function initializeBoardHistories() {
+  state.graphs.boards.set('2-0', { fast: [], slow: [], lastSeenAt: null });
+  state.graphs.boards.set('2-1', { fast: [], slow: [], lastSeenAt: null });
+  state.graphs.boards.set('2-2', { fast: [], slow: [], lastSeenAt: null });
+  state.graphs.boards.set('2-3', { fast: [], slow: [], lastSeenAt: null });
+  state.graphs.boards.set('6-0', { fast: [], slow: [], lastSeenAt: null });
+}
+
+function getOrCreateBoardHistory(boardKey) {
+  let entry = state.graphs.boards.get(boardKey);
   if (!entry) {
-    entry = { fast: [], slow: [], lastSeenAt: 0 };
-    state.graphs.boards.set(boardId, entry);
+    entry = { fast: [], slow: [], lastSeenAt: null };
+    state.graphs.boards.set(boardKey, entry);
   }
   return entry;
 }
@@ -961,31 +1110,52 @@ function appendBoardSample(frameEvent) {
   if (!Number.isFinite(now)) {
     return;
   }
-  const entry = getOrCreateBoardHistory(board.boardId);
+  const boardType = board.boardType ?? 2;
+  const boardKey = `${boardType}-${board.boardId}`;
+  const entry = getOrCreateBoardHistory(boardKey);
   entry.lastSeenAt = now;
   const cutoff = now - MAX_GRAPH_HISTORY_MS;
 
   if (board.kind === 'fast') {
-    entry.fast.push({
-      t: now,
-      sg: Array.isArray(board.strainGaugesMv) ? board.strainGaugesMv.slice() : [],
-      shockMm: Number(board.shockMm),
-    });
+    if (boardType === 6) {
+      entry.fast.push({
+        t: now,
+        pressure1: Number(board.pressure1),
+        pressure2: Number(board.pressure2),
+        jitter: Number(board.jitter),
+      });
+    } else {
+      entry.fast.push({
+        t: now,
+        sg: Array.isArray(board.strainGaugesMv) ? board.strainGaugesMv.slice() : [],
+        shockMm: Number(board.shockMm),
+      });
+    }
     pruneSeries(entry.fast, cutoff);
     if (entry.fast.length > MAX_POINTS_PER_SERIES) {
       entry.fast.splice(0, entry.fast.length - MAX_POINTS_PER_SERIES);
     }
   } else if (board.kind === 'slow') {
-    entry.slow.push({
-      t: now,
-      rpm: Number(board.rpm),
-      tireMax: Number(board.tireC?.max),
-      tireMin: Number(board.tireC?.min),
-      tireCtr: Number(board.tireC?.center),
-      tireAmb: Number(board.tireC?.ambient),
-      brakeC: Number(board.brakeC),
-      brakeAmbientC: Number(board.brakeAmbientC),
-    });
+    if (boardType === 6) {
+      entry.slow.push({
+        t: now,
+        tspmuTemp1: Number(board.tspmuTemp1),
+        tspmuTemp2: Number(board.tspmuTemp2),
+        tspmuTemp3: Number(board.tspmuTemp3),
+        tspmuTemp4: Number(board.tspmuTemp4),
+      });
+    } else {
+      entry.slow.push({
+        t: now,
+        rpm: Number(board.rpm),
+        tireMax: Number(board.tireC?.max),
+        tireMin: Number(board.tireC?.min),
+        tireCtr: Number(board.tireC?.center),
+        tireAmb: Number(board.tireC?.ambient),
+        brakeC: Number(board.brakeC),
+        brakeAmbientC: Number(board.brakeAmbientC),
+      });
+    }
     pruneSeries(entry.slow, cutoff);
     if (entry.slow.length > MAX_POINTS_PER_SERIES) {
       entry.slow.splice(0, entry.slow.length - MAX_POINTS_PER_SERIES);
@@ -1542,82 +1712,128 @@ function buildAllPlotDefs(now, windowMs) {
     legendFormatter: (v) => `${formatBytes(v)}/s`,
   });
 
-  const boardIds = [...state.graphs.boards.keys()].sort((a, b) => a - b);
-  for (const boardId of boardIds) {
-    const boardName = BOARD_NAMES[boardId] || `Board ${boardId}`;
-    const history = state.graphs.boards.get(boardId);
-    const fastPoints = pickWindowedPoints(history.fast, now, windowMs);
-    const slowPoints = pickWindowedPoints(history.slow, now, windowMs);
-
-    defs.push({
-      id: `board:${boardId}:sg`,
-      section: 'board',
-      boardId,
-      title: `${boardName} · Strain Gauges (mV)`,
-      badge: `${fastPoints.length} pts`,
-      lines: SG_COLORS.map((color, idx) => ({
-        label: `SG${idx + 1}`,
-        color,
-        points: fastPoints.map((row) => ({ t: row.t, v: Number(row.sg?.[idx]) })),
-      })),
-      plotOptions: { now, windowMs, formatY: (v) => v.toFixed(0), emptyText: 'Waiting for fast frames' },
-      legendFormatter: (v) => `${v.toFixed(0)} mV`,
-    });
-
-    defs.push({
-      id: `board:${boardId}:shock`,
-      section: 'board',
-      boardId,
-      title: `${boardName} · Shock (mm)`,
-      badge: `${fastPoints.length} pts`,
-      lines: [{ label: 'Shock', color: SHOCK_COLOR, points: fastPoints.map((row) => ({ t: row.t, v: row.shockMm })) }],
-      plotOptions: { now, windowMs, formatY: (v) => v.toFixed(2), emptyText: 'Waiting for fast frames' },
-      legendFormatter: (v) => `${v.toFixed(2)} mm`,
-    });
-
-    defs.push({
-      id: `board:${boardId}:rpm`,
-      section: 'board',
-      boardId,
-      title: `${boardName} · Wheel Speed (RPM)`,
-      badge: `${slowPoints.length} pts`,
-      lines: [{ label: 'RPM', color: RPM_COLOR, points: slowPoints.map((row) => ({ t: row.t, v: row.rpm })) }],
-      plotOptions: { now, windowMs, yMinClamp: 0, formatY: (v) => v.toFixed(0), emptyText: 'Waiting for slow frames' },
-      legendFormatter: (v) => v.toFixed(0),
-    });
-
-    defs.push({
-      id: `board:${boardId}:tire`,
-      section: 'board',
-      boardId,
-      title: `${boardName} · Tire Temps (°C)`,
-      badge: `${slowPoints.length} pts`,
-      lines: [
-        { label: 'Max', color: TIRE_COLORS.max, points: slowPoints.map((row) => ({ t: row.t, v: row.tireMax })) },
-        { label: 'Min', color: TIRE_COLORS.min, points: slowPoints.map((row) => ({ t: row.t, v: row.tireMin })) },
-        { label: 'Ctr', color: TIRE_COLORS.center, points: slowPoints.map((row) => ({ t: row.t, v: row.tireCtr })) },
-        { label: 'Amb', color: TIRE_COLORS.ambient, points: slowPoints.map((row) => ({ t: row.t, v: row.tireAmb })) },
-      ],
-      plotOptions: { now, windowMs, formatY: (v) => v.toFixed(1), emptyText: 'Waiting for slow frames' },
-      legendFormatter: (v) => `${v.toFixed(1)} °C`,
-    });
-
-    defs.push({
-      id: `board:${boardId}:brake`,
-      section: 'board',
-      boardId,
-      title: `${boardName} · Brake Temps (°C)`,
-      badge: `${slowPoints.length} pts`,
-      lines: [
-        { label: 'Brake', color: BRAKE_COLORS.brakeC, points: slowPoints.map((row) => ({ t: row.t, v: row.brakeC })) },
-        { label: 'Brake Amb', color: BRAKE_COLORS.brakeAmbientC, points: slowPoints.map((row) => ({ t: row.t, v: row.brakeAmbientC })) },
-      ],
-      plotOptions: { now, windowMs, formatY: (v) => v.toFixed(1), emptyText: 'Waiting for slow frames' },
-      legendFormatter: (v) => `${v.toFixed(1)} °C`,
+  const boardKeys = [...state.graphs.boards.keys()].sort((a, b) => a.localeCompare(b));
+  let filteredBoardKeys = boardKeys;
+  if (state.boardFilter && state.boardFilter.type !== 'all') {
+    const filterType = Number(state.boardFilter.type);
+    const filterId = Number(state.boardFilter.id);
+    filteredBoardKeys = boardKeys.filter((k) => {
+      const [typeStr, idStr] = k.split('-');
+      return Number(typeStr) === filterType && Number(idStr) === filterId;
     });
   }
 
-  return { defs, boardIds };
+  for (const boardKey of filteredBoardKeys) {
+    const [typeStr, idStr] = boardKey.split('-');
+    const boardType = Number(typeStr);
+    const boardId = Number(idStr);
+    const history = state.graphs.boards.get(boardKey);
+    const fastPoints = pickWindowedPoints(history.fast, now, windowMs);
+    const slowPoints = pickWindowedPoints(history.slow, now, windowMs);
+
+    if (boardType === 6) {
+      const boardName = `TSPMU ${boardId}`;
+      defs.push({
+        id: `board:${boardKey}:pressure`,
+        section: 'board',
+        boardKey,
+        title: `${boardName} · Pressure (Pa)`,
+        badge: `${fastPoints.length} pts`,
+        lines: [
+          { label: 'Pres 1', color: '#6ce0e6', points: fastPoints.map((row) => ({ t: row.t, v: row.pressure1 })) },
+          { label: 'Pres 2', color: '#f7a35c', points: fastPoints.map((row) => ({ t: row.t, v: row.pressure2 })) },
+        ],
+        plotOptions: { now, windowMs, formatY: (v) => v.toFixed(2), emptyText: 'Waiting for pressure frames' },
+        legendFormatter: (v) => `${v.toFixed(2)} Pa`,
+      });
+
+      defs.push({
+        id: `board:${boardKey}:temp`,
+        section: 'board',
+        boardKey,
+        title: `${boardName} · Temp (°C)`,
+        badge: `${slowPoints.length} pts`,
+        lines: [
+          { label: 'Temp 1', color: '#ef7457', points: slowPoints.map((row) => ({ t: row.t, v: row.tspmuTemp1 })) },
+          { label: 'Temp 2', color: '#6ce0e6', points: slowPoints.map((row) => ({ t: row.t, v: row.tspmuTemp2 })) },
+          { label: 'Temp 3', color: '#b9c47a', points: slowPoints.map((row) => ({ t: row.t, v: row.tspmuTemp3 })) },
+          { label: 'Temp 4', color: '#e6b657', points: slowPoints.map((row) => ({ t: row.t, v: row.tspmuTemp4 })) },
+        ],
+        plotOptions: { now, windowMs, formatY: (v) => v.toFixed(1), emptyText: 'Waiting for temp frames' },
+        legendFormatter: (v) => `${v.toFixed(1)} °C`,
+      });
+    } else {
+      const boardName = BOARD_NAMES[boardId] || `Board ${boardId}`;
+      defs.push({
+        id: `board:${boardKey}:sg`,
+        section: 'board',
+        boardKey,
+        title: `${boardName} · Strain Gauges (mV)`,
+        badge: `${fastPoints.length} pts`,
+        lines: SG_COLORS.map((color, idx) => ({
+          label: `SG${idx + 1}`,
+          color,
+          points: fastPoints.map((row) => ({ t: row.t, v: Number(row.sg?.[idx]) })),
+        })),
+        plotOptions: { now, windowMs, formatY: (v) => v.toFixed(0), emptyText: 'Waiting for fast frames' },
+        legendFormatter: (v) => `${v.toFixed(0)} mV`,
+      });
+
+      defs.push({
+        id: `board:${boardKey}:shock`,
+        section: 'board',
+        boardKey,
+        title: `${boardName} · Shock (mm)`,
+        badge: `${fastPoints.length} pts`,
+        lines: [{ label: 'Shock', color: SHOCK_COLOR, points: fastPoints.map((row) => ({ t: row.t, v: row.shockMm })) }],
+        plotOptions: { now, windowMs, formatY: (v) => v.toFixed(2), emptyText: 'Waiting for fast frames' },
+        legendFormatter: (v) => `${v.toFixed(2)} mm`,
+      });
+
+      defs.push({
+        id: `board:${boardKey}:rpm`,
+        section: 'board',
+        boardKey,
+        title: `${boardName} · Wheel Speed (RPM)`,
+        badge: `${slowPoints.length} pts`,
+        lines: [{ label: 'RPM', color: RPM_COLOR, points: slowPoints.map((row) => ({ t: row.t, v: row.rpm })) }],
+        plotOptions: { now, windowMs, yMinClamp: 0, formatY: (v) => v.toFixed(0), emptyText: 'Waiting for slow frames' },
+        legendFormatter: (v) => v.toFixed(0),
+      });
+
+      defs.push({
+        id: `board:${boardKey}:tire`,
+        section: 'board',
+        boardKey,
+        title: `${boardName} · Tire Temps (°C)`,
+        badge: `${slowPoints.length} pts`,
+        lines: [
+          { label: 'Max', color: TIRE_COLORS.max, points: slowPoints.map((row) => ({ t: row.t, v: row.tireMax })) },
+          { label: 'Min', color: TIRE_COLORS.min, points: slowPoints.map((row) => ({ t: row.t, v: row.tireMin })) },
+          { label: 'Ctr', color: TIRE_COLORS.center, points: slowPoints.map((row) => ({ t: row.t, v: row.tireCtr })) },
+          { label: 'Amb', color: TIRE_COLORS.ambient, points: slowPoints.map((row) => ({ t: row.t, v: row.tireAmb })) },
+        ],
+        plotOptions: { now, windowMs, formatY: (v) => v.toFixed(1), emptyText: 'Waiting for slow frames' },
+        legendFormatter: (v) => `${v.toFixed(1)} °C`,
+      });
+
+      defs.push({
+        id: `board:${boardKey}:brake`,
+        section: 'board',
+        boardKey,
+        title: `${boardName} · Brake Temps (°C)`,
+        badge: `${slowPoints.length} pts`,
+        lines: [
+          { label: 'Brake', color: BRAKE_COLORS.brakeC, points: slowPoints.map((row) => ({ t: row.t, v: row.brakeC })) },
+          { label: 'Brake Amb', color: BRAKE_COLORS.brakeAmbientC, points: slowPoints.map((row) => ({ t: row.t, v: row.brakeAmbientC })) },
+        ],
+        plotOptions: { now, windowMs, formatY: (v) => v.toFixed(1), emptyText: 'Waiting for slow frames' },
+        legendFormatter: (v) => `${v.toFixed(1)} °C`,
+      });
+    }
+  }
+
+  return { defs, boardKeys: filteredBoardKeys };
 }
 
 function renderFavoritesSection(favDefs) {
@@ -1638,34 +1854,37 @@ function renderThroughputSection(throughputDefs) {
   elements.throughputGrid.replaceChildren(...ordered.map(buildPlotCard));
 }
 
-function renderBoardSection(boardIds, defsByBoard, now) {
-  if (boardIds.length === 0) {
+function renderBoardSection(boardKeys, defsByBoard, now) {
+  if (boardKeys.length === 0) {
     elements.boardGraphs.innerHTML = '<p class="empty-state">No board telemetry decoded yet.</p>';
     return;
   }
   const fragment = document.createDocumentFragment();
-  for (const boardId of boardIds) {
-    const history = state.graphs.boards.get(boardId);
-    const defsForBoard = defsByBoard.get(boardId) || [];
+  for (const boardKey of boardKeys) {
+    const history = state.graphs.boards.get(boardKey);
+    const defsForBoard = defsByBoard.get(boardKey) || [];
     if (defsForBoard.length === 0) continue;
     const ageMs = history.lastSeenAt ? now - history.lastSeenAt : null;
-    const boardName = BOARD_NAMES[boardId] || `Board ${boardId}`;
+    const [typeStr, idStr] = boardKey.split('-');
+    const boardType = Number(typeStr);
+    const boardId = Number(idStr);
+    const boardName = boardType === 6 ? `TSPMU ${boardId}` : (BOARD_NAMES[boardId] || `Board ${boardId}`);
     const card = document.createElement('article');
     card.className = 'board-graph-card';
-    card.dataset.boardId = String(boardId);
+    card.dataset.boardId = String(boardKey);
     card.innerHTML = `
       <header>
         <strong>${escapeHtml(boardName)}</strong>
         <span class="board-age">${escapeHtml(formatBoardAge(ageMs))} · ${history.fast.length} fast / ${history.slow.length} slow</span>
       </header>
-      <div class="board-graph-grid graphs-drop-zone" data-drop-key="board:${boardId}"></div>
+      <div class="board-graph-grid graphs-drop-zone" data-drop-key="board:${boardKey}"></div>
     `;
     const grid = card.querySelector('.board-graph-grid');
-    const ordered = applyOrderedSort(defsForBoard, state.graphs.order.board[String(boardId)]);
+    const ordered = applyOrderedSort(defsForBoard, state.graphs.order.board[String(boardKey)]);
     for (const def of ordered) {
       grid.appendChild(buildPlotCard(def));
     }
-    wireDropZone(grid, `board:${boardId}`);
+    wireDropZone(grid, `board:${boardKey}`);
     fragment.appendChild(card);
   }
   elements.boardGraphs.replaceChildren(fragment);
@@ -1677,14 +1896,14 @@ function renderGraphs() {
 
   const now = Date.now();
   const windowMs = activeWindowSeconds() * 1000;
-  const { defs, boardIds } = buildAllPlotDefs(now, windowMs);
+  const { defs, boardKeys } = buildAllPlotDefs(now, windowMs);
 
-  if (boardIds.length === 0) {
+  if (boardKeys.length === 0) {
     elements.graphsStatusLine.textContent = 'Waiting for board telemetry frames.';
   } else {
-    const totalFast = boardIds.reduce((sum, id) => sum + state.graphs.boards.get(id).fast.length, 0);
-    const totalSlow = boardIds.reduce((sum, id) => sum + state.graphs.boards.get(id).slow.length, 0);
-    elements.graphsStatusLine.textContent = `Tracking ${boardIds.length} board${boardIds.length === 1 ? '' : 's'} · ${totalFast} fast / ${totalSlow} slow samples buffered · window ${activeWindowSeconds()}s`;
+    const totalFast = boardKeys.reduce((sum, key) => sum + state.graphs.boards.get(key).fast.length, 0);
+    const totalSlow = boardKeys.reduce((sum, key) => sum + state.graphs.boards.get(key).slow.length, 0);
+    elements.graphsStatusLine.textContent = `Tracking ${boardKeys.length} board${boardKeys.length === 1 ? '' : 's'} · ${totalFast} fast / ${totalSlow} slow samples buffered · window ${activeWindowSeconds()}s`;
   }
 
   const favDefs = [];
@@ -1698,15 +1917,15 @@ function renderGraphs() {
     if (def.section === 'throughput') {
       throughputDefs.push(def);
     } else if (def.section === 'board') {
-      const list = boardDefsByBoard.get(def.boardId) || [];
+      const list = boardDefsByBoard.get(def.boardKey) || [];
       list.push(def);
-      boardDefsByBoard.set(def.boardId, list);
+      boardDefsByBoard.set(def.boardKey, list);
     }
   }
 
   renderFavoritesSection(favDefs);
   renderThroughputSection(throughputDefs);
-  renderBoardSection(boardIds, boardDefsByBoard, now);
+  renderBoardSection(boardKeys, boardDefsByBoard, now);
   reapplyHoverAfterRender();
 }
 
@@ -1795,6 +2014,7 @@ function wireUi() {
     state.charts.frames = [];
     state.charts.bytes = [];
     state.graphs.boards = new Map();
+    initializeBoardHistories();
     state.graphs.throughput.fps = [];
     state.graphs.throughput.bps = [];
     state.graphs.yRanges = new Map();
@@ -1804,6 +2024,40 @@ function wireUi() {
 
   for (const button of elements.tabButtons) {
     button.addEventListener('click', () => setActiveTab(button.dataset.tab));
+  }
+
+  const boardTabButtons = Array.from(document.querySelectorAll('.board-tab-button'));
+  for (const button of boardTabButtons) {
+    button.addEventListener('click', () => {
+      const filterType = button.dataset.filterType;
+      const filterId = button.dataset.filterId;
+      state.boardFilter = { type: filterType, id: filterId };
+      for (const btn of boardTabButtons) {
+        const active = btn === button;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-selected', active ? 'true' : 'false');
+      }
+      if (elements.graphsBoardSelect) {
+        elements.graphsBoardSelect.value = `${filterType}-${filterId}`;
+      }
+      renderBoards();
+      renderGraphs();
+    });
+  }
+
+  if (elements.graphsBoardSelect) {
+    elements.graphsBoardSelect.addEventListener('change', (event) => {
+      const val = event.target.value;
+      const [typeStr, idStr] = val.split('-');
+      state.boardFilter = { type: typeStr, id: idStr };
+      for (const btn of boardTabButtons) {
+        const active = btn.dataset.filterType === typeStr && btn.dataset.filterId === idStr;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-selected', active ? 'true' : 'false');
+      }
+      renderBoards();
+      renderGraphs();
+    });
   }
 
   elements.graphsWindowSelect.addEventListener('change', (event) => {
@@ -1816,6 +2070,7 @@ function wireUi() {
 
   elements.graphsClearButton.addEventListener('click', () => {
     state.graphs.boards = new Map();
+    initializeBoardHistories();
     state.graphs.throughput.fps = [];
     state.graphs.throughput.bps = [];
     state.graphs.yRanges = new Map();
@@ -1982,6 +2237,7 @@ function wireEvents() {
 
 async function init() {
   loadGraphPrefs();
+  initializeBoardHistories();
 
   const initialState = await api.getInitialState();
   state.ports = initialState.ports;
