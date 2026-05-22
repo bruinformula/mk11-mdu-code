@@ -1506,8 +1506,20 @@ function buildLegend(lines, formatValue) {
     <div class="graph-legend">
       ${lines
         .map((line) => {
-          const last = line.points.length > 0 ? line.points[line.points.length - 1].v : null;
-          const valueLabel = last == null || !Number.isFinite(last)
+          // Walk backwards for the most recent finite value: SDU "fast" frames
+          // come from either the strain or shock sensor (and "slow" frames from
+          // brake / tire / wheel), so the last appended row often carries NaN
+          // for fields belonging to the other sensor. Using just the tail value
+          // makes the legend flash between "--" and the actual reading.
+          let last = null;
+          for (let i = line.points.length - 1; i >= 0; i -= 1) {
+            const v = line.points[i].v;
+            if (Number.isFinite(v)) {
+              last = v;
+              break;
+            }
+          }
+          const valueLabel = last == null
             ? '--'
             : formatValue
               ? formatValue(last)
