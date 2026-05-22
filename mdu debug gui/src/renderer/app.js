@@ -1101,6 +1101,43 @@ function getOrCreateBoardHistory(boardKey) {
   return entry;
 }
 
+function mergeBoardIntoDiagnostics(frameEvent) {
+  const board = frameEvent.board;
+  const boardType = board.boardType ?? 2;
+  const boardId = board.boardId;
+  if (typeof boardId !== 'number') {
+    return;
+  }
+  const now = frameEvent.timestamp ? Date.parse(frameEvent.timestamp) : Date.now();
+  const diag = state.diagnostics ?? (state.diagnostics = {});
+  if (!Array.isArray(diag.boards)) {
+    diag.boards = [];
+  }
+  let entry = diag.boards.find((b) => b.boardType === boardType && b.boardId === boardId);
+  if (!entry) {
+    entry = {
+      boardType,
+      boardId,
+      fastCount: 0,
+      slowCount: 0,
+      fast: null,
+      slow: null,
+      lastSeenAt: now,
+      lastSeenAgeMs: 0,
+    };
+    diag.boards.push(entry);
+  }
+  entry.lastSeenAt = now;
+  entry.lastSeenAgeMs = 0;
+  if (board.kind === 'fast') {
+    entry.fast = { ...(entry.fast ?? {}), ...board, receivedAt: now, ageMs: 0 };
+    entry.fastCount = (entry.fastCount ?? 0) + 1;
+  } else if (board.kind === 'slow') {
+    entry.slow = { ...(entry.slow ?? {}), ...board, receivedAt: now, ageMs: 0 };
+    entry.slowCount = (entry.slowCount ?? 0) + 1;
+  }
+}
+
 function appendBoardSample(frameEvent) {
   if (!frameEvent || !frameEvent.ok || frameEvent.source !== 'board' || !frameEvent.board) {
     return;
@@ -2234,6 +2271,10 @@ function wireEvents() {
   api.onFrame((frame) => {
     addLogRow(frame);
     appendBoardSample(frame);
+    if (frame && frame.ok && frame.source === 'board' && frame.board) {
+      mergeBoardIntoDiagnostics(frame);
+      scheduleRender('boards', renderBoards);
+    }
   });
 
   api.onRuntime((runtime) => {

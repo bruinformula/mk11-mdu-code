@@ -11,7 +11,7 @@ const TARGET_VID = '0483';
 const TARGET_PID = '5740';
 const DEFAULT_BAUD_RATE = 115200;
 const PORT_SCAN_INTERVAL_MS = 1500;
-const DIAGNOSTICS_INTERVAL_MS = 250;
+const DIAGNOSTICS_INTERVAL_MS = 50;
 const USB_TOPOLOGY_SCAN_INTERVAL_MS = 5000;
 
 function containsToken(value, token) {

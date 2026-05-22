@@ -28,6 +28,7 @@
 #include "../../Drivers/BFR_Krill_Drivers/Inc/usb_driver.h"
 #include "usbd_conf.h"
 #include "usbd_cdc_if.h"
+#include "can.h"
 #include <stdio.h>
 #include <string.h>
 /* USER CODE END Includes */
