@@ -9,6 +9,10 @@ extern uint8_t MDU_Get_Rx_Queue_State(uint8_t *head_out, uint8_t *tail_out);
 extern void MDU_Get_Rx_Queue_Data(uint8_t index, FDCAN_RxHeaderTypeDef *hdr_out, uint8_t *data_out);
 extern void MDU_Advance_Rx_Queue_Head(void);
 
+static const char k_hex_digits[16] = {
+  '0','1','2','3','4','5','6','7','8','9','A','B','C','D','E','F'
+};
+
 extern volatile uint32_t fdcan_tx_count;
 extern volatile uint32_t fdcan_rx_count;
 extern volatile uint32_t fdcan_rx_error_count;
@@ -73,45 +77,69 @@ HAL_StatusTypeDef CAN_Init(FDCAN_HandleTypeDef *fdcan) {
 void CAN_Process(uint32_t now_ms) {}
 
 /**
- * @brief Convert one queued FDCAN frame into an SLCAN line and send over USB.
+ * @brief Drain all available FDCAN RX queue entries into one batched USB
+ *        transfer. Frames stay in the queue if USB is busy so nothing is lost.
  */
 void CAN_To_USB_Process(void) {
-  char slcan_buf[256];
-  uint8_t usb_status;
-  uint8_t current_head, current_tail;
+  // Per-frame worst case: "T" + 8 hex id + 2 dlc digits + 64*2 hex payload + "\r" = 140
+  // FDCAN_RX_QUEUE_SIZE is 8, so a full drain is ~1.1 KB; cap below APP_TX_DATA_SIZE.
+  static char batch[1536];
+  int batch_len = 0;
+  int frames_consumed = 0;
 
-  if (MDU_Get_Rx_Queue_State(&current_head, &current_tail)) {
+  uint8_t head, tail;
+  if (!MDU_Get_Rx_Queue_State(&head, &tail)) {
+    return;
+  }
+
+  uint8_t idx = head;
+  while (idx != tail) {
     FDCAN_RxHeaderTypeDef hdr;
     uint8_t frame_data[64];
-
-    MDU_Get_Rx_Queue_Data(current_head, &hdr, frame_data);
+    MDU_Get_Rx_Queue_Data(idx, &hdr, frame_data);
 
     uint32_t len = Convert_DLC_To_Bytes(hdr.DataLength);
     if (len > 64) len = 64;
 
-    int offset = 0;
-
-    if (hdr.IdType == FDCAN_STANDARD_ID) {
-      offset += snprintf(slcan_buf + offset, sizeof(slcan_buf) - offset, "t%03lX%lu",
-                         (unsigned long)hdr.Identifier, (unsigned long)len);
-    } else {
-      offset += snprintf(slcan_buf + offset, sizeof(slcan_buf) - offset, "T%08lX%lu",
-                         (unsigned long)hdr.Identifier, (unsigned long)len);
+    // Reserve worst-case room for this line; stop batching if it would overflow.
+    int needed = 11 + (int)(len * 2) + 1;
+    if (batch_len + needed > (int)sizeof(batch)) {
+      break;
     }
+
+    int n;
+    if (hdr.IdType == FDCAN_STANDARD_ID) {
+      n = snprintf(batch + batch_len, sizeof(batch) - batch_len, "t%03lX%lu",
+                   (unsigned long)hdr.Identifier, (unsigned long)len);
+    } else {
+      n = snprintf(batch + batch_len, sizeof(batch) - batch_len, "T%08lX%lu",
+                   (unsigned long)hdr.Identifier, (unsigned long)len);
+    }
+    if (n <= 0) {
+      break;
+    }
+    batch_len += n;
 
     for (uint32_t i = 0; i < len; i++) {
-      offset += snprintf(slcan_buf + offset, sizeof(slcan_buf) - offset, "%02X", frame_data[i]);
+      uint8_t b = frame_data[i];
+      batch[batch_len++] = k_hex_digits[b >> 4];
+      batch[batch_len++] = k_hex_digits[b & 0x0F];
     }
+    batch[batch_len++] = '\r';
 
-    slcan_buf[offset++] = '\r';
-    slcan_buf[offset] = '\0';
+    frames_consumed++;
+    idx = (uint8_t)((idx + 1U) % FDCAN_RX_QUEUE_SIZE);
+  }
 
-    MDU_Advance_Rx_Queue_Head();
+  if (batch_len == 0) {
+    return;
+  }
 
-    uint32_t timeout = 10000;
-    do {
-      usb_status = CDC_Transmit_FS((uint8_t *)slcan_buf, offset);
-      timeout--;
-    } while (usb_status == USBD_BUSY && timeout > 0);
+  // Single USB transfer for the whole batch. If the endpoint is still busy,
+  // leave the frames in the queue and retry next loop iteration.
+  if (CDC_Transmit_FS((uint8_t *)batch, (uint16_t)batch_len) == USBD_OK) {
+    for (int i = 0; i < frames_consumed; i++) {
+      MDU_Advance_Rx_Queue_Head();
+    }
   }
 }
