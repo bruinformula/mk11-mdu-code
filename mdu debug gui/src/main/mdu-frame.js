@@ -249,14 +249,14 @@ function parseFast(match, rawLine) {
       for (let i = 0; i < 6; i++) {
         const offset = 4 + i * 9;
         bytes[offset] = t1 & 0xFF;
-        bytes[offset+1] = (t1 >> 8) & 0xFF;
-        bytes[offset+2] = t2 & 0xFF;
-        bytes[offset+3] = (t2 >> 8) & 0xFF;
-        bytes[offset+4] = t3 & 0xFF;
-        bytes[offset+5] = (t3 >> 8) & 0xFF;
-        bytes[offset+6] = t4 & 0xFF;
-        bytes[offset+7] = (t4 >> 8) & 0xFF;
-        bytes[offset+8] = 0;
+        bytes[offset + 1] = (t1 >> 8) & 0xFF;
+        bytes[offset + 2] = t2 & 0xFF;
+        bytes[offset + 3] = (t2 >> 8) & 0xFF;
+        bytes[offset + 4] = t3 & 0xFF;
+        bytes[offset + 5] = (t3 >> 8) & 0xFF;
+        bytes[offset + 6] = t4 & 0xFF;
+        bytes[offset + 7] = (t4 >> 8) & 0xFF;
+        bytes[offset + 8] = 0;
       }
       const dataBytes = Array.from(bytes);
       const dataHex = bytesToHex(bytes);
@@ -299,10 +299,10 @@ function parseFast(match, rawLine) {
     for (let i = 0; i < 11; i++) {
       const offset = 4 + i * 5;
       bytes[offset] = p1 & 0xFF;
-      bytes[offset+1] = (p1 >> 8) & 0xFF;
-      bytes[offset+2] = p2 & 0xFF;
-      bytes[offset+3] = (p2 >> 8) & 0xFF;
-      bytes[offset+4] = 0;
+      bytes[offset + 1] = (p1 >> 8) & 0xFF;
+      bytes[offset + 2] = p2 & 0xFF;
+      bytes[offset + 3] = (p2 >> 8) & 0xFF;
+      bytes[offset + 4] = 0;
     }
     const dataBytes = Array.from(bytes);
     const dataHex = bytesToHex(bytes);
@@ -335,7 +335,7 @@ function parseFast(match, rawLine) {
     const val = Math.min(4095, Math.max(0, Math.round(((strainGaugesMv[i] + 3300.0) / 6600.0) * 4095.0)));
     const offset = 6 + i * 2;
     bytes[offset] = val & 0xFF;
-    bytes[offset+1] = (val >> 8) & 0xFF;
+    bytes[offset + 1] = (val >> 8) & 0xFF;
   }
   const shockVal = Math.round(shockMm * 100);
   bytes[18] = shockVal & 0xFF;
@@ -412,14 +412,14 @@ function parseSlow(match, rawLine) {
     for (let i = 0; i < 6; i++) {
       const offset = 4 + i * 9;
       bytes[offset] = t1 & 0xFF;
-      bytes[offset+1] = (t1 >> 8) & 0xFF;
-      bytes[offset+2] = t2 & 0xFF;
-      bytes[offset+3] = (t2 >> 8) & 0xFF;
-      bytes[offset+4] = t3 & 0xFF;
-      bytes[offset+5] = (t3 >> 8) & 0xFF;
-      bytes[offset+6] = t4 & 0xFF;
-      bytes[offset+7] = (t4 >> 8) & 0xFF;
-      bytes[offset+8] = 0;
+      bytes[offset + 1] = (t1 >> 8) & 0xFF;
+      bytes[offset + 2] = t2 & 0xFF;
+      bytes[offset + 3] = (t2 >> 8) & 0xFF;
+      bytes[offset + 4] = t3 & 0xFF;
+      bytes[offset + 5] = (t3 >> 8) & 0xFF;
+      bytes[offset + 6] = t4 & 0xFF;
+      bytes[offset + 7] = (t4 >> 8) & 0xFF;
+      bytes[offset + 8] = 0;
     }
     const dataBytes = Array.from(bytes);
     const dataHex = bytesToHex(bytes);
@@ -536,10 +536,10 @@ function parseMduLine(rawLine) {
   const slcan = parseSlcanFrame(cleaned);
   if (slcan.ok) {
     const id = slcan.identifier;
-    
+
     // Extract bit-packed fields from the 11-bit standard ID
     const boardType = (id >> 6) & 0x0F; // Bits 9-6   (Board Type: 2 for SDU)
-    const boardId   = (id >> 3) & 0x07; // Bits 5-3   (Board Index: 0 to 3)
+    const boardId = (id >> 3) & 0x07; // Bits 5-3   (Board Index: 0 to 3)
     const sensorNum = id & 0x07;        // Bits 2-0   (Sensor Index: 0 to 4 directly at LSB)
 
     if (boardType === 2 && boardId <= 3 && slcan.dataBytes.length >= 64) {
