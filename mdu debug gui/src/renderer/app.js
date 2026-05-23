@@ -86,13 +86,39 @@ const pendingRenders = {
   graphs: false,
 };
 
+const lastRenderTime = {
+  connection: 0,
+  ports: 0,
+  diagnostics: 0,
+  boards: 0,
+  topIds: 0,
+  graphs: 0,
+  log: 0,
+};
+
 function scheduleRender(kind, fn) {
   if (pendingRenders[kind]) {
     return;
   }
+
+  const now = Date.now();
+  const minInterval = (kind === 'log') ? 200 : 0; // Throttle log to 5 Hz to avoid locking up renderer on high packet rates
+  const elapsed = now - (lastRenderTime[kind] || 0);
+
+  if (elapsed < minInterval) {
+    pendingRenders[kind] = true;
+    setTimeout(() => {
+      pendingRenders[kind] = false;
+      lastRenderTime[kind] = Date.now();
+      fn();
+    }, minInterval - elapsed);
+    return;
+  }
+
   pendingRenders[kind] = true;
   requestAnimationFrame(() => {
     pendingRenders[kind] = false;
+    lastRenderTime[kind] = Date.now();
     fn();
   });
 }
@@ -883,7 +909,7 @@ function renderBoards() {
             <header class="board-card-header">
               <strong>${escapeHtml(boardName)}</strong>
               <span class="board-age">${escapeHtml(formatBoardAge(board.lastSeenAgeMs))}</span>
-              <span class="board-counter">CNT: ${board.lastMessageCounterReceived != null ? board.lastMessageCounterReceived : '--'}</span>
+              <span class="board-counter">CNT: ${board.lastMessageCounterReceived != null ? board.lastMessageCounterReceived : '--'} (Drops: ${board.counterMismatchCount})</span>
               ${board.counterMismatch ? '<span class="pill error">CNT MISMATCH</span>' : ''}
             </header>
             <div class="board-cols">
@@ -912,7 +938,7 @@ function renderBoards() {
             <header class="board-card-header">
               <strong>${escapeHtml(boardName)}</strong>
               <span class="board-age">${escapeHtml(formatBoardAge(board.lastSeenAgeMs))}</span>
-              <span class="board-counter">CNT: ${board.lastMessageCounterReceived != null ? board.lastMessageCounterReceived : '--'}</span>
+              <span class="board-counter">CNT: ${board.lastMessageCounterReceived != null ? board.lastMessageCounterReceived : '--'} (Drops: ${board.counterMismatchCount})</span>
               ${board.counterMismatch ? '<span class="pill error">CNT MISMATCH</span>' : ''}
             </header>
             <div class="board-cols">
@@ -986,67 +1012,79 @@ function renderLog() {
 
   elements.logBody.innerHTML = filteredRows
     .map((entry) => {
-      if (isRuntimeEntry(entry)) {
-        return `
-          <tr>
-            <td>${escapeHtml(formatTimestamp(entry.timestamp))}</td>
-            <td><span class="pill ${entry.level === 'error' ? 'error' : 'info'}">${escapeHtml(entry.level)}</span></td>
-            <td>${escapeHtml(entry.message)}</td>
-            <td>--</td>
-            <td>${escapeHtml(JSON.stringify(entry.details ?? {}))}</td>
-            <td class="mono">--</td>
-          </tr>
-        `;
-      }
-
-      if (!entry.ok) {
-        return `
-          <tr>
-            <td>${escapeHtml(formatTimestamp(entry.timestamp))}</td>
-            <td><span class="pill error">parse error</span></td>
-            <td>${escapeHtml(entry.reason ?? 'decode failed')}</td>
-            <td>--</td>
-            <td>--</td>
-            <td class="mono">${escapeHtml(entry.raw)}</td>
-          </tr>
-        `;
-      }
-
-      if (entry.source === 'board' && entry.board) {
-        const typeLabel = entry.board.boardType === 6 ? 'TSPMU' : 'SDU';
-        const idLabel = `${typeLabel} ${entry.board.boardId} · ${entry.board.kind === 'fast' ? 'Fast' : 'Slow'} · ${entry.frame.idText}`;
-        let summary = '';
-        if (entry.board.boardType === 6) {
-          summary = entry.board.kind === 'fast'
-            ? `Pres1 ${formatSigned(entry.board.pressure1, 2)} Pa · Pres2 ${formatSigned(entry.board.pressure2, 2)} Pa · Jitter ${entry.board.jitter}`
-            : `Temp ${formatSigned(entry.board.tspmuTemp1, 1)}/${formatSigned(entry.board.tspmuTemp2, 1)}/${formatSigned(entry.board.tspmuTemp3, 1)}/${formatSigned(entry.board.tspmuTemp4, 1)} °C`;
-        } else {
-          summary = entry.board.kind === 'fast'
-            ? `SG ${entry.board.strainGaugesMv.join('/')} mV · Shock ${formatSigned(entry.board.shockMm, 2)} mm`
-            : `RPM ${entry.board.rpm} · Tire ${formatSigned(entry.board.tireC?.max, 1)}/${formatSigned(entry.board.tireC?.min, 1)}/${formatSigned(entry.board.tireC?.center, 1)}/${formatSigned(entry.board.tireC?.ambient, 1)} · Brk ${formatSigned(entry.board.brakeC, 1)}/${formatSigned(entry.board.brakeAmbientC, 1)}`;
+      try {
+        if (isRuntimeEntry(entry)) {
+          return `
+            <tr>
+              <td>${escapeHtml(formatTimestamp(entry.timestamp))}</td>
+              <td><span class="pill ${entry.level === 'error' ? 'error' : 'info'}">${escapeHtml(entry.level)}</span></td>
+              <td>${escapeHtml(entry.message)}</td>
+              <td>--</td>
+              <td>${escapeHtml(JSON.stringify(entry.details ?? {}))}</td>
+              <td class="mono">--</td>
+            </tr>
+          `;
         }
+
+        if (!entry.ok) {
+          return `
+            <tr>
+              <td>${escapeHtml(formatTimestamp(entry.timestamp))}</td>
+              <td><span class="pill error">parse error</span></td>
+              <td>${escapeHtml(entry.reason ?? 'decode failed')}</td>
+              <td>--</td>
+              <td>--</td>
+              <td class="mono">${escapeHtml(entry.raw)}</td>
+            </tr>
+          `;
+        }
+
+        if (entry.source === 'board' && entry.board) {
+          const typeLabel = entry.board.boardType === 6 ? 'TSPMU' : 'SDU';
+          const idLabel = `${typeLabel} ${entry.board.boardId ?? 0} · ${entry.board.kind === 'fast' ? 'Fast' : 'Slow'} · ${entry.frame?.idText ?? '--'}`;
+          let summary = '';
+          if (entry.board.boardType === 6) {
+            summary = entry.board.kind === 'fast'
+              ? `Pres1 ${formatSigned(entry.board.pressure1, 2)} Pa · Pres2 ${formatSigned(entry.board.pressure2, 2)} Pa · Jitter ${entry.board.jitter ?? 0}`
+              : `Temp ${formatSigned(entry.board.tspmuTemp1, 1)}/${formatSigned(entry.board.tspmuTemp2, 1)}/${formatSigned(entry.board.tspmuTemp3, 1)}/${formatSigned(entry.board.tspmuTemp4, 1)} °C`;
+          } else {
+            summary = entry.board.kind === 'fast'
+              ? `SG ${Array.isArray(entry.board.strainGaugesMv) ? entry.board.strainGaugesMv.join('/') : '--'} mV · Shock ${formatSigned(entry.board.shockMm, 2)} mm`
+              : `RPM ${entry.board.rpm ?? 0} · Tire ${formatSigned(entry.board.tireC?.max, 1)}/${formatSigned(entry.board.tireC?.min, 1)}/${formatSigned(entry.board.tireC?.center, 1)}/${formatSigned(entry.board.tireC?.ambient, 1)} · Brk ${formatSigned(entry.board.brakeC, 1)}/${formatSigned(entry.board.brakeAmbientC, 1)}`;
+          }
+          return `
+            <tr>
+              <td>${escapeHtml(formatTimestamp(entry.timestamp))}</td>
+              <td><span class="pill ok">${escapeHtml(entry.board.kind)}</span></td>
+              <td class="mono">${escapeHtml(idLabel)}</td>
+              <td>${entry.board.timeSinceLastMs ?? 0} ms</td>
+              <td>${escapeHtml(summary)}</td>
+              <td class="mono">${escapeHtml(entry.raw)}</td>
+            </tr>
+          `;
+        }
+
         return `
           <tr>
             <td>${escapeHtml(formatTimestamp(entry.timestamp))}</td>
-            <td><span class="pill ok">${escapeHtml(entry.board.kind)}</span></td>
-            <td class="mono">${escapeHtml(idLabel)}</td>
-            <td>${entry.board.timeSinceLastMs} ms</td>
-            <td>${escapeHtml(summary)}</td>
+            <td><span class="pill info">slcan</span></td>
+            <td class="mono">${escapeHtml(entry.frame?.idText ?? '--')}</td>
+            <td>${entry.frame?.dataLength ?? 0}</td>
+            <td class="mono">${escapeHtml(entry.frame?.dataHex ?? '--')}</td>
             <td class="mono">${escapeHtml(entry.raw)}</td>
           </tr>
         `;
+      } catch (err) {
+        console.error('Failed to render log entry:', err, entry);
+        return `
+          <tr>
+            <td>${escapeHtml(formatTimestamp(entry.timestamp))}</td>
+            <td><span class="pill error">render err</span></td>
+            <td colspan="3">${escapeHtml(err.message)}</td>
+            <td class="mono">${escapeHtml(entry.raw ?? '')}</td>
+          </tr>
+        `;
       }
-
-      return `
-        <tr>
-          <td>${escapeHtml(formatTimestamp(entry.timestamp))}</td>
-          <td><span class="pill info">slcan</span></td>
-          <td class="mono">${escapeHtml(entry.frame.idText)}</td>
-          <td>${entry.frame.dataLength}</td>
-          <td class="mono">${escapeHtml(entry.frame.dataHex)}</td>
-          <td class="mono">${escapeHtml(entry.raw)}</td>
-        </tr>
-      `;
     })
     .join('');
 }
@@ -1148,54 +1186,63 @@ function appendBoardSample(frameEvent) {
     return;
   }
   const boardType = board.boardType ?? 2;
-  const boardKey = `${boardType}-${board.boardId}`;
-  const entry = getOrCreateBoardHistory(boardKey);
-  entry.lastSeenAt = now;
+  const boardId = board.boardId;
+  const boardKey = `${boardType}-${boardId}`;
+  const historyEntry = getOrCreateBoardHistory(boardKey);
+  historyEntry.lastSeenAt = now;
   const cutoff = now - MAX_GRAPH_HISTORY_MS;
 
+  // Find the merged diagnostics board entry to get complete sensor telemetry
+  const diag = state.diagnostics ?? {};
+  const diagEntry = Array.isArray(diag.boards) 
+    ? diag.boards.find((b) => b.boardType === boardType && b.boardId === boardId)
+    : null;
+
   if (board.kind === 'fast') {
+    const mergedFast = diagEntry?.fast ?? board;
     if (boardType === 6) {
-      entry.fast.push({
+      historyEntry.fast.push({
         t: now,
-        pressure1: Number(board.pressure1),
-        pressure2: Number(board.pressure2),
-        jitter: Number(board.jitter),
+        pressure1: Number(mergedFast.pressure1),
+        pressure2: Number(mergedFast.pressure2),
+        jitter: Number(mergedFast.jitter),
       });
     } else {
-      entry.fast.push({
+      historyEntry.fast.push({
         t: now,
-        sg: Array.isArray(board.strainGaugesMv) ? board.strainGaugesMv.slice() : [],
-        shockMm: Number(board.shockMm),
+        sg: Array.isArray(mergedFast.strainGaugesMv) ? mergedFast.strainGaugesMv.slice() : [],
+        shockMm: Number(mergedFast.shockMm),
       });
     }
-    pruneSeries(entry.fast, cutoff);
-    if (entry.fast.length > MAX_POINTS_PER_SERIES) {
-      entry.fast.splice(0, entry.fast.length - MAX_POINTS_PER_SERIES);
+    pruneSeries(historyEntry.fast, cutoff);
+    if (historyEntry.fast.length > MAX_POINTS_PER_SERIES) {
+      historyEntry.fast.splice(0, historyEntry.fast.length - MAX_POINTS_PER_SERIES);
     }
   } else if (board.kind === 'slow') {
+    const mergedSlow = diagEntry?.slow ?? board;
     if (boardType === 6) {
-      entry.slow.push({
+      historyEntry.slow.push({
         t: now,
-        tspmuTemp1: Number(board.tspmuTemp1),
-        tspmuTemp2: Number(board.tspmuTemp2),
-        tspmuTemp3: Number(board.tspmuTemp3),
-        tspmuTemp4: Number(board.tspmuTemp4),
+        tspmuTemp1: Number(mergedSlow.tspmuTemp1),
+        tspmuTemp2: Number(mergedSlow.tspmuTemp2),
+        tspmuTemp3: Number(mergedSlow.tspmuTemp3),
+        tspmuTemp4: Number(mergedSlow.tspmuTemp4),
       });
     } else {
-      entry.slow.push({
+      historyEntry.slow.push({
         t: now,
-        rpm: Number(board.rpm),
-        tireMax: Number(board.tireC?.max),
-        tireMin: Number(board.tireC?.min),
-        tireCtr: Number(board.tireC?.center),
-        tireAmb: Number(board.tireC?.ambient),
-        brakeC: Number(board.brakeC),
-        brakeAmbientC: Number(board.brakeAmbientC),
+        rpm: Number(mergedSlow.rpm),
+        tireMax: Number(mergedSlow.tireC?.max),
+        tireMin: Number(mergedSlow.tireC?.min),
+        tireCtr: Number(mergedSlow.tireC?.center),
+        tireAmb: Number(mergedSlow.tireC?.ambient),
+        brakeC: Number(mergedSlow.brakeC),
+        brakeAmbientC: Number(mergedSlow.brakeAmbientC),
       });
     }
-    pruneSeries(entry.slow, cutoff);
-    if (entry.slow.length > MAX_POINTS_PER_SERIES) {
-      entry.slow.splice(0, entry.slow.length - MAX_POINTS_PER_SERIES);
+    pruneSeries(historyEntry.slow, cutoff);
+    if (historyEntry.slow.length > MAX_POINTS_PER_SERIES) {
+      historyEntry.slow.splice(0, historyEntry.slow.length - MAX_POINTS_PER_SERIES);
     }
   }
 }
@@ -2000,6 +2047,9 @@ function renderAll() {
 }
 
 function addLogRow(entry) {
+  if (!entry) {
+    return;
+  }
   if (!entry.sourceOrigin) {
     entry.sourceOrigin = 'live';
   }
@@ -2270,9 +2320,9 @@ function wireEvents() {
 
   api.onFrame((frame) => {
     addLogRow(frame);
-    appendBoardSample(frame);
     if (frame && frame.ok && frame.source === 'board' && frame.board) {
       mergeBoardIntoDiagnostics(frame);
+      appendBoardSample(frame);
       scheduleRender('boards', renderBoards);
     }
   });

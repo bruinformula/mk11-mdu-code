@@ -4,9 +4,29 @@ const { parseSlcanFrame } = require('./slcan');
 
 const ANSI_ESCAPE = /\x1B\[[0-9;?]*[ -/]*[@-~]/g;
 
-const FAST_PATTERN = /^\[B(\d+)\s+ID\s+([0-9A-Fa-f]+)\s+Fast\]\s+dT:(\d+)ms\s*\|\s*SG\[mV\]:\s*(-?\d+),\s*(-?\d+),\s*(-?\d+),\s*(-?\d+),\s*(-?\d+),\s*(-?\d+)\s*\|\s*Shock:\s*(-?\d+)\.(\d{2})\s*mm$/;
+const FAST_PATTERN = /^\[B(\d+)\s+ID\s+([0-9A-Fa-f]+)\s+Fast\]\s+(?:Seq:\d+\s*\|\s*)?dT:(\d+)ms\s*\|\s*SG\[mV\]:\s*(-?\d+),\s*(-?\d+),\s*(-?\d+),\s*(-?\d+),\s*(-?\d+),\s*(-?\d+)\s*\|\s*Shock:\s*(-?\d+)\.(\d{2})\s*mm$/;
 
-const SLOW_PATTERN = /^\[B(\d+)\s+ID\s+([0-9A-Fa-f]+)\s+Slow\]\s+dT:(\d+)ms\s*\|\s*RPM:\s*(-?\d+)\s*\|\s*Tire\[Max:\s*(-?\d+)\.(\d+)\s+Min:\s*(-?\d+)\.(\d+)\s+Ctr:\s*(-?\d+)\.(\d+)\s+Amb:\s*(-?\d+)\.(\d+)\]\s+Brk:\s*(-?\d+)\.(\d+)\s+Amb:\s*(-?\d+)\.(\d+)$/;
+const SLOW_PATTERN = /^\[B(\d+)\s+ID\s+([0-9A-Fa-f]+)\s+Slow\]\s+(?:Seq:\d+\s*\|\s*)?dT:(\d+)ms\s*\|\s*RPM:\s*(-?\d+)\s*\|\s*Tire\[Max:\s*(-?\d+)\.(\d+)\s+Min:\s*(-?\d+)\.(\d+)\s+Ctr:\s*(-?\d+)\.(\d+)\s+Amb:\s*(-?\d+)\.(\d+)\]\s+Brk:\s*(-?\d+)\.(\d+)\s+Amb:\s*(-?\d+)\.(\d+)$/;
+
+const lastSeenTimes = new Map();
+const lastSeqByBoard = new Map();
+
+function getCalculatedDeltaMs(identifier, rawDeltaMs) {
+  const now = Date.now();
+  const lastSeen = lastSeenTimes.get(identifier);
+  lastSeenTimes.set(identifier, now);
+  if (lastSeen === undefined) {
+    return rawDeltaMs;
+  }
+  return now - lastSeen;
+}
+function bytesToHex(bytes) {
+  let hex = '';
+  for (let i = 0; i < bytes.length; i++) {
+    hex += bytes[i].toString(16).padStart(2, '0').toUpperCase();
+  }
+  return hex;
+}
 
 function stripAnsiAndControl(text) {
   return String(text ?? '').replace(ANSI_ESCAPE, '').replace(/[\x00\x07\x08\x0B\x0C\x0E-\x1F]/g, '');
@@ -166,10 +186,11 @@ function decodeTspmuTempBlocks(data) {
   return blocks;
 }
 
-function parseFast(match) {
+function parseFast(match, rawLine) {
   const board = Number.parseInt(match[1], 10);
   const id = buildIdMeta(match[2]);
-  const timeSinceLastMs = Number.parseInt(match[3], 10);
+  const rawDeltaMs = Number.parseInt(match[3], 10);
+  const timeSinceLastMs = getCalculatedDeltaMs(id.identifier, rawDeltaMs);
   const strainGaugesMv = [
     Number.parseInt(match[4], 10),
     Number.parseInt(match[5], 10),
@@ -180,6 +201,148 @@ function parseFast(match) {
   ];
   const shockMm = combineSignedDecimal(match[10], match[11]);
 
+  const isTspmu = ((id.identifier >> 6) === 6);
+  const boardId = isTspmu ? ((id.identifier >> 3) & 0x07) : board;
+  const boardKey = `${isTspmu ? 6 : 2}-${boardId}`;
+
+  const seqMatch = rawLine ? rawLine.match(/Seq:(\d+)/) : null;
+  let errorFlags = 0;
+  if (seqMatch) {
+    const seq = Number.parseInt(seqMatch[1], 10);
+    let seqState = lastSeqByBoard.get(boardKey);
+    if (!seqState) {
+      seqState = { lastSeq: seq, lowestBit: 0 };
+    } else {
+      if (seq !== seqState.lastSeq) {
+        seqState.lowestBit = 0;
+        seqState.lastSeq = seq;
+      } else {
+        seqState.lowestBit = (seqState.lowestBit + 1) & 1;
+      }
+    }
+    lastSeqByBoard.set(boardKey, seqState);
+    const counter = ((seq << 1) | seqState.lowestBit) & 0x07;
+    errorFlags = counter << 7;
+  }
+
+  if (isTspmu) {
+    const sensorNum = id.identifier & 0x07;
+
+    if (sensorNum === 1) {
+      // 0x181 (TSPMU Temp) is printed as Fast, but it is actually the Temperature (slow) frame!
+      // In the printed SDU layout:
+      // vals[1] (strainGaugesMv[1]) contains blocks[0].temp2 * 10
+      // vals[2] (strainGaugesMv[2]) contains blocks[0].temp4 * 10
+      const temp2 = strainGaugesMv[1] / 10.0;
+      const temp4 = strainGaugesMv[2] / 10.0;
+      // Since temp1 and temp3 are not printed in the legacy fast layout, fallback to temp2 and temp4
+      const temp1 = temp2;
+      const temp3 = temp4;
+
+      const bytes = new Uint8Array(64);
+      bytes[62] = errorFlags & 0xFF;
+      bytes[63] = (errorFlags >> 8) & 0xFF;
+      const t1 = Math.round(temp1 * 10);
+      const t2 = Math.round(temp2 * 10);
+      const t3 = Math.round(temp3 * 10);
+      const t4 = Math.round(temp4 * 10);
+      for (let i = 0; i < 6; i++) {
+        const offset = 4 + i * 9;
+        bytes[offset] = t1 & 0xFF;
+        bytes[offset+1] = (t1 >> 8) & 0xFF;
+        bytes[offset+2] = t2 & 0xFF;
+        bytes[offset+3] = (t2 >> 8) & 0xFF;
+        bytes[offset+4] = t3 & 0xFF;
+        bytes[offset+5] = (t3 >> 8) & 0xFF;
+        bytes[offset+6] = t4 & 0xFF;
+        bytes[offset+7] = (t4 >> 8) & 0xFF;
+        bytes[offset+8] = 0;
+      }
+      const dataBytes = Array.from(bytes);
+      const dataHex = bytesToHex(bytes);
+
+      return {
+        boardType: 6, // TSPMU
+        boardId,
+        kind: 'slow',
+        ...id,
+        timeSinceLastMs,
+        tspmuTemp1: temp1,
+        tspmuTemp2: temp2,
+        tspmuTemp3: temp3,
+        tspmuTemp4: temp4,
+        jitterMs: 0,
+        errorFlags,
+        dataBytes,
+        dataHex,
+        tempBlocks: [{
+          index: 0,
+          temp1,
+          temp2,
+          temp3,
+          temp4,
+          jitterMs: 0
+        }]
+      };
+    }
+
+    // Readings[0].pressure1 was printed as vals[1] (strainGaugesMv[1])
+    // readings[0].pressure2 was printed as vals[2] (strainGaugesMv[2])
+    const pressure1 = strainGaugesMv[1] / 100.0;
+    const pressure2 = strainGaugesMv[2] / 100.0;
+
+    const bytes = new Uint8Array(64);
+    bytes[62] = errorFlags & 0xFF;
+    bytes[63] = (errorFlags >> 8) & 0xFF;
+    const p1 = Math.round(pressure1 * 100);
+    const p2 = Math.round(pressure2 * 100);
+    for (let i = 0; i < 11; i++) {
+      const offset = 4 + i * 5;
+      bytes[offset] = p1 & 0xFF;
+      bytes[offset+1] = (p1 >> 8) & 0xFF;
+      bytes[offset+2] = p2 & 0xFF;
+      bytes[offset+3] = (p2 >> 8) & 0xFF;
+      bytes[offset+4] = 0;
+    }
+    const dataBytes = Array.from(bytes);
+    const dataHex = bytesToHex(bytes);
+
+    return {
+      boardType: 6, // TSPMU
+      boardId,
+      kind: 'fast',
+      ...id,
+      timeSinceLastMs,
+      pressure1,
+      pressure2,
+      jitter: 0,
+      errorFlags,
+      dataBytes,
+      dataHex,
+      pressureBlocks: [{
+        index: 0,
+        pressure1,
+        pressure2,
+        jitter: 0
+      }]
+    };
+  }
+
+  const bytes = new Uint8Array(64);
+  bytes[4] = errorFlags & 0xFF;
+  bytes[5] = (errorFlags >> 8) & 0xFF;
+  for (let i = 0; i < 6 && i < strainGaugesMv.length; i++) {
+    const val = Math.min(4095, Math.max(0, Math.round(((strainGaugesMv[i] + 3300.0) / 6600.0) * 4095.0)));
+    const offset = 6 + i * 2;
+    bytes[offset] = val & 0xFF;
+    bytes[offset+1] = (val >> 8) & 0xFF;
+  }
+  const shockVal = Math.round(shockMm * 100);
+  bytes[18] = shockVal & 0xFF;
+  bytes[19] = (shockVal >> 8) & 0xFF;
+  const dataBytes = Array.from(bytes);
+  const dataHex = bytesToHex(bytes);
+
   return {
     boardType: 2,
     boardId: board,
@@ -188,13 +351,17 @@ function parseFast(match) {
     timeSinceLastMs,
     strainGaugesMv,
     shockMm,
+    errorFlags,
+    dataBytes,
+    dataHex,
   };
 }
 
-function parseSlow(match) {
+function parseSlow(match, rawLine) {
   const board = Number.parseInt(match[1], 10);
   const id = buildIdMeta(match[2]);
-  const timeSinceLastMs = Number.parseInt(match[3], 10);
+  const rawDeltaMs = Number.parseInt(match[3], 10);
+  const timeSinceLastMs = getCalculatedDeltaMs(id.identifier, rawDeltaMs);
   const rpm = Number.parseInt(match[4], 10);
   const tireC = {
     max: combineSignedDecimal(match[5], match[6]),
@@ -204,6 +371,109 @@ function parseSlow(match) {
   };
   const brakeC = combineSignedDecimal(match[13], match[14]);
   const brakeAmbientC = combineSignedDecimal(match[15], match[16]);
+
+  const isTspmu = ((id.identifier >> 6) === 6);
+  const boardId = isTspmu ? ((id.identifier >> 3) & 0x07) : board;
+  const boardKey = `${isTspmu ? 6 : 2}-${boardId}`;
+
+  const seqMatch = rawLine ? rawLine.match(/Seq:(\d+)/) : null;
+  let errorFlags = 0;
+  if (seqMatch) {
+    const seq = Number.parseInt(seqMatch[1], 10);
+    let seqState = lastSeqByBoard.get(boardKey);
+    if (!seqState) {
+      seqState = { lastSeq: seq, lowestBit: 0 };
+    } else {
+      if (seq !== seqState.lastSeq) {
+        seqState.lowestBit = 0;
+        seqState.lastSeq = seq;
+      } else {
+        seqState.lowestBit = (seqState.lowestBit + 1) & 1;
+      }
+    }
+    lastSeqByBoard.set(boardKey, seqState);
+    const counter = ((seq << 1) | seqState.lowestBit) & 0x07;
+    errorFlags = counter << 7;
+  }
+
+  if (isTspmu) {
+    // For TSPMU temperature frame:
+    // readings[0].temp1 is printed as tireC.max
+    // readings[0].temp2 is printed as tireC.min
+    // readings[0].temp3 is printed as tireC.center
+    // readings[0].temp4 is printed as tireC.ambient
+    const bytes = new Uint8Array(64);
+    bytes[62] = errorFlags & 0xFF;
+    bytes[63] = (errorFlags >> 8) & 0xFF;
+    const t1 = Math.round(tireC.max * 10);
+    const t2 = Math.round(tireC.min * 10);
+    const t3 = Math.round(tireC.center * 10);
+    const t4 = Math.round(tireC.ambient * 10);
+    for (let i = 0; i < 6; i++) {
+      const offset = 4 + i * 9;
+      bytes[offset] = t1 & 0xFF;
+      bytes[offset+1] = (t1 >> 8) & 0xFF;
+      bytes[offset+2] = t2 & 0xFF;
+      bytes[offset+3] = (t2 >> 8) & 0xFF;
+      bytes[offset+4] = t3 & 0xFF;
+      bytes[offset+5] = (t3 >> 8) & 0xFF;
+      bytes[offset+6] = t4 & 0xFF;
+      bytes[offset+7] = (t4 >> 8) & 0xFF;
+      bytes[offset+8] = 0;
+    }
+    const dataBytes = Array.from(bytes);
+    const dataHex = bytesToHex(bytes);
+
+    return {
+      boardType: 6, // TSPMU
+      boardId,
+      kind: 'slow',
+      ...id,
+      timeSinceLastMs,
+      tspmuTemp1: tireC.max,
+      tspmuTemp2: tireC.min,
+      tspmuTemp3: tireC.center,
+      tspmuTemp4: tireC.ambient,
+      jitterMs: 0,
+      errorFlags,
+      dataBytes,
+      dataHex,
+      tempBlocks: [{
+        index: 0,
+        temp1: tireC.max,
+        temp2: tireC.min,
+        temp3: tireC.center,
+        temp4: tireC.ambient,
+        jitterMs: 0
+      }]
+    };
+  }
+
+  const bytes = new Uint8Array(64);
+  bytes[4] = errorFlags & 0xFF;
+  bytes[5] = (errorFlags >> 8) & 0xFF;
+  bytes[6] = rpm & 0xFF;
+  bytes[7] = (rpm >> 8) & 0xFF;
+  const tMax = Math.round(tireC.max * 10);
+  const tMin = Math.round(tireC.min * 10);
+  const tCtr = Math.round(tireC.center * 10);
+  const tAmb = Math.round(tireC.ambient * 10);
+  bytes[8] = tMax & 0xFF;
+  bytes[9] = (tMax >> 8) & 0xFF;
+  bytes[10] = tMin & 0xFF;
+  bytes[11] = (tMin >> 8) & 0xFF;
+  bytes[12] = tCtr & 0xFF;
+  bytes[13] = (tCtr >> 8) & 0xFF;
+  bytes[14] = tAmb & 0xFF;
+  bytes[15] = (tAmb >> 8) & 0xFF;
+  const brk = Math.round(brakeC * 10);
+  const brkAmb = Math.round(brakeAmbientC * 10);
+  bytes[16] = brk & 0xFF;
+  bytes[17] = (brk >> 8) & 0xFF;
+  bytes[18] = brkAmb & 0xFF;
+  bytes[19] = (brkAmb >> 8) & 0xFF;
+  const dataBytes = Array.from(bytes);
+  const dataHex = bytesToHex(bytes);
 
   return {
     boardType: 2,
@@ -215,6 +485,9 @@ function parseSlow(match) {
     tireC,
     brakeC,
     brakeAmbientC,
+    errorFlags,
+    dataBytes,
+    dataHex,
   };
 }
 
@@ -226,7 +499,7 @@ function parseMduLine(rawLine) {
 
   const fastMatch = cleaned.match(FAST_PATTERN);
   if (fastMatch) {
-    const board = parseFast(fastMatch);
+    const board = parseFast(fastMatch, cleaned);
     return {
       ok: true,
       source: 'board',
@@ -236,15 +509,15 @@ function parseMduLine(rawLine) {
       identifier: board.identifier,
       identifierHex: board.identifierHex,
       dataLength: 64,
-      dataHex: '',
-      dataBytes: [],
+      dataHex: board.dataHex ?? '',
+      dataBytes: board.dataBytes ?? [],
       board,
     };
   }
 
   const slowMatch = cleaned.match(SLOW_PATTERN);
   if (slowMatch) {
-    const board = parseSlow(slowMatch);
+    const board = parseSlow(slowMatch, cleaned);
     return {
       ok: true,
       source: 'board',
@@ -254,8 +527,8 @@ function parseMduLine(rawLine) {
       identifier: board.identifier,
       identifierHex: board.identifierHex,
       dataLength: 64,
-      dataHex: '',
-      dataBytes: [],
+      dataHex: board.dataHex ?? '',
+      dataBytes: board.dataBytes ?? [],
       board,
     };
   }
