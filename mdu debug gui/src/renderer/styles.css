@@ -1046,3 +1046,253 @@ tbody tr:hover {
     grid-template-columns: 1fr;
   }
 }
+
+/* Deploy Tab Styles */
+.deploy-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 360px) 1fr;
+  gap: 20px;
+}
+
+.deploy-controls-panel {
+  padding: 24px 28px;
+  align-self: start;
+  min-width: 0;
+}
+
+.deploy-console-panel {
+  padding: 24px 28px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.console-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+  width: 100%;
+}
+
+.console-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.scale-small {
+  transform: scale(0.9);
+  transform-origin: right center;
+}
+
+.controls-form {
+  display: grid;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.controls-form select,
+.controls-form input[type="text"],
+.controls-form input[type="number"] {
+  width: 100%;
+  max-width: 100%;
+}
+
+.deploy-buttons-grid button {
+  width: 100%;
+}
+
+.deploy-buttons-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.panel-divider {
+  border: 0;
+  height: 1px;
+  background: var(--line);
+  margin: 8px 0;
+  width: 100%;
+}
+
+.deploy-status-card {
+  padding: 16px 20px;
+  border-radius: var(--radius-md);
+  background: var(--chip-muted-bg);
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 4px;
+}
+
+.status-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.status-val {
+  font-size: 1.4rem;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.status-subtext {
+  font-size: 0.86rem;
+  color: var(--ink-soft);
+}
+
+.warning-text {
+  color: var(--warning) !important;
+  font-weight: 500;
+}
+
+/* Terminal Log Viewport */
+.terminal-container {
+  background: #090e14;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-md);
+  padding: 18px;
+  height: 600px;
+  overflow-y: auto;
+  font-family: "SF Mono", "Menlo", "Fira Code", monospace;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  color: #c9d1d9;
+  white-space: pre-wrap;
+  word-break: break-all;
+  box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+.terminal-line {
+  margin: 0;
+  padding: 2px 0;
+}
+
+.terminal-welcome {
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+/* ANSI Colors mapping for log output */
+.log-cyan { color: #58a6ff; }
+.log-yellow { color: #d29922; }
+.log-green { color: #3fb950; }
+.log-red { color: #f85149; }
+.log-bold { font-weight: bold; }
+.log-dim { color: #8b949e; }
+
+/* Walkthrough setup card style */
+.setup-card {
+  padding: 24px 28px;
+  background: rgba(180, 74, 51, 0.08);
+  border: 1px solid rgba(180, 74, 51, 0.16);
+  border-radius: var(--radius-lg);
+  margin-bottom: 20px;
+  display: grid;
+  gap: 12px;
+}
+
+.setup-card h3 {
+  margin: 0;
+  color: var(--warning);
+  font-size: 1.35rem;
+}
+
+.setup-card p {
+  margin: 0;
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+.setup-steps {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.setup-steps p {
+  font-size: 0.92rem;
+  color: var(--ink-soft);
+  flex: 1 1 450px;
+}
+
+/* Modal dialog style */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(5px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fade-in 150ms ease;
+}
+
+.modal-content {
+  width: 520px;
+  max-width: 90%;
+  padding: 28px 32px;
+  display: grid;
+  gap: 20px;
+  animation: pop-in 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.modal-form {
+  display: grid;
+  gap: 14px;
+}
+
+.modal-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.width-100 {
+  width: 100%;
+}
+
+.flex-row {
+  display: flex;
+  gap: 10px;
+}
+
+.flex-row input {
+  flex: 1;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Responsive Overrides */
+@media (max-width: 1280px) {
+  .deploy-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .terminal-container {
+    height: 480px;
+  }
+}

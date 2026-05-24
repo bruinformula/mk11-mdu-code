@@ -83,6 +83,7 @@
     <nav class="tab-nav panel stagger-3" role="tablist">
       <button class="tab-button active" data-tab="dashboard" type="button" role="tab" aria-selected="true">Dashboard</button>
       <button class="tab-button" data-tab="graphs" type="button" role="tab" aria-selected="false">Graphs</button>
+      <button class="tab-button" data-tab="deploy" type="button" role="tab" aria-selected="false">Deploy Firmware</button>
     </nav>
 
     <section class="tab-pane active" id="tab-dashboard" role="tabpanel">
@@ -182,6 +183,7 @@
           <button class="board-tab-button" data-filter-type="2" data-filter-id="2" type="button" role="tab" aria-selected="false">SDU 2 (RL)</button>
           <button class="board-tab-button" data-filter-type="2" data-filter-id="3" type="button" role="tab" aria-selected="false">SDU 3 (RR)</button>
           <button class="board-tab-button" data-filter-type="6" data-filter-id="0" type="button" role="tab" aria-selected="false">TSPMU 0</button>
+          <button class="board-tab-button" data-filter-type="6" data-filter-id="1" type="button" role="tab" aria-selected="false">TSPMU 1</button>
         </div>
 
         <div id="boards-grid" class="boards-grid">
@@ -333,6 +335,7 @@
               <option value="2-2">SDU 2 (RL)</option>
               <option value="2-3">SDU 3 (RR)</option>
               <option value="6-0">TSPMU 0</option>
+              <option value="6-1">TSPMU 1</option>
             </select>
           </label>
           <button id="graphs-clear-button" class="ghost-button" type="button">Clear graph history</button>
@@ -368,7 +371,137 @@
         </div>
       </section>
     </section>
+
+    <section class="tab-pane" id="tab-deploy" role="tabpanel" hidden>
+      <!-- Walkthrough setup card when bfr is missing -->
+      <div id="deploy-setup-card" class="panel setup-card alert-warning" style="display:none;">
+        <h3>BFR CLI Not Detected</h3>
+        <p>The Bruin Formula Racing CLI helper tool was not automatically detected on your system PATH or in your home folder (<code>~/bfr-cli/bfr</code>).</p>
+        <div class="setup-steps">
+          <p>To configure it automatically, make sure you have the <code>bfr-cli</code> folder at <code>/Users/larry/bfr-cli</code> and click the button below to run the setup script.</p>
+          <button id="run-setup-btn" class="primary-button">Run Setup Helper Script</button>
+        </div>
+      </div>
+
+      <div class="deploy-grid" id="deploy-workspace">
+        <!-- Controls Sidebar -->
+        <section class="panel deploy-controls-panel">
+          <div class="panel-heading">
+            <h2>Deploy Configuration</h2>
+            <p>Select target hardware and parameters.</p>
+          </div>
+          
+          <div class="controls-form">
+            <label class="field-group">
+              <span>Target Board</span>
+              <select id="deploy-board-select">
+                <!-- Dynamically populated -->
+              </select>
+            </label>
+            
+            <label class="field-group" id="deploy-id-group">
+              <span>Board ID Value</span>
+              <select id="deploy-id-select">
+                <!-- Dynamically toggled -->
+              </select>
+              <input id="deploy-id-input" type="text" placeholder="e.g. SDU_BOARD_FL" style="display:none;">
+            </label>
+            
+            <div class="deploy-buttons-grid">
+              <button id="deploy-btn-clean" class="secondary-button deploy-action-btn">Clean</button>
+              <button id="deploy-btn-build" class="secondary-button deploy-action-btn">Build</button>
+              <button id="deploy-btn-flash" class="secondary-button deploy-action-btn">Flash</button>
+              <button id="deploy-btn-deploy" class="primary-button deploy-action-btn">Deploy</button>
+            </div>
+            
+            <hr class="panel-divider">
+            
+            <button id="open-register-modal-btn" class="secondary-button width-100">Register Custom Board...</button>
+            
+            <div class="deploy-status-card" id="deploy-status-card">
+              <span class="status-label">Status</span>
+              <strong class="status-val" id="deploy-status-val">Idle</strong>
+              <span class="status-subtext" id="deploy-timer-val">Elapsed: 0s</span>
+            </div>
+            
+            <p class="helper-text warning-text" id="deploy-warning-text">
+              ⚠️ Flashing requires an ST-Link debugger connected via SWD. Flashing will auto-disconnect this CDC debug terminal interface.
+            </p>
+          </div>
+        </section>
+        
+        <!-- Monospace Log Console -->
+        <section class="panel deploy-console-panel">
+          <div class="panel-heading console-heading">
+            <div>
+              <h2>Compilation & Programming Output</h2>
+              <p>Real-time terminal logs streamed from the BFR builder.</p>
+            </div>
+            <div class="console-actions">
+              <label class="toggle-group scale-small">
+                <input id="console-autoscroll-toggle" type="checkbox" checked>
+                <span>Auto-scroll</span>
+              </label>
+              <button id="clear-console-btn" class="ghost-button">Clear</button>
+            </div>
+          </div>
+          
+          <div class="terminal-container" id="terminal-log-container">
+            <div class="terminal-welcome">Console ready. Select a board and action above to begin.</div>
+          </div>
+        </section>
+      </div>
+    </section>
   </main>
+
+  <!-- Register Board Modal -->
+  <div class="modal-overlay" id="register-board-modal" style="display:none;">
+    <div class="modal-content panel">
+      <div class="panel-heading">
+        <h2>Register Custom Board</h2>
+        <p>Add a new STM32 repository folder to the BFR workspace.</p>
+      </div>
+      <form id="register-board-form" class="modal-form">
+        <label class="field-group">
+          <span>Select Repository Folder</span>
+          <div class="flex-row">
+            <input id="reg-path-input" type="text" readonly placeholder="Click Browse to select folder..." required>
+            <button id="reg-browse-btn" class="secondary-button" type="button">Browse...</button>
+          </div>
+        </label>
+        
+        <label class="field-group">
+          <span>Board Key (Lowercase ID)</span>
+          <input id="reg-key-input" type="text" placeholder="e.g. dash" required>
+        </label>
+        
+        <label class="field-group">
+          <span>Friendly Name</span>
+          <input id="reg-name-input" type="text" placeholder="e.g. Dashboard Unit" required>
+        </label>
+        
+        <label class="field-group">
+          <span>Aliases (Comma-separated)</span>
+          <input id="reg-aliases-input" type="text" placeholder="e.g. d,dash">
+        </label>
+        
+        <label class="field-group">
+          <span>Target ELF Name (Optional)</span>
+          <input id="reg-elf-input" type="text" placeholder="e.g. mk11-dash.elf">
+        </label>
+        
+        <label class="field-group">
+          <span>Board ID Variable (Optional)</span>
+          <input id="reg-var-input" type="text" placeholder="e.g. DASH_BOARD_ID">
+        </label>
+        
+        <div class="modal-buttons">
+          <button class="secondary-button" id="reg-cancel-btn" type="button">Cancel</button>
+          <button class="primary-button" id="reg-submit-btn" type="submit">Register Board</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <script src="./app.js"></script>
 </body>

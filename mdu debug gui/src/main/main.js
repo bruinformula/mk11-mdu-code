@@ -2,6 +2,8 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
+const { spawn } = require('child_process');
 const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 
 const { DeviceMonitor } = require('./device-monitor');
@@ -124,6 +126,197 @@ function registerIpcHandlers() {
     const data = rows.map((row) => JSON.stringify(row)).join('\n') + '\n';
     await fs.promises.writeFile(filePath, data, 'utf8');
     return filePath;
+  });
+
+  function locateBfr() {
+    const home = os.homedir();
+    const searchPaths = [
+      path.join(home, 'bfr-cli', 'bfr'),
+      path.join(home, 'workspace', 'bfr-cli', 'bfr'),
+      '/Users/larry/bfr-cli/bfr'
+    ];
+    
+    try {
+      const zshrcPath = path.join(home, '.zshrc');
+      if (fs.existsSync(zshrcPath)) {
+        const content = fs.readFileSync(zshrcPath, 'utf8');
+        const match = content.match(/alias\s+bfr=['"]([^'"]+)['"]/);
+        if (match && match[1]) {
+          searchPaths.push(match[1]);
+        }
+      }
+    } catch (e) {
+      // Ignore
+    }
+    
+    for (const p of searchPaths) {
+      const resolved = p.replace(/^~/, home);
+      if (fs.existsSync(resolved)) {
+        return resolved;
+      }
+    }
+    
+    return 'bfr';
+  }
+
+  ipcMain.handle('bfr:get-config', async () => {
+    const bfrPath = locateBfr();
+    const detected = bfrPath !== 'bfr' && fs.existsSync(bfrPath);
+    
+    const boards = {
+      sdu: { name: 'SDU (Sensor Data Unit)', board_id_var: 'SDU_BOARD_ID', ids: ['FL', 'FR', 'RL', 'RR'] },
+      mdu: { name: 'MDU (Master Data Unit)' },
+      tspmu: { name: 'TSPMU (Tire System Pressure Monitoring Unit)', board_id_var: 'TSPMU_BOARD_ID', ids: ['0', '1'] }
+    };
+    
+    try {
+      const home = os.homedir();
+      const configPath = path.join(home, '.bfr_config.json');
+      if (fs.existsSync(configPath)) {
+        const data = await fs.promises.readFile(configPath, 'utf8');
+        const parsed = JSON.parse(data);
+        if (parsed.custom_boards) {
+          for (const [key, info] of Object.entries(parsed.custom_boards)) {
+            boards[key] = {
+              name: info.name || key.toUpperCase(),
+              board_id_var: info.board_id_var,
+              ids: info.ids || []
+            };
+          }
+        }
+      }
+    } catch (e) {
+      // Ignore
+    }
+    
+    return { bfrPath, detected, boards };
+  });
+
+  ipcMain.handle('bfr:run-setup', async () => {
+    const bfrPath = locateBfr();
+    let scriptPath = '';
+    if (bfrPath !== 'bfr') {
+      scriptPath = path.join(path.dirname(bfrPath), 'setup.sh');
+    } else {
+      scriptPath = '/Users/larry/bfr-cli/setup.sh';
+    }
+    
+    if (!fs.existsSync(scriptPath)) {
+      throw new Error(`Setup script not found at ${scriptPath}`);
+    }
+    
+    return new Promise((resolve, reject) => {
+      const child = spawn(scriptPath, [], { shell: true });
+      let stdout = '';
+      let stderr = '';
+      
+      child.stdout.on('data', (data) => {
+        const text = data.toString();
+        stdout += text;
+        broadcast('board:deploy-log', { type: 'stdout', text });
+      });
+      
+      child.stderr.on('data', (data) => {
+        const text = data.toString();
+        stderr += text;
+        broadcast('board:deploy-log', { type: 'stderr', text });
+      });
+      
+      child.on('close', (code) => {
+        if (code === 0) {
+          resolve({ success: true, stdout });
+        } else {
+          reject(new Error(`Setup script exited with code ${code}. Stderr: ${stderr}`));
+        }
+      });
+    });
+  });
+
+  ipcMain.handle('dialog:select-directory', async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Select Board Repository Directory',
+      properties: ['openDirectory', 'createDirectory']
+    });
+    
+    if (result.canceled || !result.filePaths?.length) {
+      return null;
+    }
+    
+    return result.filePaths[0];
+  });
+
+  ipcMain.handle('bfr:register-board', async (_event, boardKey, elf, name, aliases, boardIdVar, dirPath) => {
+    const bfrPath = locateBfr();
+    const args = ['register', boardKey];
+    if (elf) args.push('--elf', elf);
+    if (name) args.push('--name', name);
+    if (aliases) args.push('--alias', aliases);
+    if (boardIdVar) args.push('--board-id-var', boardIdVar);
+    
+    return new Promise((resolve, reject) => {
+      const child = spawn(bfrPath, args, { cwd: dirPath, env: process.env });
+      let stdout = '';
+      let stderr = '';
+      
+      child.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+      
+      child.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+      
+      child.on('close', (code) => {
+        if (code === 0) {
+          resolve({ success: true, stdout });
+        } else {
+          reject(new Error(`bfr register failed with code ${code}. Stderr: ${stderr}`));
+        }
+      });
+    });
+  });
+
+  ipcMain.handle('board:deploy', async (_event, action, boardKey, boardId) => {
+    if (monitor && typeof monitor.disconnect === 'function') {
+      try {
+        const state = monitor.getInitialState ? monitor.getInitialState() : {};
+        const isConnected = state.connected || (monitor.serial && monitor.serial.isOpen);
+        if (isConnected) {
+          broadcast('board:deploy-log', { type: 'stdout', text: `\x1B[1;33m[GUI] Auto-disconnecting serial port before ${action} to free SWD interface...\x1B[0m\n` });
+          await monitor.disconnect();
+        }
+      } catch (e) {
+        broadcast('board:deploy-log', { type: 'stderr', text: `[GUI] Warning: Failed to disconnect serial port: ${e.message}\n` });
+      }
+    }
+    
+    const bfrPath = locateBfr();
+    const args = [action, boardKey];
+    if (boardId) {
+      args.push(boardId);
+    }
+    
+    broadcast('board:deploy-log', { type: 'stdout', text: `\x1B[1;36m>>> Executing: ${bfrPath} ${args.join(' ')}\x1B[0m\n` });
+    
+    return new Promise((resolve) => {
+      const child = spawn(bfrPath, args, { env: process.env });
+      
+      child.stdout.on('data', (data) => {
+        broadcast('board:deploy-log', { type: 'stdout', text: data.toString() });
+      });
+      
+      child.stderr.on('data', (data) => {
+        broadcast('board:deploy-log', { type: 'stderr', text: data.toString() });
+      });
+      
+      child.on('close', (code) => {
+        if (code === 0) {
+          resolve({ success: true });
+        } else {
+          resolve({ success: false, code });
+        }
+      });
+    });
   });
 }
 

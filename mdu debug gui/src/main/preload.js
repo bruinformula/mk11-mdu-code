@@ -28,4 +28,11 @@ contextBridge.exposeInMainWorld('mduDebug', {
   onFrame: (callback) => subscribe('device:frame', callback),
   onRuntime: (callback) => subscribe('device:runtime', callback),
   onLogStatus: (callback) => subscribe('device:log-status', callback),
+  getBfrConfig: () => ipcRenderer.invoke('bfr:get-config'),
+  runSetupScript: () => ipcRenderer.invoke('bfr:run-setup'),
+  selectDirectory: () => ipcRenderer.invoke('dialog:select-directory'),
+  registerBoard: (boardKey, elf, name, aliases, boardIdVar, dirPath) => 
+    ipcRenderer.invoke('bfr:register-board', boardKey, elf, name, aliases, boardIdVar, dirPath),
+  deployBoard: (action, boardKey, boardId) => ipcRenderer.invoke('board:deploy', action, boardKey, boardId),
+  onDeployLog: (callback) => subscribe('board:deploy-log', callback),
 });

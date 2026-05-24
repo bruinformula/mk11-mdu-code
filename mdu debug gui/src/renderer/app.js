@@ -180,6 +180,7 @@ const elements = {
   tabPanes: {
     dashboard: document.getElementById('tab-dashboard'),
     graphs: document.getElementById('tab-graphs'),
+    deploy: document.getElementById('tab-deploy'),
   },
   graphsWindowSelect: document.getElementById('graphs-window-select'),
   graphsBoardSelect: document.getElementById('graphs-board-select'),
@@ -188,6 +189,35 @@ const elements = {
   favoritesGrid: document.getElementById('favorites-grid'),
   throughputGrid: document.getElementById('throughput-grid'),
   boardGraphs: document.getElementById('board-graphs'),
+  
+  // Deploy (BFR) Tab Elements
+  deploySetupCard: document.getElementById('deploy-setup-card'),
+  runSetupBtn: document.getElementById('run-setup-btn'),
+  deployWorkspace: document.getElementById('deploy-workspace'),
+  deployBoardSelect: document.getElementById('deploy-board-select'),
+  deployIdGroup: document.getElementById('deploy-id-group'),
+  deployIdSelect: document.getElementById('deploy-id-select'),
+  deployIdInput: document.getElementById('deploy-id-input'),
+  deployBtnClean: document.getElementById('deploy-btn-clean'),
+  deployBtnBuild: document.getElementById('deploy-btn-build'),
+  deployBtnFlash: document.getElementById('deploy-btn-flash'),
+  deployBtnDeploy: document.getElementById('deploy-btn-deploy'),
+  openRegisterModalBtn: document.getElementById('open-register-modal-btn'),
+  deployStatusVal: document.getElementById('deploy-status-val'),
+  deployTimerVal: document.getElementById('deploy-timer-val'),
+  terminalLogContainer: document.getElementById('terminal-log-container'),
+  clearConsoleBtn: document.getElementById('clear-console-btn'),
+  consoleAutoscrollToggle: document.getElementById('console-autoscroll-toggle'),
+  registerBoardModal: document.getElementById('register-board-modal'),
+  registerBoardForm: document.getElementById('register-board-form'),
+  regPathInput: document.getElementById('reg-path-input'),
+  regBrowseBtn: document.getElementById('reg-browse-btn'),
+  regKeyInput: document.getElementById('reg-key-input'),
+  regNameInput: document.getElementById('reg-name-input'),
+  regAliasesInput: document.getElementById('reg-aliases-input'),
+  regElfInput: document.getElementById('reg-elf-input'),
+  regVarInput: document.getElementById('reg-var-input'),
+  regCancelBtn: document.getElementById('reg-cancel-btn'),
 };
 
 function applyTheme(theme) {
@@ -1128,6 +1158,7 @@ function initializeBoardHistories() {
   state.graphs.boards.set('2-2', { fast: [], slow: [], lastSeenAt: null });
   state.graphs.boards.set('2-3', { fast: [], slow: [], lastSeenAt: null });
   state.graphs.boards.set('6-0', { fast: [], slow: [], lastSeenAt: null });
+  state.graphs.boards.set('6-1', { fast: [], slow: [], lastSeenAt: null });
 }
 
 function getOrCreateBoardHistory(boardKey) {
@@ -1253,7 +1284,12 @@ function activeWindowSeconds() {
 }
 
 function setActiveTab(tab) {
-  const next = tab === 'graphs' ? 'graphs' : 'dashboard';
+  let next = 'dashboard';
+  if (tab === 'graphs') {
+    next = 'graphs';
+  } else if (tab === 'deploy') {
+    next = 'deploy';
+  }
   state.graphs.activeTab = next;
   for (const button of elements.tabButtons) {
     const isActive = button.dataset.tab === next;
@@ -1272,6 +1308,8 @@ function setActiveTab(tab) {
   }
   if (next === 'graphs') {
     renderGraphs();
+  } else if (next === 'deploy') {
+    loadBfrConfig();
   }
 }
 
@@ -2074,6 +2112,216 @@ async function chooseAndMaybeStartLogging() {
   renderLoggingControls();
 }
 
+let bfrBoards = {};
+let deployTimerInterval = null;
+let deployStartTime = 0;
+
+async function loadBfrConfig() {
+  try {
+    const config = await api.getBfrConfig();
+    if (!config.detected) {
+      if (elements.deploySetupCard) elements.deploySetupCard.style.display = 'block';
+      if (elements.deployWorkspace) elements.deployWorkspace.style.display = 'none';
+    } else {
+      if (elements.deploySetupCard) elements.deploySetupCard.style.display = 'none';
+      if (elements.deployWorkspace) elements.deployWorkspace.style.display = 'grid';
+      bfrBoards = config.boards;
+      populateBoardSelect();
+    }
+  } catch (error) {
+    updateStatusLine(`Failed to load BFR config: ${error.message}`);
+  }
+}
+
+function populateBoardSelect() {
+  if (!elements.deployBoardSelect) return;
+  
+  const currentSelection = elements.deployBoardSelect.value;
+  elements.deployBoardSelect.innerHTML = '';
+  
+  for (const [key, info] of Object.entries(bfrBoards)) {
+    const opt = document.createElement('option');
+    opt.value = key;
+    opt.textContent = info.name;
+    if (key === 'mdu' && !currentSelection) {
+      opt.selected = true;
+    } else if (key === currentSelection) {
+      opt.selected = true;
+    }
+    elements.deployBoardSelect.appendChild(opt);
+  }
+  
+  handleBoardSelectChange();
+}
+
+function handleBoardSelectChange() {
+  if (!elements.deployBoardSelect) return;
+  const boardKey = elements.deployBoardSelect.value;
+  const board = bfrBoards[boardKey];
+  
+  if (!board) return;
+  
+  if (board.ids && board.ids.length > 0) {
+    if (elements.deployIdGroup) elements.deployIdGroup.style.display = 'grid';
+    if (elements.deployIdSelect) {
+      elements.deployIdSelect.style.display = 'block';
+      elements.deployIdSelect.innerHTML = '';
+      for (const idVal of board.ids) {
+        const opt = document.createElement('option');
+        opt.value = idVal;
+        opt.textContent = idVal;
+        elements.deployIdSelect.appendChild(opt);
+      }
+    }
+    if (elements.deployIdInput) elements.deployIdInput.style.display = 'none';
+  } else if (board.board_id_var) {
+    if (elements.deployIdGroup) elements.deployIdGroup.style.display = 'grid';
+    if (elements.deployIdSelect) elements.deployIdSelect.style.display = 'none';
+    if (elements.deployIdInput) {
+      elements.deployIdInput.style.display = 'block';
+      elements.deployIdInput.value = '';
+    }
+  } else {
+    if (elements.deployIdGroup) elements.deployIdGroup.style.display = 'none';
+  }
+}
+
+function ansiToHtml(text) {
+  let html = escapeHtml(text);
+  const ansiMap = [
+    { regex: /\u001b\[1;36m/g, html: '<span class="log-cyan log-bold">' },
+    { regex: /\u001b\[36m/g, html: '<span class="log-cyan">' },
+    { regex: /\u001b\[1;33m/g, html: '<span class="log-yellow log-bold">' },
+    { regex: /\u001b\[33m/g, html: '<span class="log-yellow">' },
+    { regex: /\u001b\[1;32m/g, html: '<span class="log-green log-bold">' },
+    { regex: /\u001b\[92m/g, html: '<span class="log-green log-bold">' },
+    { regex: /\u001b\[32m/g, html: '<span class="log-green">' },
+    { regex: /\u001b\[1;31m/g, html: '<span class="log-red log-bold">' },
+    { regex: /\u001b\[91m/g, html: '<span class="log-red log-bold">' },
+    { regex: /\u001b\[31m/g, html: '<span class="log-red">' },
+    { regex: /\u001b\[2m/g, html: '<span class="log-dim">' },
+    { regex: /\u001b\[1m/g, html: '<span class="log-bold">' },
+    { regex: /\u001b\[0m/g, html: '</span>' },
+  ];
+
+  for (const item of ansiMap) {
+    html = html.replace(item.regex, item.html);
+  }
+  return html.replace(/\u001b\[[0-9;]*m/g, '');
+}
+
+function appendConsoleLog(text, type = '') {
+  if (!elements.terminalLogContainer) return;
+  
+  const welcome = elements.terminalLogContainer.querySelector('.terminal-welcome');
+  if (welcome) {
+    welcome.remove();
+  }
+  
+  const span = document.createElement('span');
+  if (type === 'red') {
+    span.className = 'log-red';
+  } else if (type === 'cyan') {
+    span.className = 'log-cyan';
+  } else if (type === 'green') {
+    span.className = 'log-green';
+  } else if (type === 'yellow') {
+    span.className = 'log-yellow';
+  }
+  
+  span.innerHTML = ansiToHtml(text);
+  elements.terminalLogContainer.appendChild(span);
+  
+  if (elements.consoleAutoscrollToggle && elements.consoleAutoscrollToggle.checked) {
+    elements.terminalLogContainer.scrollTop = elements.terminalLogContainer.scrollHeight;
+  }
+}
+
+function startDeployTimer() {
+  if (deployTimerInterval) {
+    clearInterval(deployTimerInterval);
+  }
+  
+  deployStartTime = Date.now();
+  if (elements.deployTimerVal) elements.deployTimerVal.textContent = 'Elapsed: 0s';
+  
+  deployTimerInterval = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - deployStartTime) / 1000);
+    if (elements.deployTimerVal) elements.deployTimerVal.textContent = `Elapsed: ${elapsed}s`;
+  }, 1000);
+}
+
+function stopDeployTimer() {
+  if (deployTimerInterval) {
+    clearInterval(deployTimerInterval);
+    deployTimerInterval = null;
+  }
+}
+
+async function runDeployAction(action) {
+  if (!elements.deployBoardSelect) return;
+  
+  const boardKey = elements.deployBoardSelect.value;
+  if (!boardKey) return;
+  
+  const board = bfrBoards[boardKey];
+  let boardId = '';
+  
+  if (board) {
+    if (board.ids && board.ids.length > 0) {
+      boardId = elements.deployIdSelect ? elements.deployIdSelect.value : '';
+    } else if (board.board_id_var) {
+      boardId = elements.deployIdInput ? elements.deployIdInput.value.trim() : '';
+      if (!boardId && action !== 'clean') {
+        appendConsoleLog(`\n[GUI] Error: Board ID is required for target ${boardKey}.\n`, 'red');
+        return;
+      }
+    }
+  }
+  
+  const buttons = document.querySelectorAll('.deploy-action-btn');
+  buttons.forEach(btn => btn.disabled = true);
+  
+  if (elements.deployStatusVal) {
+    elements.deployStatusVal.textContent = action.toUpperCase() + 'ING...';
+    elements.deployStatusVal.style.color = 'var(--gold)';
+  }
+  
+  appendConsoleLog(`\n[GUI] Starting action: ${action} on board: ${boardKey} ${boardId ? '(ID: ' + boardId + ')' : ''}\n`, 'cyan');
+  
+  startDeployTimer();
+  
+  try {
+    const result = await api.deployBoard(action, boardKey, boardId);
+    
+    stopDeployTimer();
+    const totalTime = Math.floor((Date.now() - deployStartTime) / 1000);
+    
+    if (result.success) {
+      if (elements.deployStatusVal) {
+        elements.deployStatusVal.textContent = 'Success';
+        elements.deployStatusVal.style.color = 'var(--success)';
+      }
+      appendConsoleLog(`\n[GUI] Action: ${action} succeeded in ${totalTime}s!\n`, 'green');
+    } else {
+      if (elements.deployStatusVal) {
+        elements.deployStatusVal.textContent = `Failed (${result.code})`;
+        elements.deployStatusVal.style.color = 'var(--warning)';
+      }
+      appendConsoleLog(`\n[GUI] Action: ${action} failed with exit code ${result.code} after ${totalTime}s.\n`, 'red');
+    }
+  } catch (err) {
+    stopDeployTimer();
+    if (elements.deployStatusVal) {
+      elements.deployStatusVal.textContent = 'Error';
+      elements.deployStatusVal.style.color = 'var(--warning)';
+    }
+    appendConsoleLog(`\n[GUI] Action error: ${err.message}\n`, 'red');
+  } finally {
+    buttons.forEach(btn => btn.disabled = false);
+  }
+}
+
 function wireUi() {
   applyTheme(document.documentElement.getAttribute('data-theme') || 'dark');
 
@@ -2294,6 +2542,106 @@ function wireUi() {
     state.logStatus = await api.stopLogging();
     renderLoggingControls();
   });
+
+  // Deploy action button listeners
+  if (elements.deployBtnClean) elements.deployBtnClean.addEventListener('click', () => runDeployAction('clean'));
+  if (elements.deployBtnBuild) elements.deployBtnBuild.addEventListener('click', () => runDeployAction('build'));
+  if (elements.deployBtnFlash) elements.deployBtnFlash.addEventListener('click', () => runDeployAction('flash'));
+  if (elements.deployBtnDeploy) elements.deployBtnDeploy.addEventListener('click', () => runDeployAction('deploy'));
+
+  if (elements.deployBoardSelect) elements.deployBoardSelect.addEventListener('change', handleBoardSelectChange);
+
+  if (elements.clearConsoleBtn) {
+    elements.clearConsoleBtn.addEventListener('click', () => {
+      if (elements.terminalLogContainer) {
+        elements.terminalLogContainer.innerHTML = '';
+      }
+    });
+  }
+
+  // Setup script trigger
+  if (elements.runSetupBtn) {
+    elements.runSetupBtn.addEventListener('click', async () => {
+      elements.runSetupBtn.disabled = true;
+      appendConsoleLog('\n[GUI] Starting BFR setup script...\n', 'cyan');
+      try {
+        const res = await api.runSetupScript();
+        appendConsoleLog(`\n[GUI] Setup finished successfully!\n`, 'green');
+        await loadBfrConfig();
+      } catch (e) {
+        appendConsoleLog(`\n[GUI] Setup failed: ${e.message}\n`, 'red');
+      } finally {
+        elements.runSetupBtn.disabled = false;
+      }
+    });
+  }
+
+  // Custom Board Registration Modal triggers
+  if (elements.openRegisterModalBtn) {
+    elements.openRegisterModalBtn.addEventListener('click', () => {
+      if (elements.registerBoardModal) elements.registerBoardModal.style.display = 'flex';
+    });
+  }
+
+  if (elements.regCancelBtn) {
+    elements.regCancelBtn.addEventListener('click', () => {
+      if (elements.registerBoardModal) elements.registerBoardModal.style.display = 'none';
+      if (elements.registerBoardForm) elements.registerBoardForm.reset();
+    });
+  }
+
+  if (elements.regBrowseBtn) {
+    elements.regBrowseBtn.addEventListener('click', async () => {
+      try {
+        const dirPath = await api.selectDirectory();
+        if (dirPath && elements.regPathInput) {
+          elements.regPathInput.value = dirPath;
+          const folderName = dirPath.split(/[/\\]/).pop().toLowerCase();
+          if (elements.regKeyInput && !elements.regKeyInput.value) {
+            elements.regKeyInput.value = folderName.replace(/[^a-z0-9]/g, '');
+          }
+          if (elements.regNameInput && !elements.regNameInput.value) {
+            elements.regNameInput.value = folderName.toUpperCase();
+          }
+        }
+      } catch (e) {
+        updateStatusLine(`Failed to select directory: ${e.message}`);
+      }
+    });
+  }
+
+  if (elements.registerBoardForm) {
+    elements.registerBoardForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const dirPath = elements.regPathInput ? elements.regPathInput.value : '';
+      const boardKey = elements.regKeyInput ? elements.regKeyInput.value.trim().toLowerCase() : '';
+      const name = elements.regNameInput ? elements.regNameInput.value.trim() : '';
+      const aliases = elements.regAliasesInput ? elements.regAliasesInput.value.trim() : '';
+      const elf = elements.regElfInput ? elements.regElfInput.value.trim() : '';
+      const boardIdVar = elements.regVarInput ? elements.regVarInput.value.trim() : '';
+      
+      if (!dirPath || !boardKey || !name) {
+        updateStatusLine('Please fill in the required fields.');
+        return;
+      }
+      
+      appendConsoleLog(`\n[GUI] Registering custom board "${name}" (${boardKey})...\n`, 'cyan');
+      
+      try {
+        const result = await api.registerBoard(boardKey, elf, name, aliases, boardIdVar, dirPath);
+        appendConsoleLog(`\n[GUI] Board registered successfully!\n`, 'green');
+        if (result.stdout) {
+          appendConsoleLog(result.stdout);
+        }
+        if (elements.registerBoardModal) elements.registerBoardModal.style.display = 'none';
+        elements.registerBoardForm.reset();
+        await loadBfrConfig();
+      } catch (err) {
+        appendConsoleLog(`\n[GUI] Registration failed: ${err.message}\n`, 'red');
+      }
+    });
+  }
 }
 
 function wireEvents() {
@@ -2335,6 +2683,10 @@ function wireEvents() {
     state.logStatus = logStatus;
     renderLoggingControls();
     renderDiagnostics();
+  });
+
+  api.onDeployLog((log) => {
+    appendConsoleLog(log.text, log.type === 'stderr' ? 'red' : '');
   });
 }
 
