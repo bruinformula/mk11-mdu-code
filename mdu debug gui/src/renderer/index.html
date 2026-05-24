@@ -378,7 +378,7 @@
         <h3>BFR CLI Not Detected</h3>
         <p>The Bruin Formula Racing CLI helper tool was not automatically detected on your system PATH or in your home folder (<code>~/bfr-cli/bfr</code>).</p>
         <div class="setup-steps">
-          <p>To configure it automatically, make sure you have the <code>bfr-cli</code> folder at <code>/Users/larry/bfr-cli</code> and click the button below to run the setup script.</p>
+          <p>To configure it automatically, clone the repository from <a href="https://github.com/bruinformula/bfr-cli" target="_blank" style="color: var(--accent); text-decoration: underline; font-weight: 600;">github.com/bruinformula/bfr-cli</a> to <code>/Users/larry/bfr-cli</code> and click the button below to run the setup script.</p>
           <button id="run-setup-btn" class="primary-button">Run Setup Helper Script</button>
         </div>
       </div>
@@ -420,12 +420,15 @@
             
             <div class="deploy-status-card" id="deploy-status-card">
               <span class="status-label">Status</span>
-              <strong class="status-val" id="deploy-status-val">Idle</strong>
+              <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                <strong class="status-val" id="deploy-status-val">Idle</strong>
+                <button id="deploy-btn-stop" class="warning-btn" style="display:none; margin: 0; min-height: 32px; padding: 0 12px; font-size: 0.8rem; border-radius: var(--radius-sm);">Stop</button>
+              </div>
               <span class="status-subtext" id="deploy-timer-val">Elapsed: 0s</span>
             </div>
             
             <p class="helper-text warning-text" id="deploy-warning-text">
-              ⚠️ Flashing requires an ST-Link debugger connected via SWD. Flashing will auto-disconnect this CDC debug terminal interface.
+              ⚠️ <strong>Requirements:</strong> STM32CubeIDE must be installed. Flashing requires an ST-Link debugger connected via SWD. Flashing will auto-disconnect this CDC debug terminal interface.
             </p>
           </div>
         </section>

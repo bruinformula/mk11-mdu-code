@@ -202,6 +202,7 @@ const elements = {
   deployBtnBuild: document.getElementById('deploy-btn-build'),
   deployBtnFlash: document.getElementById('deploy-btn-flash'),
   deployBtnDeploy: document.getElementById('deploy-btn-deploy'),
+  deployBtnStop: document.getElementById('deploy-btn-stop'),
   openRegisterModalBtn: document.getElementById('open-register-modal-btn'),
   deployStatusVal: document.getElementById('deploy-status-val'),
   deployTimerVal: document.getElementById('deploy-timer-val'),
@@ -2282,6 +2283,11 @@ async function runDeployAction(action) {
   const buttons = document.querySelectorAll('.deploy-action-btn');
   buttons.forEach(btn => btn.disabled = true);
   
+  if (elements.deployBtnStop) {
+    elements.deployBtnStop.style.display = 'block';
+    elements.deployBtnStop.disabled = false;
+  }
+
   if (elements.deployStatusVal) {
     elements.deployStatusVal.textContent = action.toUpperCase() + 'ING...';
     elements.deployStatusVal.style.color = 'var(--gold)';
@@ -2319,6 +2325,9 @@ async function runDeployAction(action) {
     appendConsoleLog(`\n[GUI] Action error: ${err.message}\n`, 'red');
   } finally {
     buttons.forEach(btn => btn.disabled = false);
+    if (elements.deployBtnStop) {
+      elements.deployBtnStop.style.display = 'none';
+    }
   }
 }
 
@@ -2548,6 +2557,19 @@ function wireUi() {
   if (elements.deployBtnBuild) elements.deployBtnBuild.addEventListener('click', () => runDeployAction('build'));
   if (elements.deployBtnFlash) elements.deployBtnFlash.addEventListener('click', () => runDeployAction('flash'));
   if (elements.deployBtnDeploy) elements.deployBtnDeploy.addEventListener('click', () => runDeployAction('deploy'));
+  
+  if (elements.deployBtnStop) {
+    elements.deployBtnStop.addEventListener('click', async () => {
+      elements.deployBtnStop.disabled = true;
+      try {
+        await api.stopDeploy();
+      } catch (err) {
+        appendConsoleLog(`\n[GUI] Failed to stop process: ${err.message}\n`, 'red');
+      } finally {
+        elements.deployBtnStop.disabled = false;
+      }
+    });
+  }
 
   if (elements.deployBoardSelect) elements.deployBoardSelect.addEventListener('change', handleBoardSelectChange);
 

@@ -4,12 +4,13 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { spawn } = require('child_process');
-const { app, BrowserWindow, dialog, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
 
 const { DeviceMonitor } = require('./device-monitor');
 
 let mainWindow = null;
 let monitor = null;
+let activeDeployProcess = null;
 
 function broadcast(channel, payload) {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -40,6 +41,14 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: false,
     },
+  });
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('https://') || url.startsWith('http://')) {
+      shell.openExternal(url);
+      return { action: 'deny' };
+    }
+    return { action: 'allow' };
   });
 
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
@@ -300,7 +309,14 @@ function registerIpcHandlers() {
     
     return new Promise((resolve) => {
       const child = spawn(bfrPath, args, { env: process.env });
+      activeDeployProcess = child;
       
+      child.on('error', (err) => {
+        broadcast('board:deploy-log', { type: 'stderr', text: `[GUI] Failed to start process: ${err.message}\n` });
+        activeDeployProcess = null;
+        resolve({ success: false, code: -1 });
+      });
+
       child.stdout.on('data', (data) => {
         broadcast('board:deploy-log', { type: 'stdout', text: data.toString() });
       });
@@ -310,6 +326,7 @@ function registerIpcHandlers() {
       });
       
       child.on('close', (code) => {
+        activeDeployProcess = null;
         if (code === 0) {
           resolve({ success: true });
         } else {
@@ -317,6 +334,23 @@ function registerIpcHandlers() {
         }
       });
     });
+  });
+
+  ipcMain.handle('board:deploy-kill', async () => {
+    if (activeDeployProcess) {
+      broadcast('board:deploy-log', { type: 'stdout', text: `\n\x1B[1;31m[GUI] Stop button clicked. Terminating build/flash process (PID ${activeDeployProcess.pid})...\x1B[0m\n` });
+      activeDeployProcess.kill('SIGINT');
+      const proc = activeDeployProcess;
+      setTimeout(() => {
+        try {
+          if (proc) proc.kill('SIGKILL');
+        } catch (e) {
+          // ignore
+        }
+      }, 1000);
+      return true;
+    }
+    return false;
   });
 }
 

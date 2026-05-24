@@ -34,5 +34,6 @@ contextBridge.exposeInMainWorld('mduDebug', {
   registerBoard: (boardKey, elf, name, aliases, boardIdVar, dirPath) => 
     ipcRenderer.invoke('bfr:register-board', boardKey, elf, name, aliases, boardIdVar, dirPath),
   deployBoard: (action, boardKey, boardId) => ipcRenderer.invoke('board:deploy', action, boardKey, boardId),
+  stopDeploy: () => ipcRenderer.invoke('board:deploy-kill'),
   onDeployLog: (callback) => subscribe('board:deploy-log', callback),
 });
