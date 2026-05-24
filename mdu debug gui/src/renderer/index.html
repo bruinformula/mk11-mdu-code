@@ -394,9 +394,13 @@
           <div class="controls-form">
             <label class="field-group">
               <span>Target Board</span>
-              <select id="deploy-board-select">
-                <!-- Dynamically populated -->
-              </select>
+              <div class="flex-row">
+                <select id="deploy-board-select" style="flex: 1;">
+                  <!-- Dynamically populated -->
+                </select>
+                <button id="change-board-path-btn" class="secondary-button" type="button" title="Change workspace path for this board" style="padding: 0 12px; min-height: 48px;">Set Path</button>
+              </div>
+              <span id="deploy-board-path-text" style="font-size: 0.78rem; color: var(--ink-soft); word-break: break-all; margin-top: -4px;"></span>
             </label>
             
             <label class="field-group" id="deploy-id-group">

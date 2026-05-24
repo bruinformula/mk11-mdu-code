@@ -195,6 +195,8 @@ const elements = {
   runSetupBtn: document.getElementById('run-setup-btn'),
   deployWorkspace: document.getElementById('deploy-workspace'),
   deployBoardSelect: document.getElementById('deploy-board-select'),
+  changeBoardPathBtn: document.getElementById('change-board-path-btn'),
+  deployBoardPathText: document.getElementById('deploy-board-path-text'),
   deployIdGroup: document.getElementById('deploy-id-group'),
   deployIdSelect: document.getElementById('deploy-id-select'),
   deployIdInput: document.getElementById('deploy-id-input'),
@@ -2161,6 +2163,10 @@ function handleBoardSelectChange() {
   const board = bfrBoards[boardKey];
   
   if (!board) return;
+
+  if (elements.deployBoardPathText) {
+    elements.deployBoardPathText.textContent = board.path ? `Workspace: ${board.path}` : 'No path registered';
+  }
   
   if (board.ids && board.ids.length > 0) {
     if (elements.deployIdGroup) elements.deployIdGroup.style.display = 'grid';
@@ -2572,6 +2578,29 @@ function wireUi() {
   }
 
   if (elements.deployBoardSelect) elements.deployBoardSelect.addEventListener('change', handleBoardSelectChange);
+
+  if (elements.changeBoardPathBtn) {
+    elements.changeBoardPathBtn.addEventListener('click', async () => {
+      if (!elements.deployBoardSelect) return;
+      const boardKey = elements.deployBoardSelect.value;
+      if (!boardKey) return;
+      
+      try {
+        const dirPath = await api.selectDirectory();
+        if (dirPath) {
+          appendConsoleLog(`\n[GUI] Updating workspace path for board "${boardKey}" to: ${dirPath}...\n`, 'cyan');
+          const result = await api.registerBoard(boardKey, '', '', '', '', dirPath);
+          appendConsoleLog(`\n[GUI] Workspace path updated successfully!\n`, 'green');
+          if (result.stdout) {
+            appendConsoleLog(result.stdout);
+          }
+          await loadBfrConfig();
+        }
+      } catch (err) {
+        appendConsoleLog(`\n[GUI] Failed to update workspace path: ${err.message}\n`, 'red');
+      }
+    });
+  }
 
   if (elements.clearConsoleBtn) {
     elements.clearConsoleBtn.addEventListener('click', () => {

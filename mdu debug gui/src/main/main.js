@@ -184,25 +184,35 @@ function registerIpcHandlers() {
   ipcMain.handle('bfr:get-config', async () => {
     const bfrPath = locateBfr();
     const detected = bfrPath !== 'bfr' && fs.existsSync(bfrPath);
+    const home = os.homedir();
     
     const boards = {
-      sdu: { name: 'SDU (Sensor Data Unit)', board_id_var: 'SDU_BOARD_ID', ids: ['FL', 'FR', 'RL', 'RR'] },
-      mdu: { name: 'MDU (Master Data Unit)' },
-      tspmu: { name: 'TSPMU (Tire System Pressure Monitoring Unit)', board_id_var: 'TSPMU_BOARD_ID', ids: ['0', '1'] }
+      sdu: { name: 'SDU (Sensor Data Unit)', board_id_var: 'SDU_BOARD_ID', ids: ['FL', 'FR', 'RL', 'RR'], path: path.join(home, 'mk11-sdu') },
+      mdu: { name: 'MDU (Master Data Unit)', path: path.join(home, 'mk11-mdu-code') },
+      tspmu: { name: 'TSPMU (Tire System Pressure Monitoring Unit)', board_id_var: 'TSPMU_BOARD_ID', ids: ['0', '1'], path: path.join(home, 'mk11-daq-TSPMU-CODE') }
     };
     
     try {
-      const home = os.homedir();
       const configPath = path.join(home, '.bfr_config.json');
       if (fs.existsSync(configPath)) {
         const data = await fs.promises.readFile(configPath, 'utf8');
         const parsed = JSON.parse(data);
+        
+        if (parsed.paths) {
+          for (const [key, p] of Object.entries(parsed.paths)) {
+            if (boards[key]) {
+              boards[key].path = p;
+            }
+          }
+        }
+        
         if (parsed.custom_boards) {
           for (const [key, info] of Object.entries(parsed.custom_boards)) {
             boards[key] = {
               name: info.name || key.toUpperCase(),
               board_id_var: info.board_id_var,
-              ids: info.ids || []
+              ids: info.ids || [],
+              path: parsed.paths?.[key] || ''
             };
           }
         }
