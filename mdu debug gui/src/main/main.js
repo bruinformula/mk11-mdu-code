@@ -168,6 +168,19 @@ function registerIpcHandlers() {
     return 'bfr';
   }
 
+  function getSpawnConfig(bfrPath, args) {
+    if (process.platform === 'win32') {
+      return {
+        command: 'python',
+        args: [bfrPath, ...args]
+      };
+    }
+    return {
+      command: bfrPath,
+      args: args
+    };
+  }
+
   ipcMain.handle('bfr:get-config', async () => {
     const bfrPath = locateBfr();
     const detected = bfrPath !== 'bfr' && fs.existsSync(bfrPath);
@@ -262,8 +275,10 @@ function registerIpcHandlers() {
     if (aliases) args.push('--alias', aliases);
     if (boardIdVar) args.push('--board-id-var', boardIdVar);
     
+    const spawnConf = getSpawnConfig(bfrPath, args);
+    
     return new Promise((resolve, reject) => {
-      const child = spawn(bfrPath, args, { cwd: dirPath, env: process.env });
+      const child = spawn(spawnConf.command, spawnConf.args, { cwd: dirPath, env: process.env });
       let stdout = '';
       let stderr = '';
       
@@ -305,10 +320,12 @@ function registerIpcHandlers() {
       args.push(boardId);
     }
     
-    broadcast('board:deploy-log', { type: 'stdout', text: `\x1B[1;36m>>> Executing: ${bfrPath} ${args.join(' ')}\x1B[0m\n` });
+    const spawnConf = getSpawnConfig(bfrPath, args);
+    const cmdStr = process.platform === 'win32' ? `python ${bfrPath} ${args.join(' ')}` : `${bfrPath} ${args.join(' ')}`;
+    broadcast('board:deploy-log', { type: 'stdout', text: `\x1B[1;36m>>> Executing: ${cmdStr}\x1B[0m\n` });
     
     return new Promise((resolve) => {
-      const child = spawn(bfrPath, args, { env: process.env });
+      const child = spawn(spawnConf.command, spawnConf.args, { env: process.env });
       activeDeployProcess = child;
       
       child.on('error', (err) => {
