@@ -186,6 +186,61 @@ function decodeTspmuTempBlocks(data) {
   return blocks;
 }
 
+function decodeImuSamples(data) {
+  const baseTimestamp = (data[0] | (data[1] << 8) | (data[2] << 16) | (data[3] << 24)) >>> 0;
+  const expectedPeriod = data[4];
+  const errorFlags = data[5] | (data[6] << 8);
+
+  function getSigned16(offset) {
+    const raw = data[offset] | (data[offset + 1] << 8);
+    return toSigned16(raw);
+  }
+
+  function getUnsigned16(offset) {
+    return data[offset] | (data[offset + 1] << 8);
+  }
+
+  const sample1 = {
+    index: 0,
+    accelX: getSigned16(7),
+    accelY: getSigned16(9),
+    accelZ: getSigned16(11),
+    accelA: getSigned16(13),
+    accelB: getSigned16(15),
+    accelC: getSigned16(17),
+    veloX: getSigned16(19),
+    veloY: getSigned16(21),
+    veloZ: getSigned16(23),
+    veloA: getSigned16(25),
+    veloB: getSigned16(27),
+    veloC: getSigned16(29),
+    jitter: getUnsigned16(31)
+  };
+
+  const sample2 = {
+    index: 1,
+    accelX: getSigned16(33),
+    accelY: getSigned16(35),
+    accelZ: getSigned16(37),
+    accelA: getSigned16(39),
+    accelB: getSigned16(41),
+    accelC: getSigned16(43),
+    veloX: getSigned16(45),
+    veloY: getSigned16(47),
+    veloZ: getSigned16(49),
+    veloA: getSigned16(51),
+    veloB: getSigned16(53),
+    veloC: getSigned16(55)
+  };
+
+  return {
+    baseTimestamp,
+    expectedPeriod,
+    errorFlags,
+    samples: [sample1, sample2]
+  };
+}
+
 function parseFast(match, rawLine) {
   const board = Number.parseInt(match[1], 10);
   const id = buildIdMeta(match[2]);
@@ -763,6 +818,51 @@ function parseMduLine(rawLine) {
             tspmuTemp4: tempBlocks[0]?.temp4 ?? 0,
             jitterMs: tempBlocks[0]?.jitterMs ?? 0,
             tempBlocks,
+          }
+        };
+      }
+    }
+
+    if (boardType === 1 && slcan.dataBytes.length >= 64) {
+      const data = slcan.dataBytes;
+      if (sensorNum === 3) {
+        const imuData = decodeImuSamples(data);
+        return {
+          ok: true,
+          source: 'board',
+          raw: cleaned,
+          idText: slcan.idText,
+          idType: slcan.idType,
+          identifier: slcan.identifier,
+          identifierHex: slcan.identifierHex,
+          dataLength: slcan.dataLength,
+          dataHex: slcan.dataHex,
+          dataBytes: slcan.dataBytes,
+          board: {
+            boardType,
+            boardId,
+            kind: 'fast',
+            identifier: slcan.identifier,
+            identifierHex: slcan.identifierHex,
+            idText: slcan.idText,
+            timeSinceLastMs: 50,
+            errorFlags: imuData.errorFlags,
+            baseTimestamp: imuData.baseTimestamp,
+            expectedPeriod: imuData.expectedPeriod,
+            samples: imuData.samples,
+            accelX: imuData.samples[1].accelX,
+            accelY: imuData.samples[1].accelY,
+            accelZ: imuData.samples[1].accelZ,
+            accelA: imuData.samples[1].accelA,
+            accelB: imuData.samples[1].accelB,
+            accelC: imuData.samples[1].accelC,
+            veloX: imuData.samples[1].veloX,
+            veloY: imuData.samples[1].veloY,
+            veloZ: imuData.samples[1].veloZ,
+            veloA: imuData.samples[1].veloA,
+            veloB: imuData.samples[1].veloB,
+            veloC: imuData.samples[1].veloC,
+            jitter: imuData.samples[0].jitter,
           }
         };
       }

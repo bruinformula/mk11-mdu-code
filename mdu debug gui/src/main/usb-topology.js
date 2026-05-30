@@ -102,12 +102,14 @@ async function scanUsbTopology() {
 
   const parsed = JSON.parse(stdout);
   const devices = collectUsbDevices(parsed.SPUSBDataType ?? []);
-  const hub = devices.find((device) => {
+  const hubs = devices.filter((device) => {
     return device.vendorId === TARGET_HUB_VID && device.productId === TARGET_HUB_PID;
-  }) ?? null;
+  });
+  const hub = hubs[0] ?? null;
 
   return {
     hub,
+    hubs,
     devices,
     scannedAt: new Date().toISOString(),
     error: null,

@@ -70,6 +70,7 @@ function registerIpcHandlers() {
   ipcMain.handle('app:get-initial-state', async () => monitor.getInitialState());
   ipcMain.handle('serial:list-ports', async () => monitor.listPorts());
   ipcMain.handle('serial:connect', async (_event, options) => monitor.connect(options));
+  ipcMain.handle('serial:set-preferred-port', async (_event, path) => monitor.setPreferredPort(path));
   ipcMain.handle('serial:disconnect', async () => monitor.disconnect());
   ipcMain.handle('serial:set-auto-connect', async (_event, enabled) => monitor.setAutoConnect(enabled));
   ipcMain.handle('session:clear', async () => monitor.clearSession());
@@ -189,7 +190,8 @@ function registerIpcHandlers() {
     const boards = {
       sdu: { name: 'SDU (Sensor Data Unit)', board_id_var: 'SDU_BOARD_ID', ids: ['FL', 'FR', 'RL', 'RR'], path: path.join(home, 'mk11-sdu') },
       mdu: { name: 'MDU (Master Data Unit)', path: path.join(home, 'mk11-mdu-code') },
-      tspmu: { name: 'TSPMU (Tire System Pressure Monitoring Unit)', board_id_var: 'TSPMU_BOARD_ID', ids: ['0', '1'], path: path.join(home, 'mk11-daq-TSPMU-CODE') }
+      tspmu: { name: 'TSPMU (Tire System Pressure Monitoring Unit)', board_id_var: 'TSPMU_BOARD_ID', ids: ['0', '1'], path: path.join(home, 'mk11-daq-TSPMU-CODE') },
+      smu: { name: 'SMU (Sensor Measurement Unit / IMU)', board_id_var: 'SMU_BOARD_ID', ids: ['GPS', 'Front IMU', 'Rear IMU'], path: path.join(home, 'mk11-smu') }
     };
     
     try {

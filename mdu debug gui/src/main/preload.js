@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('mduDebug', {
   getInitialState: () => ipcRenderer.invoke('app:get-initial-state'),
   listPorts: () => ipcRenderer.invoke('serial:list-ports'),
   connect: (options) => ipcRenderer.invoke('serial:connect', options),
+  setPreferredPort: (path) => ipcRenderer.invoke('serial:set-preferred-port', path),
   disconnect: () => ipcRenderer.invoke('serial:disconnect'),
   setAutoConnect: (enabled) => ipcRenderer.invoke('serial:set-auto-connect', enabled),
   clearSession: () => ipcRenderer.invoke('session:clear'),

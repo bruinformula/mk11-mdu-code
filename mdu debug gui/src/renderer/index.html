@@ -184,6 +184,9 @@
           <button class="board-tab-button" data-filter-type="2" data-filter-id="3" type="button" role="tab" aria-selected="false">SDU 3 (RR)</button>
           <button class="board-tab-button" data-filter-type="6" data-filter-id="0" type="button" role="tab" aria-selected="false">TSPMU 0</button>
           <button class="board-tab-button" data-filter-type="6" data-filter-id="1" type="button" role="tab" aria-selected="false">TSPMU 1</button>
+          <button class="board-tab-button" data-filter-type="1" data-filter-id="0" type="button" role="tab" aria-selected="false">SMU 0 (GPS)</button>
+          <button class="board-tab-button" data-filter-type="1" data-filter-id="1" type="button" role="tab" aria-selected="false">SMU 1 (Front IMU)</button>
+          <button class="board-tab-button" data-filter-type="1" data-filter-id="2" type="button" role="tab" aria-selected="false">SMU 2 (Rear IMU)</button>
         </div>
 
         <div id="boards-grid" class="boards-grid">
@@ -246,6 +249,7 @@
               <option value="board-slow">Board slow</option>
               <option value="tire">Tire frames</option>
               <option value="brake">Brake frames</option>
+              <option value="imu">IMU frames</option>
               <option value="slcan">SLCAN</option>
             </select>
           </label>
@@ -270,6 +274,12 @@
               <option value="tspmuTemp2">TSPMU Temp 2</option>
               <option value="tspmuTemp3">TSPMU Temp 3</option>
               <option value="tspmuTemp4">TSPMU Temp 4</option>
+              <option value="accelX">Accel X</option>
+              <option value="accelY">Accel Y</option>
+              <option value="accelZ">Accel Z</option>
+              <option value="veloX">Velo X</option>
+              <option value="veloY">Velo Y</option>
+              <option value="veloZ">Velo Z</option>
             </select>
           </label>
           <label class="field-group field-compact">
@@ -336,6 +346,9 @@
               <option value="2-3">SDU 3 (RR)</option>
               <option value="6-0">TSPMU 0</option>
               <option value="6-1">TSPMU 1</option>
+              <option value="1-0">SMU 0 (GPS)</option>
+              <option value="1-1">SMU 1 (Front IMU)</option>
+              <option value="1-2">SMU 2 (Rear IMU)</option>
             </select>
           </label>
           <button id="graphs-clear-button" class="ghost-button" type="button">Clear graph history</button>

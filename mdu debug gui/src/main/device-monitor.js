@@ -377,6 +377,7 @@ class DeviceMonitor extends EventEmitter {
     super();
     this.availablePorts = [];
     this.port = null;
+    this.activePorts = new Map();
     this.connectedPortInfo = null;
     this.connecting = false;
     this.pendingText = '';
@@ -389,6 +390,7 @@ class DeviceMonitor extends EventEmitter {
     this.boardStates = new BoardStateTracker();
     this.usbTopology = {
       hub: null,
+      hubs: [],
       devices: [],
       scannedAt: null,
       error: null,
@@ -455,8 +457,9 @@ class DeviceMonitor extends EventEmitter {
   }
 
   getConnectionState() {
+    const connected = this.activePorts.size > 0 && Array.from(this.activePorts.values()).some((p) => p.isOpen);
     return {
-      connected: Boolean(this.port && this.port.isOpen),
+      connected,
       connecting: this.connecting,
       autoConnect: this.autoConnect,
       preferredPortPath: this.preferredPortPath,
@@ -497,7 +500,7 @@ class DeviceMonitor extends EventEmitter {
   }
 
   async scanUsbTopology() {
-    const previousHubKey = JSON.stringify(this.usbTopology.hub);
+    const previousHubsKey = JSON.stringify(this.usbTopology.hubs || (this.usbTopology.hub ? [this.usbTopology.hub] : []));
     const previousDetected = Boolean(this.usbTopology.hub);
 
     try {
@@ -510,7 +513,8 @@ class DeviceMonitor extends EventEmitter {
       };
     }
 
-    if (previousHubKey !== JSON.stringify(this.usbTopology.hub)) {
+    const currentHubsKey = JSON.stringify(this.usbTopology.hubs || (this.usbTopology.hub ? [this.usbTopology.hub] : []));
+    if (previousHubsKey !== currentHubsKey) {
       this.emit('connection', this.getConnectionState());
       this.emit('diagnostics', this.getDiagnosticsSnapshot());
     }
@@ -568,17 +572,28 @@ class DeviceMonitor extends EventEmitter {
 
   pickAutoConnectPort() {
     if (this.preferredPortPath) {
+      if (this.preferredPortPath === 'all') {
+        return { path: 'all', matchesTarget: true };
+      }
       const preferred = this.availablePorts.find((entry) => entry.path === this.preferredPortPath);
       if (preferred) {
         return preferred;
       }
     }
 
-    const hubPrefix = locationPrefix(this.usbTopology.hub?.locationId);
-    if (hubPrefix) {
-      const hubPort = this.availablePorts.find((entry) => locationPrefix(entry.locationId) === hubPrefix);
-      if (hubPort) {
-        return hubPort;
+    const targetPorts = this.availablePorts.filter((entry) => entry.matchesTarget);
+    if (targetPorts.length > 1) {
+      return { path: 'all', matchesTarget: true };
+    }
+
+    const hubs = this.usbTopology.hubs || (this.usbTopology.hub ? [this.usbTopology.hub] : []);
+    for (const hub of hubs) {
+      const hubPrefix = locationPrefix(hub.locationId);
+      if (hubPrefix) {
+        const hubPort = this.availablePorts.find((entry) => locationPrefix(entry.locationId) === hubPrefix);
+        if (hubPort) {
+          return hubPort;
+        }
       }
     }
 
@@ -586,6 +601,25 @@ class DeviceMonitor extends EventEmitter {
       this.availablePorts.find((entry) => entry.matchesTarget) ??
       (this.availablePorts.length === 1 ? this.availablePorts[0] : null)
     );
+  }
+
+  async setPreferredPort(path) {
+    this.preferredPortPath = path;
+    this.emit('connection', this.getConnectionState());
+    return this.getConnectionState();
+  }
+
+  checkAllPortsConnected(paths) {
+    if (this.activePorts.size !== paths.length) {
+      return false;
+    }
+    for (const path of paths) {
+      const p = this.activePorts.get(path);
+      if (!p || !p.isOpen) {
+        return false;
+      }
+    }
+    return true;
   }
 
   async connect(options = {}) {
@@ -600,8 +634,18 @@ class DeviceMonitor extends EventEmitter {
       throw new Error('No USB CDC endpoint selected.');
     }
 
+    const pathsToConnect = requestedPath === 'all'
+      ? this.availablePorts.filter(p => p.matchesTarget).map(p => p.path)
+      : [requestedPath];
+
+    if (pathsToConnect.length === 0) {
+      throw new Error('No STM32 USB CDC ports available to connect to.');
+    }
+
     if (this.port && this.port.isOpen && this.connectedPortInfo?.path === requestedPath) {
-      return this.getConnectionState();
+      if (requestedPath !== 'all' || this.checkAllPortsConnected(pathsToConnect)) {
+        return this.getConnectionState();
+      }
     }
 
     this.autoConnectHold = false;
@@ -611,76 +655,161 @@ class DeviceMonitor extends EventEmitter {
     this.baudRate = Number(options.baudRate) || this.baudRate || DEFAULT_BAUD_RATE;
     this.emit('connection', this.getConnectionState());
 
-    if (this.port) {
+    if (this.activePorts.size > 0 || this.port) {
       await this.disconnect('switch');
       this.connecting = true;
       this.emit('connection', this.getConnectionState());
     }
 
-    const serialPort = new SerialPort({
-      path: requestedPath,
-      baudRate: this.baudRate,
-      autoOpen: false,
-    });
+    if (requestedPath === 'all') {
+      const targetPorts = this.availablePorts.filter(p => p.matchesTarget);
+      this.connectedPortInfo = {
+        path: 'all',
+        displayName: `All STM32 USB CDC Ports (${targetPorts.length} connected)`,
+        matchesTarget: true,
+        mirrorEligible: true,
+      };
+    } else {
+      this.connectedPortInfo =
+        this.availablePorts.find((entry) => entry.path === requestedPath) ??
+        normalizePort({ path: requestedPath });
+    }
 
-    serialPort.on('data', (chunk) => this.handleData(chunk));
-    serialPort.on('error', (error) => {
-      this.lastError = error.message;
-      this.handleRuntime('error', 'USB CDC mirror error.', {
-        path: requestedPath,
-        error: error.message,
-      });
-      this.emit('connection', this.getConnectionState());
-    });
-    serialPort.on('close', () => {
-      const closedPath = this.connectedPortInfo?.path ?? requestedPath;
-      const wasOpen = Boolean(this.connectedPortInfo);
-
-      this.port = null;
-      this.connectedPortInfo = null;
-      this.connecting = false;
-      this.pendingText = '';
-      this.stats.setConnected(false);
-      this.emit('connection', this.getConnectionState());
-
-      if (wasOpen) {
-        this.handleRuntime('warning', 'USB CDC endpoint disconnected.', { path: closedPath });
-        this.logWriter.write({
-          type: 'runtime',
-          level: 'warning',
-          timestamp: new Date().toISOString(),
-          message: 'USB CDC endpoint disconnected.',
-          path: closedPath,
+    const openPromises = pathsToConnect.map((path) => {
+      return new Promise((resolve, reject) => {
+        const serialPort = new SerialPort({
+          path,
+          baudRate: this.baudRate,
+          autoOpen: false,
         });
-      }
+
+        let pendingText = '';
+        serialPort.on('data', (chunk) => {
+          const now = Date.now();
+          this.stats.recordChunk(chunk.length, now);
+          pendingText += chunk.toString('utf8');
+
+          const parts = pendingText.split(/\r\n|\n|\r/g);
+          pendingText = parts.pop() ?? '';
+
+          for (const part of parts) {
+            const parsedFrame = parseMduLine(part);
+            if (!parsedFrame.raw) {
+              continue;
+            }
+
+            this.stats.recordLine(parsedFrame, now);
+            if (parsedFrame.ok && parsedFrame.source === 'board' && parsedFrame.board) {
+              this.boardStates.record(parsedFrame.board, now);
+            }
+
+            const event = {
+              timestamp: new Date(now).toISOString(),
+              raw: parsedFrame.raw,
+              ok: parsedFrame.ok,
+              reason: parsedFrame.ok ? null : parsedFrame.reason,
+              source: parsedFrame.ok ? parsedFrame.source : null,
+              board: parsedFrame.ok && parsedFrame.source === 'board' ? parsedFrame.board : null,
+              frame: parsedFrame.ok
+                ? {
+                    idText: parsedFrame.idText,
+                    idType: parsedFrame.idType,
+                    identifierHex: parsedFrame.identifierHex,
+                    dataLength: parsedFrame.dataLength,
+                    dataHex: parsedFrame.dataHex,
+                    dataBytes: parsedFrame.dataBytes,
+                  }
+                : null,
+            };
+
+            this.emit('frame', event);
+            this.logWriter.write({
+              type: 'frame',
+              ...event,
+            });
+          }
+        });
+
+        serialPort.on('error', (error) => {
+          this.handleRuntime('error', `USB CDC mirror error on ${path}.`, {
+            path,
+            error: error.message,
+          });
+          if (requestedPath !== 'all') {
+            this.lastError = error.message;
+            this.emit('connection', this.getConnectionState());
+          }
+        });
+
+        serialPort.on('close', () => {
+          this.activePorts.delete(path);
+          this.handleRuntime('warning', `USB CDC endpoint disconnected: ${path}`, { path });
+          this.logWriter.write({
+            type: 'runtime',
+            level: 'warning',
+            timestamp: new Date().toISOString(),
+            message: `USB CDC endpoint disconnected: ${path}`,
+            path,
+          });
+
+          if (this.activePorts.size === 0) {
+            this.port = null;
+            this.connectedPortInfo = null;
+            this.connecting = false;
+            this.stats.setConnected(false);
+          }
+          this.emit('connection', this.getConnectionState());
+        });
+
+        serialPort.open((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          this.activePorts.set(path, serialPort);
+          resolve(serialPort);
+        });
+      });
     });
 
-    await new Promise((resolve, reject) => {
-      serialPort.open((error) => {
-        if (error) {
-          reject(error);
-          return;
+    try {
+      if (requestedPath === 'all') {
+        const results = await Promise.allSettled(openPromises);
+        const openedCount = results.filter(r => r.status === 'fulfilled').length;
+        if (openedCount === 0) {
+          const errors = results.map(r => r.reason?.message).filter(Boolean).join('; ');
+          throw new Error(`Failed to open any ports: ${errors}`);
         }
-
-        resolve();
-      });
-    }).catch((error) => {
+      } else {
+        await openPromises[0];
+      }
+    } catch (error) {
       this.connecting = false;
       this.lastError = error.message;
       this.emit('connection', this.getConnectionState());
       throw error;
-    });
+    }
 
-    this.port = serialPort;
-    this.connectedPortInfo =
-      this.availablePorts.find((entry) => entry.path === requestedPath) ??
-      normalizePort({ path: requestedPath });
+    this.port = {
+      isOpen: true,
+      close: (callback) => {
+        const closePromises = Array.from(this.activePorts.values()).map(p => {
+          return new Promise(res => p.close(() => res()));
+        });
+        Promise.all(closePromises).then(() => {
+          this.activePorts.clear();
+          if (callback) callback();
+        });
+      }
+    };
+
     this.connecting = false;
     this.stats.setConnected(true);
     this.emit('connection', this.getConnectionState());
-    this.handleRuntime('info', 'Mirroring USB CDC endpoint.', {
-      path: requestedPath,
-      mirrorPath: formatMirrorPath(this.connectedPortInfo),
+
+    const pathsConnectedStr = Array.from(this.activePorts.keys()).join(', ');
+    this.handleRuntime('info', `Mirroring USB CDC endpoints: ${pathsConnectedStr}`, {
+      paths: Array.from(this.activePorts.keys()),
       baudRate: this.baudRate,
       source: options.source ?? 'manual',
     });
@@ -688,9 +817,8 @@ class DeviceMonitor extends EventEmitter {
       type: 'runtime',
       level: 'info',
       timestamp: new Date().toISOString(),
-      message: 'Mirroring USB CDC endpoint.',
-      path: requestedPath,
-      mirrorPath: formatMirrorPath(this.connectedPortInfo),
+      message: `Mirroring USB CDC endpoints: ${pathsConnectedStr}`,
+      paths: Array.from(this.activePorts.keys()),
       baudRate: this.baudRate,
       source: options.source ?? 'manual',
     });
@@ -703,7 +831,7 @@ class DeviceMonitor extends EventEmitter {
       this.autoConnectHold = true;
     }
 
-    if (!this.port) {
+    if (this.activePorts.size === 0 && !this.port) {
       this.connecting = false;
       this.connectedPortInfo = null;
       this.stats.setConnected(false);
@@ -711,21 +839,23 @@ class DeviceMonitor extends EventEmitter {
       return this.getConnectionState();
     }
 
-    const serialPort = this.port;
-    if (!serialPort.isOpen) {
-      this.port = null;
-      this.connectedPortInfo = null;
-      this.connecting = false;
-      this.stats.setConnected(false);
-      this.emit('connection', this.getConnectionState());
-      return this.getConnectionState();
-    }
-
-    await new Promise((resolve) => {
-      serialPort.close(() => {
-        resolve();
+    this.connecting = false;
+    const closePromises = Array.from(this.activePorts.values()).map((serialPort) => {
+      return new Promise((resolve) => {
+        if (serialPort.isOpen) {
+          serialPort.close(() => resolve());
+        } else {
+          resolve();
+        }
       });
     });
+
+    await Promise.all(closePromises);
+    this.activePorts.clear();
+    this.port = null;
+    this.connectedPortInfo = null;
+    this.stats.setConnected(false);
+    this.emit('connection', this.getConnectionState());
 
     return this.getConnectionState();
   }
