@@ -1,21 +1,21 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
-  * @file           : usbd_conf.h
-  * @version        : v3.0_Cube
-  * @brief          : Header for usbd_conf.c file.
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2026 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
+ ******************************************************************************
+ * @file           : usbd_conf.h
+ * @version        : v3.0_Cube
+ * @brief          : Header for usbd_conf.c file.
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2026 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
+ */
 /* USER CODE END Header */
 
 /* Define to prevent recursive inclusion -------------------------------------*/
@@ -54,6 +54,43 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
+  typedef struct
+  {
+    uint32_t setup_stage_count;
+    uint32_t data_out_stage_count;
+    uint32_t data_in_stage_count;
+    uint32_t reset_count;
+    uint32_t suspend_count;
+    uint32_t resume_count;
+    uint32_t connect_count;
+    uint32_t disconnect_count;
+    uint32_t last_event_tick;
+    uint32_t ll_init_count;
+    uint32_t ll_init_error_count;
+    uint32_t ll_start_count;
+    uint32_t ll_start_error_count;
+    uint32_t ll_open_ep_count;
+    uint32_t irq_count;
+    uint32_t ctr_irq_flag_count;
+    uint32_t reset_irq_flag_count;
+    uint32_t susp_irq_flag_count;
+    uint32_t esof_irq_flag_count;
+    uint32_t wkup_irq_flag_count;
+    uint32_t err_irq_flag_count;
+    uint32_t pmaovr_irq_flag_count;
+    uint32_t last_istr_snapshot;
+    uint32_t dppu_assert_count;
+    uint32_t last_bcdr_snapshot;
+    uint8_t last_setup_bm_request_type;
+    uint8_t last_setup_b_request;
+    uint16_t last_setup_w_value;
+    uint16_t last_setup_w_index;
+    uint16_t last_setup_w_length;
+    uint32_t tx_drop_count;
+    uint32_t configured_seen_count;
+  } USB_Diag_t;
+  extern volatile USB_Diag_t usbdiag;
+
 /* USER CODE END PV */
 /**
   * @}
@@ -140,42 +177,6 @@
   * @{
   */
 
-typedef struct
-{
-  uint32_t setup_stage_count;
-  uint32_t data_out_stage_count;
-  uint32_t data_in_stage_count;
-  uint32_t reset_count;
-  uint32_t suspend_count;
-  uint32_t resume_count;
-  uint32_t connect_count;
-  uint32_t disconnect_count;
-  uint32_t last_event_tick;
-  uint32_t ll_init_count;
-  uint32_t ll_init_error_count;
-  uint32_t ll_start_count;
-  uint32_t ll_start_error_count;
-  uint32_t ll_open_ep_count;
-  uint32_t irq_count;
-  uint32_t ctr_irq_flag_count;
-  uint32_t reset_irq_flag_count;
-  uint32_t susp_irq_flag_count;
-  uint32_t esof_irq_flag_count;
-  uint32_t wkup_irq_flag_count;
-  uint32_t err_irq_flag_count;
-  uint32_t pmaovr_irq_flag_count;
-  uint32_t last_istr_snapshot;
-  uint32_t dppu_assert_count;
-  uint32_t last_bcdr_snapshot;
-  uint8_t last_setup_bm_request_type;
-  uint8_t last_setup_b_request;
-  uint16_t last_setup_w_value;
-  uint16_t last_setup_w_index;
-  uint16_t last_setup_w_length;
-  uint32_t tx_drop_count;
-  uint32_t configured_seen_count;
-} USB_Diag_t;
-
 /**
   * @}
   */
@@ -186,8 +187,6 @@ typedef struct
   */
 
 /* Exported functions -------------------------------------------------------*/
-extern volatile USB_Diag_t usbdiag;
-
 void *USBD_static_malloc(uint32_t size);
 void USBD_static_free(void *p);
 
