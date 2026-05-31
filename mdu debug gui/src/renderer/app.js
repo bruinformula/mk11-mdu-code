@@ -82,6 +82,8 @@ const state = {
     dragging: false,
     hover: { plotId: null, fraction: null },
     yRanges: new Map(),
+    veloUnit: 'mps',
+    accelUnit: 'g',
   },
 };
 
@@ -191,6 +193,8 @@ const elements = {
   },
   graphsWindowSelect: document.getElementById('graphs-window-select'),
   graphsBoardSelect: document.getElementById('graphs-board-select'),
+  graphsVeloUnitSelect: document.getElementById('graphs-velo-unit-select'),
+  graphsAccelUnitSelect: document.getElementById('graphs-accel-unit-select'),
   graphsClearButton: document.getElementById('graphs-clear-button'),
   graphsStatusLine: document.getElementById('graphs-status-line'),
   favoritesGrid: document.getElementById('favorites-grid'),
@@ -241,6 +245,40 @@ function applyTheme(theme) {
   if (elements.themeToggleLabel) {
     elements.themeToggleLabel.textContent = next === 'dark' ? 'Dark' : 'Light';
   }
+}
+
+function getVelocityVal(lsb, unit) {
+  if (lsb == null) return 0;
+  const mps = lsb / 100.0;
+  if (unit === 'mph') return mps * 2.23694;
+  if (unit === 'kmh') return mps * 3.6;
+  return mps;
+}
+
+function getVelocityUnitLabel(unit) {
+  if (unit === 'mph') return 'mph';
+  if (unit === 'kmh') return 'km/h';
+  return 'm/s';
+}
+
+function getAccelVal(mg, unit) {
+  if (mg == null) return 0;
+  const gVal = mg / 1000.0;
+  if (unit === 'mps2') return gVal * 9.80665;
+  return gVal;
+}
+
+function getAccelUnitLabel(unit) {
+  if (unit === 'mps2') return 'm/s²';
+  return 'g';
+}
+
+function formatAccelTuple(x, y, z, unit) {
+  return `${getAccelVal(x, unit).toFixed(2)} / ${getAccelVal(y, unit).toFixed(2)} / ${getAccelVal(z, unit).toFixed(2)} ${getAccelUnitLabel(unit)}`;
+}
+
+function formatVeloTuple(x, y, z, unit) {
+  return `${getVelocityVal(x, unit).toFixed(2)} / ${getVelocityVal(y, unit).toFixed(2)} / ${getVelocityVal(z, unit).toFixed(2)} ${getVelocityUnitLabel(unit)}`;
 }
 
 function escapeHtml(value) {
@@ -941,84 +979,153 @@ function renderImuBlock(fast) {
     return '<p class="board-empty">Waiting for IMU frame...</p>';
   }
 
-  const sample = fast.samples?.[0] || { accelX: 0, accelY: 0, accelZ: 0 };
-  const gX = (sample.accelY || 0) / 1000.0;
-  const gY = (sample.accelX || 0) / 1000.0;
-  const gMag = Math.sqrt(gX * gX + gY * gY);
-
+  // Find all SMU boards in the system to overlay their dots on the G-force meter
+  const allSmuBoards = (state.diagnostics?.boards ?? []).filter(b => b.boardType === 1);
   const maxG = 2.0;
-  const cx = 50 + Math.max(-1, Math.min(1, gX / maxG)) * 50;
-  const cy = 50 - Math.max(-1, Math.min(1, gY / maxG)) * 50;
+
+  const dots = [];
+  const legends = [];
+
+  // Sort them to have consistent order: COG (0), Front (1), Rear (2)
+  const sortedSmuBoards = allSmuBoards.sort((a, b) => a.boardId - b.boardId);
+
+  for (const b of sortedSmuBoards) {
+    const samples = b.fast?.samples;
+    const sample = samples?.[0] || { accelX: 0, accelY: 0, accelZ: 0 };
+    const gX = (sample.accelY || 0) / 1000.0;
+    const gY = (sample.accelX || 0) / 1000.0;
+    const gMag = Math.sqrt(gX * gX + gY * gY);
+    const cx = 50 + Math.max(-1, Math.min(1, gX / maxG)) * 50;
+    const cy = 50 - Math.max(-1, Math.min(1, gY / maxG)) * 50;
+
+    let colorVar = 'var(--accent)';
+    let label = `SMU ${b.boardId}`;
+    if (b.boardId === 0) {
+      colorVar = 'var(--teal)';
+      label = 'COG';
+    } else if (b.boardId === 1) {
+      colorVar = 'var(--success)';
+      label = 'Front';
+    } else if (b.boardId === 2) {
+      colorVar = 'var(--warning)';
+      label = 'Rear';
+    }
+
+    dots.push(`
+      <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4.5" fill="${colorVar}" stroke="#ffffff" stroke-width="0.75" stroke-opacity="0.6" style="filter: drop-shadow(0 0 4px ${colorVar}); transition: cx 60ms ease, cy 60ms ease;"></circle>
+    `);
+
+    const convertedG = state.graphs.accelUnit === 'mps2' ? gMag * 9.80665 : gMag;
+    const accelUnitLabel = getAccelUnitLabel(state.graphs.accelUnit);
+
+    legends.push(`
+      <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+        <div style="display: flex; align-items: center; gap: 5px;">
+          <div style="width: 7px; height: 7px; border-radius: 50%; background: ${colorVar}; box-shadow: 0 0 3px ${colorVar};"></div>
+          <span style="color: var(--ink-soft); font-weight: 500;">${label}</span>
+        </div>
+        <span style="font-family: 'SF Mono', Menlo, monospace; font-weight: 600; color: var(--ink);">${convertedG.toFixed(2)} ${accelUnitLabel}</span>
+      </div>
+    `);
+  }
+
+  if (dots.length === 0) {
+    const sample = fast.samples?.[0] || { accelX: 0, accelY: 0, accelZ: 0 };
+    const gX = (sample.accelY || 0) / 1000.0;
+    const gY = (sample.accelX || 0) / 1000.0;
+    const gMag = Math.sqrt(gX * gX + gY * gY);
+    const cx = 50 + Math.max(-1, Math.min(1, gX / maxG)) * 50;
+    const cy = 50 - Math.max(-1, Math.min(1, gY / maxG)) * 50;
+    dots.push(`
+      <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4.5" fill="var(--accent)" stroke="#ffffff" stroke-width="0.75" stroke-opacity="0.6" style="filter: drop-shadow(0 0 4px var(--accent)); transition: cx 60ms ease, cy 60ms ease;"></circle>
+    `);
+    
+    const convertedG = state.graphs.accelUnit === 'mps2' ? gMag * 9.80665 : gMag;
+    const accelUnitLabel = getAccelUnitLabel(state.graphs.accelUnit);
+
+    legends.push(`
+      <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+        <div style="display: flex; align-items: center; gap: 5px;">
+          <div style="width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 3px var(--accent);"></div>
+          <span style="color: var(--ink-soft); font-weight: 500;">SMU ${fast.boardId ?? 0}</span>
+        </div>
+        <span style="font-family: 'SF Mono', Menlo, monospace; font-weight: 600; color: var(--ink);">${convertedG.toFixed(2)} ${accelUnitLabel}</span>
+      </div>
+    `);
+  }
 
   return `
     <p class="board-meta">${escapeHtml(fast.idText)} · Δt ${fast.timeSinceLastMs} ms · ${escapeHtml(formatBoardAge(fast.ageMs))}</p>
     <div class="imu-meta-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; font-size: 0.85rem; color: var(--ink-soft);">
       <div><strong>Timestamp:</strong> ${fast.baseTimestamp} µs</div>
       <div><strong>Period:</strong> ${fast.expectedPeriod} µs</div>
-      <div><strong>Flags:</strong> 0x${fast.errorFlags?.toString(16).toUpperCase()}</div>
+      <div><strong>Flags:</strong> 0x${((fast.errorFlags ?? 0) & 0x7F).toString(16).toUpperCase()}</div>
     </div>
     
     <div class="imu-layout" style="display: flex; gap: 16px; align-items: stretch;">
       <!-- G-Force Meter Container -->
-      <div class="g-meter-container" style="flex: 0 0 120px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.18); padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
-        <span style="font-size: 0.62rem; font-weight: 700; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 6px; letter-spacing: 0.04em;">G-Force (2.0G)</span>
-        <svg class="g-meter-svg" width="90" height="90" viewBox="0 0 100 100" style="display: block; overflow: visible;">
+      <div class="g-meter-container" style="flex: 0 0 120px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: var(--surface-strong); padding: 8px; border-radius: var(--radius-sm); border: 1px solid var(--line);">
+        <span style="font-size: 0.58rem; font-weight: 700; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 4px; letter-spacing: 0.04em;">G-Force (${state.graphs.accelUnit === 'mps2' ? '19.6 m/s²' : '2.0G'})</span>
+        <svg class="g-meter-svg" width="76" height="76" viewBox="0 0 100 100" style="display: block; overflow: visible;">
           <!-- Circular borders representing G zones -->
-          <circle cx="50" cy="50" r="50" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1"></circle>
-          <circle cx="50" cy="50" r="25" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1" stroke-dasharray="2,2"></circle>
-          <circle cx="50" cy="50" r="50" fill="none" stroke="var(--border)" stroke-width="1.5"></circle>
+          <circle cx="50" cy="50" r="50" fill="none" stroke="var(--ink-soft)" stroke-opacity="0.35" stroke-width="1.5"></circle>
+          <circle cx="50" cy="50" r="25" fill="none" stroke="var(--ink-soft)" stroke-opacity="0.3" stroke-width="1" stroke-dasharray="2,2"></circle>
           
           <!-- Crosshair axes -->
-          <line x1="0" y1="50" x2="100" y2="50" stroke="rgba(255,255,255,0.08)" stroke-width="1"></line>
-          <line x1="50" y1="0" x2="50" y2="100" stroke="rgba(255,255,255,0.08)" stroke-width="1"></line>
+          <line x1="0" y1="50" x2="100" y2="50" stroke="var(--ink-soft)" stroke-opacity="0.35" stroke-width="1"></line>
+          <line x1="50" y1="0" x2="50" y2="100" stroke="var(--ink-soft)" stroke-opacity="0.35" stroke-width="1"></line>
           
           <!-- Labels for directions -->
-          <text x="50" y="8" text-anchor="middle" fill="rgba(255,255,255,0.3)" font-size="7" font-family="sans-serif">F</text>
-          <text x="50" y="98" text-anchor="middle" fill="rgba(255,255,255,0.3)" font-size="7" font-family="sans-serif">B</text>
-          <text x="6" y="53" text-anchor="start" fill="rgba(255,255,255,0.3)" font-size="7" font-family="sans-serif">L</text>
-          <text x="94" y="53" text-anchor="end" fill="rgba(255,255,255,0.3)" font-size="7" font-family="sans-serif">R</text>
+          <text x="50" y="8" text-anchor="middle" fill="var(--ink-soft)" fill-opacity="0.85" font-weight="600" font-size="8" font-family="sans-serif">F</text>
+          <text x="50" y="98" text-anchor="middle" fill="var(--ink-soft)" fill-opacity="0.85" font-weight="600" font-size="8" font-family="sans-serif">B</text>
+          <text x="6" y="53" text-anchor="start" fill="var(--ink-soft)" fill-opacity="0.85" font-weight="600" font-size="8" font-family="sans-serif">L</text>
+          <text x="94" y="53" text-anchor="end" fill="var(--ink-soft)" fill-opacity="0.85" font-weight="600" font-size="8" font-family="sans-serif">R</text>
 
-          <!-- Current G position indicator dot -->
-          <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4" fill="#f7a35c" style="filter: drop-shadow(0 0 4px #f7a35c); transition: cx 60ms ease, cy 60ms ease;"></circle>
+          <!-- Current G position indicator dots -->
+          ${dots.join('\n')}
         </svg>
-        <span style="font-family: 'SF Mono', Menlo, monospace; font-size: 0.75rem; font-weight: 600; color: var(--ink); margin-top: 8px;">${gMag.toFixed(2)} G</span>
+        
+        <!-- Legend list -->
+        <div style="display: flex; flex-direction: column; gap: 4px; width: 100%; margin-top: 8px; font-size: 0.65rem;">
+          ${legends.join('\n')}
+        </div>
       </div>
 
       <!-- Right side: Samples -->
       <div class="imu-samples" style="flex: 1; display: flex; flex-direction: column; gap: 8px;">
-        <div class="imu-sample-block" style="border: 1px solid var(--border); padding: 6px 8px; border-radius: var(--radius-sm); background: var(--bg-soft);">
+        <div class="imu-sample-block" style="border: 1px solid var(--line); padding: 6px 8px; border-radius: var(--radius-sm); background: var(--board-col-bg);">
           <strong style="font-size: 0.8rem; color: var(--accent); display: block; margin-bottom: 2px;">Sample 1 (Jitter: ${fast.samples?.[0]?.jitter ?? 0} µs)</strong>
-          <dl class="board-readings" style="display: grid; grid-template-columns: repeat(6, 1fr); font-size: 0.78rem; margin: 0; gap: 2px;">
-            <dt>acc X</dt><dd>${fast.samples?.[0]?.accelX ?? 0}</dd>
-            <dt>acc Y</dt><dd>${fast.samples?.[0]?.accelY ?? 0}</dd>
-            <dt>acc Z</dt><dd>${fast.samples?.[0]?.accelZ ?? 0}</dd>
-            <dt>acc A</dt><dd>${fast.samples?.[0]?.accelA ?? 0}</dd>
-            <dt>acc B</dt><dd>${fast.samples?.[0]?.accelB ?? 0}</dd>
-            <dt>acc C</dt><dd>${fast.samples?.[0]?.accelC ?? 0}</dd>
-            <dt>vel X</dt><dd>${fast.samples?.[0]?.veloX ?? 0}</dd>
-            <dt>vel Y</dt><dd>${fast.samples?.[0]?.veloY ?? 0}</dd>
-            <dt>vel Z</dt><dd>${fast.samples?.[0]?.veloZ ?? 0}</dd>
-            <dt>vel A</dt><dd>${fast.samples?.[0]?.veloA ?? 0}</dd>
-            <dt>vel B</dt><dd>${fast.samples?.[0]?.veloB ?? 0}</dd>
-            <dt>vel C</dt><dd>${fast.samples?.[0]?.veloC ?? 0}</dd>
+          <dl class="board-readings" style="display: grid; grid-template-columns: repeat(2, max-content 1fr); font-size: 0.78rem; margin: 0; gap: 2px 10px; white-space: nowrap;">
+            <dt>acc X</dt><dd>${getAccelVal(fast.samples?.[0]?.accelX, state.graphs.accelUnit).toFixed(3)} ${getAccelUnitLabel(state.graphs.accelUnit)}</dd>
+            <dt>acc Y</dt><dd>${getAccelVal(fast.samples?.[0]?.accelY, state.graphs.accelUnit).toFixed(3)} ${getAccelUnitLabel(state.graphs.accelUnit)}</dd>
+            <dt>acc Z</dt><dd>${getAccelVal(fast.samples?.[0]?.accelZ, state.graphs.accelUnit).toFixed(3)} ${getAccelUnitLabel(state.graphs.accelUnit)}</dd>
+            <dt>acc A</dt><dd>${getAccelVal(fast.samples?.[0]?.accelA, state.graphs.accelUnit).toFixed(3)} ${getAccelUnitLabel(state.graphs.accelUnit)}</dd>
+            <dt>acc B</dt><dd>${getAccelVal(fast.samples?.[0]?.accelB, state.graphs.accelUnit).toFixed(3)} ${getAccelUnitLabel(state.graphs.accelUnit)}</dd>
+            <dt>acc C</dt><dd>${getAccelVal(fast.samples?.[0]?.accelC, state.graphs.accelUnit).toFixed(3)} ${getAccelUnitLabel(state.graphs.accelUnit)}</dd>
+            <dt>vel X</dt><dd>${getVelocityVal(fast.samples?.[0]?.veloX, state.graphs.veloUnit).toFixed(2)} ${getVelocityUnitLabel(state.graphs.veloUnit)}</dd>
+            <dt>vel Y</dt><dd>${getVelocityVal(fast.samples?.[0]?.veloY, state.graphs.veloUnit).toFixed(2)} ${getVelocityUnitLabel(state.graphs.veloUnit)}</dd>
+            <dt>vel Z</dt><dd>${getVelocityVal(fast.samples?.[0]?.veloZ, state.graphs.veloUnit).toFixed(2)} ${getVelocityUnitLabel(state.graphs.veloUnit)}</dd>
+            <dt>vel A</dt><dd>${getVelocityVal(fast.samples?.[0]?.veloA, state.graphs.veloUnit).toFixed(2)} ${getVelocityUnitLabel(state.graphs.veloUnit)}</dd>
+            <dt>vel B</dt><dd>${getVelocityVal(fast.samples?.[0]?.veloB, state.graphs.veloUnit).toFixed(2)} ${getVelocityUnitLabel(state.graphs.veloUnit)}</dd>
+            <dt>vel C</dt><dd>${getVelocityVal(fast.samples?.[0]?.veloC, state.graphs.veloUnit).toFixed(2)} ${getVelocityUnitLabel(state.graphs.veloUnit)}</dd>
           </dl>
         </div>
         
-        <div class="imu-sample-block" style="border: 1px solid var(--border); padding: 6px 8px; border-radius: var(--radius-sm); background: var(--bg-soft);">
+        <div class="imu-sample-block" style="border: 1px solid var(--line); padding: 6px 8px; border-radius: var(--radius-sm); background: var(--board-col-bg);">
           <strong style="font-size: 0.8rem; color: var(--accent); display: block; margin-bottom: 2px;">Sample 2</strong>
-          <dl class="board-readings" style="display: grid; grid-template-columns: repeat(6, 1fr); font-size: 0.78rem; margin: 0; gap: 2px;">
-            <dt>acc X</dt><dd>${fast.samples?.[1]?.accelX ?? 0}</dd>
-            <dt>acc Y</dt><dd>${fast.samples?.[1]?.accelY ?? 0}</dd>
-            <dt>acc Z</dt><dd>${fast.samples?.[1]?.accelZ ?? 0}</dd>
-            <dt>acc A</dt><dd>${fast.samples?.[1]?.accelA ?? 0}</dd>
-            <dt>acc B</dt><dd>${fast.samples?.[1]?.accelB ?? 0}</dd>
-            <dt>acc C</dt><dd>${fast.samples?.[1]?.accelC ?? 0}</dd>
-            <dt>vel X</dt><dd>${fast.samples?.[1]?.veloX ?? 0}</dd>
-            <dt>vel Y</dt><dd>${fast.samples?.[1]?.veloY ?? 0}</dd>
-            <dt>vel Z</dt><dd>${fast.samples?.[1]?.veloZ ?? 0}</dd>
-            <dt>vel A</dt><dd>${fast.samples?.[1]?.veloA ?? 0}</dd>
-            <dt>vel B</dt><dd>${fast.samples?.[1]?.veloB ?? 0}</dd>
-            <dt>vel C</dt><dd>${fast.samples?.[1]?.veloC ?? 0}</dd>
+          <dl class="board-readings" style="display: grid; grid-template-columns: repeat(2, max-content 1fr); font-size: 0.78rem; margin: 0; gap: 2px 10px; white-space: nowrap;">
+            <dt>acc X</dt><dd>${getAccelVal(fast.samples?.[1]?.accelX, state.graphs.accelUnit).toFixed(3)} ${getAccelUnitLabel(state.graphs.accelUnit)}</dd>
+            <dt>acc Y</dt><dd>${getAccelVal(fast.samples?.[1]?.accelY, state.graphs.accelUnit).toFixed(3)} ${getAccelUnitLabel(state.graphs.accelUnit)}</dd>
+            <dt>acc Z</dt><dd>${getAccelVal(fast.samples?.[1]?.accelZ, state.graphs.accelUnit).toFixed(3)} ${getAccelUnitLabel(state.graphs.accelUnit)}</dd>
+            <dt>acc A</dt><dd>${getAccelVal(fast.samples?.[1]?.accelA, state.graphs.accelUnit).toFixed(3)} ${getAccelUnitLabel(state.graphs.accelUnit)}</dd>
+            <dt>acc B</dt><dd>${getAccelVal(fast.samples?.[1]?.accelB, state.graphs.accelUnit).toFixed(3)} ${getAccelUnitLabel(state.graphs.accelUnit)}</dd>
+            <dt>acc C</dt><dd>${getAccelVal(fast.samples?.[1]?.accelC, state.graphs.accelUnit).toFixed(3)} ${getAccelUnitLabel(state.graphs.accelUnit)}</dd>
+            <dt>vel X</dt><dd>${getVelocityVal(fast.samples?.[1]?.veloX, state.graphs.veloUnit).toFixed(2)} ${getVelocityUnitLabel(state.graphs.veloUnit)}</dd>
+            <dt>vel Y</dt><dd>${getVelocityVal(fast.samples?.[1]?.veloY, state.graphs.veloUnit).toFixed(2)} ${getVelocityUnitLabel(state.graphs.veloUnit)}</dd>
+            <dt>vel Z</dt><dd>${getVelocityVal(fast.samples?.[1]?.veloZ, state.graphs.veloUnit).toFixed(2)} ${getVelocityUnitLabel(state.graphs.veloUnit)}</dd>
+            <dt>vel A</dt><dd>${getVelocityVal(fast.samples?.[1]?.veloA, state.graphs.veloUnit).toFixed(2)} ${getVelocityUnitLabel(state.graphs.veloUnit)}</dd>
+            <dt>vel B</dt><dd>${getVelocityVal(fast.samples?.[1]?.veloB, state.graphs.veloUnit).toFixed(2)} ${getVelocityUnitLabel(state.graphs.veloUnit)}</dd>
+            <dt>vel C</dt><dd>${getVelocityVal(fast.samples?.[1]?.veloC, state.graphs.veloUnit).toFixed(2)} ${getVelocityUnitLabel(state.graphs.veloUnit)}</dd>
           </dl>
         </div>
       </div>
@@ -1035,10 +1142,10 @@ function renderImuDetails(fast) {
   const rows = fast.samples.map((sample) => `
     <tr>
       <td>${sample.index + 1}</td>
-      <td>${sample.accelX} / ${sample.accelY} / ${sample.accelZ}</td>
-      <td>${sample.accelA} / ${sample.accelB} / ${sample.accelC}</td>
-      <td>${sample.veloX} / ${sample.veloY} / ${sample.veloZ}</td>
-      <td>${sample.veloA} / ${sample.veloB} / ${sample.veloC}</td>
+      <td>${formatAccelTuple(sample.accelX, sample.accelY, sample.accelZ, state.graphs.accelUnit)}</td>
+      <td>${formatAccelTuple(sample.accelA, sample.accelB, sample.accelC, state.graphs.accelUnit)}</td>
+      <td>${formatVeloTuple(sample.veloX, sample.veloY, sample.veloZ, state.graphs.veloUnit)}</td>
+      <td>${formatVeloTuple(sample.veloA, sample.veloB, sample.veloC, state.graphs.veloUnit)}</td>
       <td>${sample.jitter != null ? sample.jitter + ' µs' : '--'}</td>
     </tr>
   `);
@@ -1113,8 +1220,8 @@ function renderBoards() {
               <span class="board-counter">CNT: ${board.lastMessageCounterReceived != null ? board.lastMessageCounterReceived : '--'} (Drops: ${board.counterMismatchCount})</span>
               ${board.counterMismatch ? '<span class="pill error">CNT MISMATCH</span>' : ''}
             </header>
-            <div class="board-cols">
-              <div class="board-col" style="flex: 1;">
+            <div class="board-cols" style="grid-template-columns: 1fr;">
+              <div class="board-col">
                 <h3>Fast (IMU: 0x${imuHex})</h3>
                 ${renderImuBlock(board.fast)}
               </div>
@@ -1910,6 +2017,14 @@ function loadGraphPrefs() {
         }
       }
     }
+    const veloUnit = localStorage.getItem('mdu-graph-velo-unit');
+    if (veloUnit) {
+      state.graphs.veloUnit = veloUnit;
+    }
+    const accelUnit = localStorage.getItem('mdu-graph-accel-unit');
+    if (accelUnit) {
+      state.graphs.accelUnit = accelUnit;
+    }
   } catch (error) {
     // ignore
   }
@@ -1919,6 +2034,8 @@ function saveGraphPrefs() {
   try {
     localStorage.setItem(GRAPH_FAVORITES_KEY, JSON.stringify([...state.graphs.favorites]));
     localStorage.setItem(GRAPH_ORDER_KEY, JSON.stringify(state.graphs.order));
+    localStorage.setItem('mdu-graph-velo-unit', state.graphs.veloUnit);
+    localStorage.setItem('mdu-graph-accel-unit', state.graphs.accelUnit);
   } catch (error) {
     // ignore
   }
@@ -2119,7 +2236,10 @@ function buildAllPlotDefs(now, windowMs) {
     });
   }
 
+  const activeSmuKeys = filteredBoardKeys.filter((k) => k.startsWith('1-'));
+
   for (const boardKey of filteredBoardKeys) {
+    if (boardKey === 'imu-overlay') continue;
     const [typeStr, idStr] = boardKey.split('-');
     const boardType = Number(typeStr);
     const boardId = Number(idStr);
@@ -2160,64 +2280,66 @@ function buildAllPlotDefs(now, windowMs) {
       });
     } else if (boardType === 1) {
       const boardName = SMU_NAMES[boardId] || `SMU ${boardId}`;
-      defs.push({
-        id: `board:${boardKey}:imu:accel`,
-        section: 'board',
-        boardKey,
-        title: `${boardName} · Accel XYZ`,
-        badge: `${fastPoints.length} pts`,
-        lines: [
-          { label: 'Accel X', color: '#ff5c5c', points: fastPoints.map((row) => ({ t: row.t, v: row.accelX })) },
-          { label: 'Accel Y', color: '#5cff5c', points: fastPoints.map((row) => ({ t: row.t, v: row.accelY })) },
-          { label: 'Accel Z', color: '#5c5cff', points: fastPoints.map((row) => ({ t: row.t, v: row.accelZ })) },
-        ],
-        plotOptions: { now, windowMs, formatY: (v) => v.toFixed(0), emptyText: 'Waiting for IMU frames' },
-        legendFormatter: (v) => `${v.toFixed(0)}`,
-      });
+      if (activeSmuKeys.length <= 1) {
+        defs.push({
+          id: `board:${boardKey}:imu:accel`,
+          section: 'board',
+          boardKey,
+          title: `${boardName} · Accel XYZ (${getAccelUnitLabel(state.graphs.accelUnit)})`,
+          badge: `${fastPoints.length} pts`,
+          lines: [
+            { label: 'Accel X', color: '#ff5c5c', points: fastPoints.map((row) => ({ t: row.t, v: getAccelVal(row.accelX, state.graphs.accelUnit) })) },
+            { label: 'Accel Y', color: '#5cff5c', points: fastPoints.map((row) => ({ t: row.t, v: getAccelVal(row.accelY, state.graphs.accelUnit) })) },
+            { label: 'Accel Z', color: '#5c5cff', points: fastPoints.map((row) => ({ t: row.t, v: getAccelVal(row.accelZ, state.graphs.accelUnit) })) },
+          ],
+          plotOptions: { now, windowMs, formatY: (v) => `${v.toFixed(3)} ${getAccelUnitLabel(state.graphs.accelUnit)}`, emptyText: 'Waiting for IMU frames' },
+          legendFormatter: (v) => `${v.toFixed(3)} ${getAccelUnitLabel(state.graphs.accelUnit)}`,
+        });
+      }
 
       defs.push({
         id: `board:${boardKey}:imu:accel_abc`,
         section: 'board',
         boardKey,
-        title: `${boardName} · Accel ABC`,
+        title: `${boardName} · Accel ABC (${getAccelUnitLabel(state.graphs.accelUnit)})`,
         badge: `${fastPoints.length} pts`,
         lines: [
-          { label: 'Accel A', color: '#ffaa5c', points: fastPoints.map((row) => ({ t: row.t, v: row.accelA })) },
-          { label: 'Accel B', color: '#aaff5c', points: fastPoints.map((row) => ({ t: row.t, v: row.accelB })) },
-          { label: 'Accel C', color: '#5cffaa', points: fastPoints.map((row) => ({ t: row.t, v: row.accelC })) },
+          { label: 'Accel A', color: '#ffaa5c', points: fastPoints.map((row) => ({ t: row.t, v: getAccelVal(row.accelA, state.graphs.accelUnit) })) },
+          { label: 'Accel B', color: '#aaff5c', points: fastPoints.map((row) => ({ t: row.t, v: getAccelVal(row.accelB, state.graphs.accelUnit) })) },
+          { label: 'Accel C', color: '#5cffaa', points: fastPoints.map((row) => ({ t: row.t, v: getAccelVal(row.accelC, state.graphs.accelUnit) })) },
         ],
-        plotOptions: { now, windowMs, formatY: (v) => v.toFixed(0), emptyText: 'Waiting for IMU frames' },
-        legendFormatter: (v) => `${v.toFixed(0)}`,
+        plotOptions: { now, windowMs, formatY: (v) => `${v.toFixed(3)} ${getAccelUnitLabel(state.graphs.accelUnit)}`, emptyText: 'Waiting for IMU frames' },
+        legendFormatter: (v) => `${v.toFixed(3)} ${getAccelUnitLabel(state.graphs.accelUnit)}`,
       });
 
       defs.push({
         id: `board:${boardKey}:imu:velo`,
         section: 'board',
         boardKey,
-        title: `${boardName} · Velo XYZ`,
+        title: `${boardName} · Velo XYZ (${getVelocityUnitLabel(state.graphs.veloUnit)})`,
         badge: `${fastPoints.length} pts`,
         lines: [
-          { label: 'Velo X', color: '#ef7457', points: fastPoints.map((row) => ({ t: row.t, v: row.veloX })) },
-          { label: 'Velo Y', color: '#6ce0e6', points: fastPoints.map((row) => ({ t: row.t, v: row.veloY })) },
-          { label: 'Velo Z', color: '#b9c47a', points: fastPoints.map((row) => ({ t: row.t, v: row.veloZ })) },
+          { label: 'Velo X', color: '#ef7457', points: fastPoints.map((row) => ({ t: row.t, v: getVelocityVal(row.veloX, state.graphs.veloUnit) })) },
+          { label: 'Velo Y', color: '#6ce0e6', points: fastPoints.map((row) => ({ t: row.t, v: getVelocityVal(row.veloY, state.graphs.veloUnit) })) },
+          { label: 'Velo Z', color: '#b9c47a', points: fastPoints.map((row) => ({ t: row.t, v: getVelocityVal(row.veloZ, state.graphs.veloUnit) })) },
         ],
-        plotOptions: { now, windowMs, formatY: (v) => v.toFixed(0), emptyText: 'Waiting for IMU frames' },
-        legendFormatter: (v) => `${v.toFixed(0)}`,
+        plotOptions: { now, windowMs, formatY: (v) => `${v.toFixed(2)} ${getVelocityUnitLabel(state.graphs.veloUnit)}`, emptyText: 'Waiting for IMU frames' },
+        legendFormatter: (v) => `${v.toFixed(2)} ${getVelocityUnitLabel(state.graphs.veloUnit)}`,
       });
 
       defs.push({
         id: `board:${boardKey}:imu:velo_abc`,
         section: 'board',
         boardKey,
-        title: `${boardName} · Velo ABC`,
+        title: `${boardName} · Velo ABC (${getVelocityUnitLabel(state.graphs.veloUnit)})`,
         badge: `${fastPoints.length} pts`,
         lines: [
-          { label: 'Velo A', color: '#e6b657', points: fastPoints.map((row) => ({ t: row.t, v: row.veloA })) },
-          { label: 'Velo B', color: '#b657e6', points: fastPoints.map((row) => ({ t: row.t, v: row.veloB })) },
-          { label: 'Velo C', color: '#57e6b6', points: fastPoints.map((row) => ({ t: row.t, v: row.veloC })) },
+          { label: 'Velo A', color: '#e6b657', points: fastPoints.map((row) => ({ t: row.t, v: getVelocityVal(row.veloA, state.graphs.veloUnit) })) },
+          { label: 'Velo B', color: '#b657e6', points: fastPoints.map((row) => ({ t: row.t, v: getVelocityVal(row.veloB, state.graphs.veloUnit) })) },
+          { label: 'Velo C', color: '#57e6b6', points: fastPoints.map((row) => ({ t: row.t, v: getVelocityVal(row.veloC, state.graphs.veloUnit) })) },
         ],
-        plotOptions: { now, windowMs, formatY: (v) => v.toFixed(0), emptyText: 'Waiting for IMU frames' },
-        legendFormatter: (v) => `${v.toFixed(0)}`,
+        plotOptions: { now, windowMs, formatY: (v) => `${v.toFixed(2)} ${getVelocityUnitLabel(state.graphs.veloUnit)}`, emptyText: 'Waiting for IMU frames' },
+        legendFormatter: (v) => `${v.toFixed(2)} ${getVelocityUnitLabel(state.graphs.veloUnit)}`,
       });
     } else {
       const boardName = BOARD_NAMES[boardId] || `Board ${boardId}`;
@@ -2290,6 +2412,67 @@ function buildAllPlotDefs(now, windowMs) {
     }
   }
 
+  if (activeSmuKeys.length > 1) {
+    const lateralLines = [];
+    const longitudinalLines = [];
+
+    activeSmuKeys.forEach((boardKey) => {
+      const boardId = Number(boardKey.split('-')[1]);
+      const history = state.graphs.boards.get(boardKey);
+      if (!history) return;
+      const fastPoints = pickWindowedPoints(history.fast, now, windowMs);
+
+      let color = '#bf5d29';
+      let shortLabel = `SMU ${boardId}`;
+      if (boardId === 0) {
+        color = '#6ce0e6'; // Teal
+        shortLabel = 'COG';
+      } else if (boardId === 1) {
+        color = '#5dd49a'; // Success Green
+        shortLabel = 'Front';
+      } else if (boardId === 2) {
+        color = '#ef7457'; // Sunset Red
+        shortLabel = 'Rear';
+      }
+
+      lateralLines.push({
+        label: `${shortLabel} Y`,
+        color: color,
+        points: fastPoints.map((row) => ({ t: row.t, v: getAccelVal(row.accelY, state.graphs.accelUnit) }))
+      });
+
+      longitudinalLines.push({
+        label: `${shortLabel} X`,
+        color: color,
+        points: fastPoints.map((row) => ({ t: row.t, v: getAccelVal(row.accelX, state.graphs.accelUnit) }))
+      });
+    });
+
+    defs.push({
+      id: `board:imu-lateral-overlay`,
+      section: 'board',
+      boardKey: 'imu-overlay',
+      title: `IMU Lateral Acceleration Overlay (Y) (${getAccelUnitLabel(state.graphs.accelUnit)})`,
+      badge: `${activeSmuKeys.length} IMUs`,
+      lines: lateralLines,
+      plotOptions: { now, windowMs, formatY: (v) => `${v.toFixed(2)} ${getAccelUnitLabel(state.graphs.accelUnit)}`, emptyText: 'Waiting for IMU frames' },
+      legendFormatter: (v) => `${v.toFixed(2)} ${getAccelUnitLabel(state.graphs.accelUnit)}`,
+    });
+
+    defs.push({
+      id: `board:imu-longitudinal-overlay`,
+      section: 'board',
+      boardKey: 'imu-overlay',
+      title: `IMU Longitudinal Acceleration Overlay (X) (${getAccelUnitLabel(state.graphs.accelUnit)})`,
+      badge: `${activeSmuKeys.length} IMUs`,
+      lines: longitudinalLines,
+      plotOptions: { now, windowMs, formatY: (v) => `${v.toFixed(2)} ${getAccelUnitLabel(state.graphs.accelUnit)}`, emptyText: 'Waiting for IMU frames' },
+      legendFormatter: (v) => `${v.toFixed(2)} ${getAccelUnitLabel(state.graphs.accelUnit)}`,
+    });
+
+    filteredBoardKeys.push('imu-overlay');
+  }
+
   return { defs, boardKeys: filteredBoardKeys };
 }
 
@@ -2321,11 +2504,34 @@ function renderBoardSection(boardKeys, defsByBoard, now) {
     const history = state.graphs.boards.get(boardKey);
     const defsForBoard = defsByBoard.get(boardKey) || [];
     if (defsForBoard.length === 0) continue;
-    const ageMs = history.lastSeenAt ? now - history.lastSeenAt : null;
+    
+    let ageMs = null;
+    let fastLength = 0;
+    let slowLength = 0;
+    if (history) {
+      ageMs = history.lastSeenAt ? now - history.lastSeenAt : null;
+      fastLength = history.fast.length;
+      slowLength = history.slow.length;
+    } else if (boardKey === 'imu-overlay') {
+      const smuHistories = [...state.graphs.boards.entries()]
+        .filter(([k]) => k.startsWith('1-'))
+        .map(([, hist]) => hist);
+      if (smuHistories.length > 0) {
+        const lastSeens = smuHistories.map(h => h.lastSeenAt).filter(Boolean);
+        if (lastSeens.length > 0) {
+          ageMs = now - Math.max(...lastSeens);
+        }
+        fastLength = smuHistories.reduce((sum, h) => sum + h.fast.length, 0);
+        slowLength = smuHistories.reduce((sum, h) => sum + h.slow.length, 0);
+      }
+    }
+
     const [typeStr, idStr] = boardKey.split('-');
     const boardType = Number(typeStr);
     const boardId = Number(idStr);
-    const boardName = boardType === 6 ? `TSPMU ${boardId}` : boardType === 1 ? (SMU_NAMES[boardId] || `SMU ${boardId}`) : (BOARD_NAMES[boardId] || `Board ${boardId}`);
+    const boardName = boardKey === 'imu-overlay' 
+      ? 'IMU Acceleration Overlays' 
+      : (boardType === 6 ? `TSPMU ${boardId}` : boardType === 1 ? (SMU_NAMES[boardId] || `SMU ${boardId}`) : (BOARD_NAMES[boardId] || `Board ${boardId}`));
     
     // Check if card wrapper already exists
     let card = elements.boardGraphs.querySelector(`.board-graph-card[data-board-id="${boardKey}"]`);
@@ -2346,7 +2552,7 @@ function renderBoardSection(boardKeys, defsByBoard, now) {
     // Update the age and sample counts
     const ageEl = card.querySelector('.board-age');
     if (ageEl) {
-      ageEl.textContent = `${formatBoardAge(ageMs)} · ${history.fast.length} fast / ${history.slow.length} slow`;
+      ageEl.textContent = `${formatBoardAge(ageMs)} · ${fastLength} fast / ${slowLength} slow`;
     }
     
     const grid = card.querySelector('.board-graph-grid');
@@ -2369,8 +2575,14 @@ function renderGraphs() {
   if (boardKeys.length === 0) {
     elements.graphsStatusLine.textContent = 'Waiting for board telemetry frames.';
   } else {
-    const totalFast = boardKeys.reduce((sum, key) => sum + state.graphs.boards.get(key).fast.length, 0);
-    const totalSlow = boardKeys.reduce((sum, key) => sum + state.graphs.boards.get(key).slow.length, 0);
+    const totalFast = boardKeys.reduce((sum, key) => {
+      const hist = state.graphs.boards.get(key);
+      return sum + (hist ? hist.fast.length : 0);
+    }, 0);
+    const totalSlow = boardKeys.reduce((sum, key) => {
+      const hist = state.graphs.boards.get(key);
+      return sum + (hist ? hist.slow.length : 0);
+    }, 0);
     elements.graphsStatusLine.textContent = `Tracking ${boardKeys.length} board${boardKeys.length === 1 ? '' : 's'} · ${totalFast} fast / ${totalSlow} slow samples buffered · window ${activeWindowSeconds()}s`;
   }
 
@@ -2773,6 +2985,24 @@ function wireUi() {
     }
   });
 
+  if (elements.graphsVeloUnitSelect) {
+    elements.graphsVeloUnitSelect.addEventListener('change', (event) => {
+      state.graphs.veloUnit = event.target.value;
+      saveGraphPrefs();
+      renderGraphs();
+      renderBoards();
+    });
+  }
+
+  if (elements.graphsAccelUnitSelect) {
+    elements.graphsAccelUnitSelect.addEventListener('change', (event) => {
+      state.graphs.accelUnit = event.target.value;
+      saveGraphPrefs();
+      renderGraphs();
+      renderBoards();
+    });
+  }
+
   elements.graphsClearButton.addEventListener('click', () => {
     state.graphs.boards = new Map();
     initializeBoardHistories();
@@ -3110,6 +3340,12 @@ async function init() {
 
   if (elements.graphsWindowSelect) {
     elements.graphsWindowSelect.value = String(state.graphs.windowSeconds);
+  }
+  if (elements.graphsVeloUnitSelect) {
+    elements.graphsVeloUnitSelect.value = state.graphs.veloUnit;
+  }
+  if (elements.graphsAccelUnitSelect) {
+    elements.graphsAccelUnitSelect.value = state.graphs.accelUnit;
   }
   setActiveTab(state.graphs.activeTab);
   renderAll();

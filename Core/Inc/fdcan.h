@@ -1,28 +1,29 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
-  * @file    fdcan.h
-  * @brief   This file contains all the function prototypes for
-  *          the fdcan.c file
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2026 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
+ ******************************************************************************
+ * @file    fdcan.h
+ * @brief   This file contains all the function prototypes for
+ *          the fdcan.c file
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2026 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
+ */
 /* USER CODE END Header */
 /* Define to prevent recursive inclusion -------------------------------------*/
 #ifndef __FDCAN_H__
 #define __FDCAN_H__
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
 /* Includes ------------------------------------------------------------------*/
@@ -31,57 +32,70 @@ extern "C" {
 /* USER CODE BEGIN Includes */
 #include <stdbool.h>
 #include <stdint.h>
-/* USER CODE END Includes */
+  /* USER CODE END Includes */
 
-extern FDCAN_HandleTypeDef hfdcan1;
+  extern FDCAN_HandleTypeDef hfdcan1;
 
 /* USER CODE BEGIN Private defines */
-#define FDCAN_RX_QUEUE_SIZE           8U
-#define FDCAN_ACCEPTED_STD_ID_BASE    0x000U
-#define FDCAN_ACCEPTED_STD_ID_MASK    0x7FFU
+#define FDCAN_RX_QUEUE_SIZE 8U
+#define FDCAN_ACCEPTED_STD_ID_BASE 0x000U
+#define FDCAN_ACCEPTED_STD_ID_MASK 0x7FFU
 
-typedef struct
-{
-  uint32_t identifier;
-  uint8_t data[64];
-  uint8_t data_length;
-  uint8_t id_type;
-  uint8_t frame_type;
-} FDCAN_RxMessage;
-/* USER CODE END Private defines */
+  typedef struct
+  {
+    uint32_t identifier;
+    uint8_t data[64];
+    uint8_t data_length;
+    uint8_t id_type;
+    uint8_t frame_type;
+  } FDCAN_RxMessage;
+  /* USER CODE END Private defines */
 
-void MX_FDCAN1_Init(void);
+  void MX_FDCAN1_Init(void);
 
-/* USER CODE BEGIN Prototypes */
-/**
-  * @brief  Initializes the FDCAN application logic and filters
-  */
-HAL_StatusTypeDef FDCAN_App_Init(void);
+  /* USER CODE BEGIN Prototypes */
+  /**
+   * @brief  Initializes the FDCAN application logic and filters
+   */
+  HAL_StatusTypeDef FDCAN_App_Init(void);
 
-/**
-  * @brief  Sends an FDCAN message
-  * @param  id: Standard or Extended Identifier
-  * @param  data: Pointer to data buffer
-  * @param  len: Length of data in bytes
-  */
-HAL_StatusTypeDef FDCAN_Send_Message(uint32_t id, const uint8_t *data, uint8_t len);
+  /**
+   * @brief  Sends an FDCAN message
+   * @param  id: Standard or Extended Identifier
+   * @param  data: Pointer to data buffer
+   * @param  len: Length of data in bytes
+   */
+  HAL_StatusTypeDef FDCAN_Send_Message(uint32_t id, const uint8_t *data, uint8_t len);
 
-/**
-  * @brief  Callback for receiving FDCAN messages (usually called from IRQ)
-  */
-void FDCAN_Receive_Callback(FDCAN_HandleTypeDef *hfdcan);
+  /**
+   * @brief  Callback for receiving FDCAN messages (usually called from IRQ)
+   */
+  void FDCAN_Receive_Callback(FDCAN_HandleTypeDef *hfdcan);
 
-/**
-  * @brief  Retrieves the latest received FDCAN message
-  * @param  message: Pointer to the output mailbox copy
-  * @retval true if a new message was available, false otherwise
-  */
-bool FDCAN_GetRxMessage(FDCAN_RxMessage *message);
-/* USER CODE END Prototypes */
+  /**
+   * @brief  Retrieves the latest received FDCAN message
+   * @param  message: Pointer to the output mailbox copy
+   * @retval true if a new message was available, false otherwise
+   */
+  bool FDCAN_GetRxMessage(FDCAN_RxMessage *message);
+
+  /* USER CODE BEGIN ADDITIONAL_PROTOTYPES */
+  /**
+   * @brief Apply a full FDCAN Init configuration and start the peripheral.
+   *        This helper does a safe stop/deinit, applies the Init structure (mode
+   *        is overridden by the `mode` parameter), reinitializes message RAM
+   *        and filters via FDCAN_App_Init(), then starts the peripheral.
+   * @param init: pointer to an FDCAN_InitTypeDef containing desired timing/format
+   * @param mode: FDCAN_MODE_NORMAL or FDCAN_MODE_BUS_MONITORING, etc.
+   * @retval HAL_OK on success
+   */
+  HAL_StatusTypeDef FDCAN_ApplyInitAndStart(const FDCAN_InitTypeDef *init, uint32_t mode);
+
+  /* USER CODE END ADDITIONAL_PROTOTYPES */
+  /* USER CODE END Prototypes */
 
 #ifdef __cplusplus
 }
 #endif
 
 #endif /* __FDCAN_H__ */
-

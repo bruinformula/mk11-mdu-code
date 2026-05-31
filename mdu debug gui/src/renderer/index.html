@@ -351,6 +351,21 @@
               <option value="1-2">SMU 2 (Rear IMU)</option>
             </select>
           </label>
+          <label class="field-group field-compact">
+            <span>Velocity unit</span>
+            <select id="graphs-velo-unit-select">
+              <option value="mps">m/s</option>
+              <option value="mph">mph</option>
+              <option value="kmh">km/h</option>
+            </select>
+          </label>
+          <label class="field-group field-compact">
+            <span>Accel unit</span>
+            <select id="graphs-accel-unit-select">
+              <option value="g">g</option>
+              <option value="mps2">m/s²</option>
+            </select>
+          </label>
           <button id="graphs-clear-button" class="ghost-button" type="button">Clear graph history</button>
           <p class="helper-text" id="graphs-status-line">Waiting for board telemetry frames.</p>
         </div>

@@ -1,27 +1,27 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
-  * @file    fdcan.c
-  * @brief   This file provides code for the configuration
-  *          of the FDCAN instances.
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2026 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
+ ******************************************************************************
+ * @file    fdcan.c
+ * @brief   This file provides code for the configuration
+ *          of the FDCAN instances.
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2026 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
+ */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "fdcan.h"
-#include <string.h>
 
 /* USER CODE BEGIN 0 */
+#include <string.h>
 volatile uint32_t fdcan_tx_count = 0U;
 volatile uint32_t fdcan_rx_count = 0U;
 volatile uint32_t fdcan_rx_error_count = 0U;
@@ -35,31 +35,54 @@ static uint32_t FDCAN_EncodeDlc(uint8_t len)
 {
   switch (len)
   {
-    case 0: return FDCAN_DLC_BYTES_0;
-    case 1: return FDCAN_DLC_BYTES_1;
-    case 2: return FDCAN_DLC_BYTES_2;
-    case 3: return FDCAN_DLC_BYTES_3;
-    case 4: return FDCAN_DLC_BYTES_4;
-    case 5: return FDCAN_DLC_BYTES_5;
-    case 6: return FDCAN_DLC_BYTES_6;
-    case 7: return FDCAN_DLC_BYTES_7;
-    case 8: return FDCAN_DLC_BYTES_8;
-    case 12: return FDCAN_DLC_BYTES_12;
-    case 16: return FDCAN_DLC_BYTES_16;
-    case 20: return FDCAN_DLC_BYTES_20;
-    case 24: return FDCAN_DLC_BYTES_24;
-    case 32: return FDCAN_DLC_BYTES_32;
-    case 48: return FDCAN_DLC_BYTES_48;
-    case 64: return FDCAN_DLC_BYTES_64;
-    default:
-      if (len <= 8U) return FDCAN_DLC_BYTES_8;
-      if (len <= 12U) return FDCAN_DLC_BYTES_12;
-      if (len <= 16U) return FDCAN_DLC_BYTES_16;
-      if (len <= 20U) return FDCAN_DLC_BYTES_20;
-      if (len <= 24U) return FDCAN_DLC_BYTES_24;
-      if (len <= 32U) return FDCAN_DLC_BYTES_32;
-      if (len <= 48U) return FDCAN_DLC_BYTES_48;
-      return FDCAN_DLC_BYTES_64;
+  case 0:
+    return FDCAN_DLC_BYTES_0;
+  case 1:
+    return FDCAN_DLC_BYTES_1;
+  case 2:
+    return FDCAN_DLC_BYTES_2;
+  case 3:
+    return FDCAN_DLC_BYTES_3;
+  case 4:
+    return FDCAN_DLC_BYTES_4;
+  case 5:
+    return FDCAN_DLC_BYTES_5;
+  case 6:
+    return FDCAN_DLC_BYTES_6;
+  case 7:
+    return FDCAN_DLC_BYTES_7;
+  case 8:
+    return FDCAN_DLC_BYTES_8;
+  case 12:
+    return FDCAN_DLC_BYTES_12;
+  case 16:
+    return FDCAN_DLC_BYTES_16;
+  case 20:
+    return FDCAN_DLC_BYTES_20;
+  case 24:
+    return FDCAN_DLC_BYTES_24;
+  case 32:
+    return FDCAN_DLC_BYTES_32;
+  case 48:
+    return FDCAN_DLC_BYTES_48;
+  case 64:
+    return FDCAN_DLC_BYTES_64;
+  default:
+    if (len <= 8U)
+      return FDCAN_DLC_BYTES_8;
+    if (len <= 12U)
+      return FDCAN_DLC_BYTES_12;
+    if (len <= 16U)
+      return FDCAN_DLC_BYTES_16;
+    if (len <= 20U)
+      return FDCAN_DLC_BYTES_20;
+    if (len <= 24U)
+      return FDCAN_DLC_BYTES_24;
+    if (len <= 32U)
+      return FDCAN_DLC_BYTES_32;
+    if (len <= 48U)
+      return FDCAN_DLC_BYTES_48;
+    return FDCAN_DLC_BYTES_64;
   }
 }
 
@@ -67,23 +90,40 @@ static uint8_t FDCAN_DecodeDlc(uint32_t dlc)
 {
   switch (dlc)
   {
-    case FDCAN_DLC_BYTES_0: return 0;
-    case FDCAN_DLC_BYTES_1: return 1;
-    case FDCAN_DLC_BYTES_2: return 2;
-    case FDCAN_DLC_BYTES_3: return 3;
-    case FDCAN_DLC_BYTES_4: return 4;
-    case FDCAN_DLC_BYTES_5: return 5;
-    case FDCAN_DLC_BYTES_6: return 6;
-    case FDCAN_DLC_BYTES_7: return 7;
-    case FDCAN_DLC_BYTES_8: return 8;
-    case FDCAN_DLC_BYTES_12: return 12;
-    case FDCAN_DLC_BYTES_16: return 16;
-    case FDCAN_DLC_BYTES_20: return 20;
-    case FDCAN_DLC_BYTES_24: return 24;
-    case FDCAN_DLC_BYTES_32: return 32;
-    case FDCAN_DLC_BYTES_48: return 48;
-    case FDCAN_DLC_BYTES_64: return 64;
-    default: return 8;
+  case FDCAN_DLC_BYTES_0:
+    return 0;
+  case FDCAN_DLC_BYTES_1:
+    return 1;
+  case FDCAN_DLC_BYTES_2:
+    return 2;
+  case FDCAN_DLC_BYTES_3:
+    return 3;
+  case FDCAN_DLC_BYTES_4:
+    return 4;
+  case FDCAN_DLC_BYTES_5:
+    return 5;
+  case FDCAN_DLC_BYTES_6:
+    return 6;
+  case FDCAN_DLC_BYTES_7:
+    return 7;
+  case FDCAN_DLC_BYTES_8:
+    return 8;
+  case FDCAN_DLC_BYTES_12:
+    return 12;
+  case FDCAN_DLC_BYTES_16:
+    return 16;
+  case FDCAN_DLC_BYTES_20:
+    return 20;
+  case FDCAN_DLC_BYTES_24:
+    return 24;
+  case FDCAN_DLC_BYTES_32:
+    return 32;
+  case FDCAN_DLC_BYTES_48:
+    return 48;
+  case FDCAN_DLC_BYTES_64:
+    return 64;
+  default:
+    return 8;
   }
 }
 
@@ -156,7 +196,7 @@ void MX_FDCAN1_Init(void)
   hfdcan1.Init.DataTimeSeg1 = 8;
   hfdcan1.Init.DataTimeSeg2 = 2;
   hfdcan1.Init.StdFiltersNbr = 1;
-  hfdcan1.Init.ExtFiltersNbr = 1;
+  hfdcan1.Init.ExtFiltersNbr = 0;
   hfdcan1.Init.TxFifoQueueMode = FDCAN_TX_FIFO_OPERATION;
   if (HAL_FDCAN_Init(&hfdcan1) != HAL_OK)
   {
@@ -165,22 +205,21 @@ void MX_FDCAN1_Init(void)
   /* USER CODE BEGIN FDCAN1_Init 2 */
 
   /* USER CODE END FDCAN1_Init 2 */
-
 }
 
-void HAL_FDCAN_MspInit(FDCAN_HandleTypeDef* fdcanHandle)
+void HAL_FDCAN_MspInit(FDCAN_HandleTypeDef *fdcanHandle)
 {
 
   GPIO_InitTypeDef GPIO_InitStruct = {0};
   RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
-  if(fdcanHandle->Instance==FDCAN1)
+  if (fdcanHandle->Instance == FDCAN1)
   {
-  /* USER CODE BEGIN FDCAN1_MspInit 0 */
+    /* USER CODE BEGIN FDCAN1_MspInit 0 */
 
-  /* USER CODE END FDCAN1_MspInit 0 */
+    /* USER CODE END FDCAN1_MspInit 0 */
 
-  /** Initializes the peripherals clock
-  */
+    /** Initializes the peripherals clock
+     */
     PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_FDCAN;
     PeriphClkInit.FdcanClockSelection = RCC_FDCANCLKSOURCE_PLL;
     if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
@@ -196,7 +235,7 @@ void HAL_FDCAN_MspInit(FDCAN_HandleTypeDef* fdcanHandle)
     PB8     ------> FDCAN1_RX
     PB9     ------> FDCAN1_TX
     */
-    GPIO_InitStruct.Pin = GPIO_PIN_8|GPIO_PIN_9;
+    GPIO_InitStruct.Pin = GPIO_PIN_8 | GPIO_PIN_9;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -208,20 +247,20 @@ void HAL_FDCAN_MspInit(FDCAN_HandleTypeDef* fdcanHandle)
     HAL_NVIC_EnableIRQ(FDCAN1_IT0_IRQn);
     HAL_NVIC_SetPriority(FDCAN1_IT1_IRQn, 0, 0);
     HAL_NVIC_EnableIRQ(FDCAN1_IT1_IRQn);
-  /* USER CODE BEGIN FDCAN1_MspInit 1 */
+    /* USER CODE BEGIN FDCAN1_MspInit 1 */
 
-  /* USER CODE END FDCAN1_MspInit 1 */
+    /* USER CODE END FDCAN1_MspInit 1 */
   }
 }
 
-void HAL_FDCAN_MspDeInit(FDCAN_HandleTypeDef* fdcanHandle)
+void HAL_FDCAN_MspDeInit(FDCAN_HandleTypeDef *fdcanHandle)
 {
 
-  if(fdcanHandle->Instance==FDCAN1)
+  if (fdcanHandle->Instance == FDCAN1)
   {
-  /* USER CODE BEGIN FDCAN1_MspDeInit 0 */
+    /* USER CODE BEGIN FDCAN1_MspDeInit 0 */
 
-  /* USER CODE END FDCAN1_MspDeInit 0 */
+    /* USER CODE END FDCAN1_MspDeInit 0 */
     /* Peripheral clock disable */
     __HAL_RCC_FDCAN1_CLK_DISABLE();
 
@@ -229,14 +268,14 @@ void HAL_FDCAN_MspDeInit(FDCAN_HandleTypeDef* fdcanHandle)
     PB8     ------> FDCAN1_RX
     PB9     ------> FDCAN1_TX
     */
-    HAL_GPIO_DeInit(GPIOB, GPIO_PIN_8|GPIO_PIN_9);
+    HAL_GPIO_DeInit(GPIOB, GPIO_PIN_8 | GPIO_PIN_9);
 
     /* FDCAN1 interrupt Deinit */
     HAL_NVIC_DisableIRQ(FDCAN1_IT0_IRQn);
     HAL_NVIC_DisableIRQ(FDCAN1_IT1_IRQn);
-  /* USER CODE BEGIN FDCAN1_MspDeInit 1 */
+    /* USER CODE BEGIN FDCAN1_MspDeInit 1 */
 
-  /* USER CODE END FDCAN1_MspDeInit 1 */
+    /* USER CODE END FDCAN1_MspDeInit 1 */
   }
 }
 
@@ -386,5 +425,42 @@ bool FDCAN_GetRxMessage(FDCAN_RxMessage *message)
   return true;
 }
 
-/* USER CODE END 1 */
+/* Apply an FDCAN Init structure, set the operating mode, reconfigure filters
+ * and start the peripheral. Used by the autodetect startup sequence to switch
+ * between bus-monitoring and normal operation safely.
+ */
+HAL_StatusTypeDef FDCAN_ApplyInitAndStart(const FDCAN_InitTypeDef *init, uint32_t mode)
+{
+  HAL_StatusTypeDef status;
 
+  if (init == NULL)
+  {
+    return HAL_ERROR;
+  }
+
+  (void)HAL_FDCAN_Stop(&hfdcan1);
+  (void)HAL_FDCAN_DeInit(&hfdcan1);
+
+  hfdcan1.Init = *init;
+  hfdcan1.Init.Mode = mode;
+
+  status = HAL_FDCAN_Init(&hfdcan1);
+  if (status != HAL_OK)
+  {
+    return status;
+  }
+
+  if (FDCAN_App_Init() != HAL_OK)
+  {
+    return HAL_ERROR;
+  }
+
+  if (HAL_FDCAN_Start(&hfdcan1) != HAL_OK)
+  {
+    return HAL_ERROR;
+  }
+
+  return HAL_OK;
+}
+
+/* USER CODE END 1 */
