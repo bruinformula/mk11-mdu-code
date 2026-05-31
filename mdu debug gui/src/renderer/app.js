@@ -40,7 +40,7 @@ const BOARD_NAMES = {
 
 const SMU_NAMES = {
   0: "GPS COG SMU",
-  1: "Front IMU SMU",
+  1: "Mid IMU SMU",
   2: "Rear IMU SMU",
 };
 
@@ -1070,7 +1070,7 @@ function renderImuBlock(fast) {
   const dots = [];
   const legends = [];
 
-  // Sort them to have consistent order: COG (0), Front (1), Rear (2)
+  // Sort them to have consistent order: COG (0), Mid (1), Rear (2)
   const sortedSmuBoards = allSmuBoards.sort((a, b) => a.boardId - b.boardId);
 
   for (const b of sortedSmuBoards) {
@@ -1089,7 +1089,7 @@ function renderImuBlock(fast) {
       label = "COG";
     } else if (b.boardId === 1) {
       colorVar = "var(--success)";
-      label = "Front";
+      label = "Mid";
     } else if (b.boardId === 2) {
       colorVar = "var(--warning)";
       label = "Rear";
@@ -2991,7 +2991,7 @@ function buildAllPlotDefs(now, windowMs) {
         shortLabel = "COG";
       } else if (boardId === 1) {
         color = "#5dd49a"; // Success Green
-        shortLabel = "Front";
+        shortLabel = "Mid";
       } else if (boardId === 2) {
         color = "#ef7457"; // Sunset Red
         shortLabel = "Rear";
