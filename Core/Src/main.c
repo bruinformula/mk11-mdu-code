@@ -172,6 +172,7 @@ volatile uint8_t sr_test_reported = 0;
 #define BAUD_UNKNOWN 0U
 #define BAUD_500K 1U
 #define BAUD_5M 2U
+#define BAUD_1M 3U
 
 volatile uint8_t g_detected_baud = BAUD_UNKNOWN;
 /* Result bits: bit0=SER, bit1=SERCLK, bit2=RSTCLK (set if high when written) */
@@ -199,6 +200,8 @@ static void Update_BaudStatus_LEDs(uint8_t detected)
   uint8_t mask = 0x03U; /* default: both on = unknown */
   if (detected == BAUD_500K)
     mask = 0x01U;
+  else if (detected == BAUD_1M)
+    mask = 0x01U; /* same single-LED pattern as 500k */
   else if (detected == BAUD_5M)
     mask = 0x02U;
   ShiftRegister_WriteByte(mask);
@@ -214,64 +217,81 @@ static int FDCAN_AutodetectAndStart(void)
   FDCAN_InitTypeDef cand = original;
   FDCAN_ProtocolStatusTypeDef ps;
 
-  /* Candidate: Classic frame (500k nominal) */
-  cand.FrameFormat = FDCAN_FRAME_CLASSIC;
-  if (FDCAN_ApplyInitAndStart(&cand, FDCAN_MODE_BUS_MONITORING) == HAL_OK)
+  /* Candidate: Classic frame — try common prescalers (1Mb and 500kb) */
   {
-    HAL_FDCAN_ActivateNotification(&hfdcan1, FDCAN_IT_RX_FIFO0_NEW_MESSAGE, 0);
-    uint32_t t0 = HAL_GetTick();
-    uint32_t before = HAL_FDCAN_GetRxFifoFillLevel(&hfdcan1, FDCAN_RX_FIFO0);
-    while ((HAL_GetTick() - t0) < DETECT_MS)
+    const uint32_t prescalers[] = {5U, 10U}; /* 5 -> 1Mb, 10 -> 500kb (given same time segments) */
+    const uint8_t baud_map[] = {BAUD_1M, BAUD_500K};
+    for (size_t pi = 0; pi < (sizeof(prescalers) / sizeof(prescalers[0])); ++pi)
     {
-      uint32_t now = HAL_FDCAN_GetRxFifoFillLevel(&hfdcan1, FDCAN_RX_FIFO0);
-      if (now > before)
+      cand = original;
+      cand.FrameFormat = FDCAN_FRAME_CLASSIC;
+      cand.NominalPrescaler = prescalers[pi];
+
+      if (FDCAN_ApplyInitAndStart(&cand, FDCAN_MODE_BUS_MONITORING) == HAL_OK)
       {
-        if (HAL_FDCAN_GetProtocolStatus(&hfdcan1, &ps) == HAL_OK)
+        HAL_FDCAN_ActivateNotification(&hfdcan1, FDCAN_IT_RX_FIFO0_NEW_MESSAGE, 0);
+        uint32_t t0 = HAL_GetTick();
+        uint32_t before = HAL_FDCAN_GetRxFifoFillLevel(&hfdcan1, FDCAN_RX_FIFO0);
+        while ((HAL_GetTick() - t0) < DETECT_MS)
         {
-          if (!(ps.RxFDFflag || ps.RxBRSflag))
+          uint32_t now = HAL_FDCAN_GetRxFifoFillLevel(&hfdcan1, FDCAN_RX_FIFO0);
+          if (now > before)
           {
-            /* Classic CAN detected */
+            if (HAL_FDCAN_GetProtocolStatus(&hfdcan1, &ps) == HAL_OK)
+            {
+              if (!(ps.RxFDFflag || ps.RxBRSflag))
+              {
+                /* Classic CAN detected at this prescaler */
+                cand.Mode = FDCAN_MODE_NORMAL;
+                if (FDCAN_ApplyInitAndStart(&cand, FDCAN_MODE_NORMAL) == HAL_OK)
+                {
+                  g_detected_baud = baud_map[pi];
+                  Update_BaudStatus_LEDs(g_detected_baud);
+                  HAL_FDCAN_ActivateNotification(&hfdcan1, FDCAN_IT_RX_FIFO0_NEW_MESSAGE, 0);
+                  return 0;
+                }
+              }
+            }
+            break;
+          }
+          HAL_Delay(10);
+        }
+      }
+    }
+  }
+
+  /* Candidate: FD with BRS (5M data) — try both 1Mb and 500kb nominal prescalers */
+  {
+    const uint32_t prescalers[] = {5U, 10U}; /* 5 -> 1Mb nominal, 10 -> 500kb nominal */
+    for (size_t pi = 0; pi < (sizeof(prescalers) / sizeof(prescalers[0])); ++pi)
+    {
+      cand = original;
+      cand.FrameFormat = FDCAN_FRAME_FD_BRS;
+      cand.NominalPrescaler = prescalers[pi];
+      if (FDCAN_ApplyInitAndStart(&cand, FDCAN_MODE_BUS_MONITORING) == HAL_OK)
+      {
+        HAL_FDCAN_ActivateNotification(&hfdcan1, FDCAN_IT_RX_FIFO0_NEW_MESSAGE, 0);
+        uint32_t t0 = HAL_GetTick();
+        uint32_t before = HAL_FDCAN_GetRxFifoFillLevel(&hfdcan1, FDCAN_RX_FIFO0);
+        while ((HAL_GetTick() - t0) < DETECT_MS)
+        {
+          uint32_t now = HAL_FDCAN_GetRxFifoFillLevel(&hfdcan1, FDCAN_RX_FIFO0);
+          if (now > before)
+          {
+            /* Any frame observed in FD mode => assume FD with BRS */
             cand.Mode = FDCAN_MODE_NORMAL;
             if (FDCAN_ApplyInitAndStart(&cand, FDCAN_MODE_NORMAL) == HAL_OK)
             {
-              g_detected_baud = BAUD_500K;
+              g_detected_baud = BAUD_5M;
               Update_BaudStatus_LEDs(g_detected_baud);
               HAL_FDCAN_ActivateNotification(&hfdcan1, FDCAN_IT_RX_FIFO0_NEW_MESSAGE, 0);
               return 0;
             }
+            break;
           }
+          HAL_Delay(10);
         }
-        break;
       }
-      HAL_Delay(10);
-    }
-  }
-
-  /* Candidate: FD with BRS (5M data) */
-  cand = original;
-  cand.FrameFormat = FDCAN_FRAME_FD_BRS;
-  if (FDCAN_ApplyInitAndStart(&cand, FDCAN_MODE_BUS_MONITORING) == HAL_OK)
-  {
-    HAL_FDCAN_ActivateNotification(&hfdcan1, FDCAN_IT_RX_FIFO0_NEW_MESSAGE, 0);
-    uint32_t t0 = HAL_GetTick();
-    uint32_t before = HAL_FDCAN_GetRxFifoFillLevel(&hfdcan1, FDCAN_RX_FIFO0);
-    while ((HAL_GetTick() - t0) < DETECT_MS)
-    {
-      uint32_t now = HAL_FDCAN_GetRxFifoFillLevel(&hfdcan1, FDCAN_RX_FIFO0);
-      if (now > before)
-      {
-        /* Any frame observed in FD mode => assume FD with BRS */
-        cand.Mode = FDCAN_MODE_NORMAL;
-        if (FDCAN_ApplyInitAndStart(&cand, FDCAN_MODE_NORMAL) == HAL_OK)
-        {
-          g_detected_baud = BAUD_5M;
-          Update_BaudStatus_LEDs(g_detected_baud);
-          HAL_FDCAN_ActivateNotification(&hfdcan1, FDCAN_IT_RX_FIFO0_NEW_MESSAGE, 0);
-          return 0;
-        }
-        break;
-      }
-      HAL_Delay(10);
     }
   }
 
