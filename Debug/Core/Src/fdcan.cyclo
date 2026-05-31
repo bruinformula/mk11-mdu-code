@@ -1,11 +1,7 @@
-../Core/Src/fdcan.c:34:17:FDCAN_EncodeDlc	24
-../Core/Src/fdcan.c:66:16:FDCAN_DecodeDlc	17
-../Core/Src/fdcan.c:90:13:FDCAN_ResetQueue	2
-../Core/Src/fdcan.c:103:26:FDCAN_PushRxMessage	3
 ../Core/Src/fdcan.c:133:6:MX_FDCAN1_Init	2
 ../Core/Src/fdcan.c:171:6:HAL_FDCAN_MspInit	3
 ../Core/Src/fdcan.c:217:6:HAL_FDCAN_MspDeInit	2
 ../Core/Src/fdcan.c:244:19:FDCAN_App_Init	4
-../Core/Src/fdcan.c:291:19:FDCAN_Send_Message	8
-../Core/Src/fdcan.c:330:6:FDCAN_Receive_Callback	3
-../Core/Src/fdcan.c:357:6:FDCAN_GetRxMessage	5
+../Core/Src/fdcan.c:278:19:FDCAN_Send_Message	30
+../Core/Src/fdcan.c:317:6:FDCAN_Receive_Callback	6
+../Core/Src/fdcan.c:344:6:FDCAN_GetRxMessage	5

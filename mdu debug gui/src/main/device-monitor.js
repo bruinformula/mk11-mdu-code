@@ -4,8 +4,9 @@ const { EventEmitter } = require('events');
 const { SerialPort } = require('serialport');
 
 const { LogWriter } = require('./log-writer');
-const { parseMduLine } = require('./mdu-frame');
+const { parseMduLine, parseSlcanToBoard } = require('./mdu-frame');
 const { TARGET_HUB_PID, TARGET_HUB_VID, scanUsbTopology } = require('./usb-topology');
+const { parseBinaryFrame } = require('./slcan');
 
 const TARGET_VID = '0483';
 const TARGET_PID = '5740';
@@ -289,6 +290,7 @@ class BoardStateTracker {
       lastSeenAt: 0,
       fastCount: 0,
       slowCount: 0,
+      recentFastTimestamps: [],
       // Message counter tracking for debugging: last seen 3-bit counter,
       // whether a mismatch was observed, and last received raw counter.
       lastMessageCounter: null,
@@ -301,6 +303,12 @@ class BoardStateTracker {
     state.lastSeenAt = now;
 
     if (boardPayload.kind === 'fast') {
+      state.recentFastTimestamps.push(now);
+      const oneSecondAgo = now - 1000;
+      while (state.recentFastTimestamps.length > 0 && state.recentFastTimestamps[0] < oneSecondAgo) {
+        state.recentFastTimestamps.shift();
+      }
+      boardPayload.rateHz = state.recentFastTimestamps.length;
       state.fast = { ...state.fast, ...boardPayload, receivedAt: now };
       state.fastCount += 1;
     } else if (boardPayload.kind === 'slow') {
@@ -342,6 +350,7 @@ class BoardStateTracker {
   }
 
   snapshot(now = Date.now()) {
+    const oneSecondAgo = now - 1000;
     return [...this.boards.values()]
       .sort((left, right) => {
         if (left.boardType !== right.boardType) {
@@ -349,26 +358,36 @@ class BoardStateTracker {
         }
         return left.boardId - right.boardId;
       })
-      .map((state) => ({
-        boardType: state.boardType,
-        boardId: state.boardId,
-        lastSeenAt: state.lastSeenAt,
-        lastSeenAgeMs: state.lastSeenAt ? now - state.lastSeenAt : null,
-        fastCount: state.fastCount,
-        slowCount: state.slowCount,
-        // Expose message counter tracking for UI/debugging
-        lastMessageCounter: state.lastMessageCounter,
-        counterMismatch: state.counterMismatch,
-        counterMismatchCount: state.counterMismatchCount,
-        consecutiveGoodFrames: state.consecutiveGoodFrames,
-        lastMessageCounterReceived: state.lastMessageCounterReceived,
-        fast: state.fast
-          ? { ...state.fast, ageMs: now - state.fast.receivedAt }
-          : null,
-        slow: state.slow
-          ? { ...state.slow, ageMs: now - state.slow.receivedAt }
-          : null,
-      }));
+      .map((state) => {
+        if (state.recentFastTimestamps) {
+          while (state.recentFastTimestamps.length > 0 && state.recentFastTimestamps[0] < oneSecondAgo) {
+            state.recentFastTimestamps.shift();
+          }
+          if (state.fast) {
+            state.fast.rateHz = state.recentFastTimestamps.length;
+          }
+        }
+        return {
+          boardType: state.boardType,
+          boardId: state.boardId,
+          lastSeenAt: state.lastSeenAt,
+          lastSeenAgeMs: state.lastSeenAt ? now - state.lastSeenAt : null,
+          fastCount: state.fastCount,
+          slowCount: state.slowCount,
+          // Expose message counter tracking for UI/debugging
+          lastMessageCounter: state.lastMessageCounter,
+          counterMismatch: state.counterMismatch,
+          counterMismatchCount: state.counterMismatchCount,
+          consecutiveGoodFrames: state.consecutiveGoodFrames,
+          lastMessageCounterReceived: state.lastMessageCounterReceived,
+          fast: state.fast
+            ? { ...state.fast, ageMs: now - state.fast.receivedAt }
+            : null,
+          slow: state.slow
+            ? { ...state.slow, ageMs: now - state.slow.receivedAt }
+            : null,
+        };
+      });
   }
 }
 
@@ -401,6 +420,8 @@ class DeviceMonitor extends EventEmitter {
     this.portScanTimer = null;
     this.diagnosticsTimer = null;
     this.usbTopologyTimer = null;
+    this.pendingFrames = [];
+    this.frameBatchTimer = null;
   }
 
   async start() {
@@ -425,12 +446,24 @@ class DeviceMonitor extends EventEmitter {
     this.diagnosticsTimer = setInterval(() => {
       this.emit('diagnostics', this.getDiagnosticsSnapshot());
     }, DIAGNOSTICS_INTERVAL_MS);
+
+    this.frameBatchTimer = setInterval(() => {
+      if (this.pendingFrames.length > 0) {
+        this.emit('frames', this.pendingFrames);
+        this.pendingFrames = [];
+      }
+    }, 33); // ~30 FPS updates
   }
 
   async dispose() {
     if (this.portScanTimer) {
       clearInterval(this.portScanTimer);
       this.portScanTimer = null;
+    }
+
+    if (this.frameBatchTimer) {
+      clearInterval(this.frameBatchTimer);
+      this.frameBatchTimer = null;
     }
 
     if (this.diagnosticsTimer) {
@@ -683,20 +716,48 @@ class DeviceMonitor extends EventEmitter {
           autoOpen: false,
         });
 
-        let pendingText = '';
+        let pendingBuffer = Buffer.alloc(0);
         serialPort.on('data', (chunk) => {
           const now = Date.now();
           this.stats.recordChunk(chunk.length, now);
-          pendingText += chunk.toString('utf8');
+          
+          pendingBuffer = Buffer.concat([pendingBuffer, chunk]);
 
-          const parts = pendingText.split(/\r\n|\n|\r/g);
-          pendingText = parts.pop() ?? '';
-
-          for (const part of parts) {
-            const parsedFrame = parseMduLine(part);
-            if (!parsedFrame.raw) {
-              continue;
+          while (pendingBuffer.length > 0) {
+            const syncIndex = pendingBuffer.indexOf(0xAA);
+            if (syncIndex === -1) {
+              // No sync byte found, discard everything
+              pendingBuffer = Buffer.alloc(0);
+              break;
             }
+
+            if (syncIndex > 0) {
+              // Discard bytes before sync
+              pendingBuffer = pendingBuffer.slice(syncIndex);
+            }
+
+            if (pendingBuffer.length < 5) {
+              // Need at least 5 bytes to read length
+              break;
+            }
+
+            const dataLength = pendingBuffer[3];
+            const frameLength = 5 + dataLength;
+
+            if (pendingBuffer.length < frameLength) {
+              // Not enough data for full frame
+              break;
+            }
+
+            const frameBuffer = pendingBuffer.slice(0, frameLength);
+            pendingBuffer = pendingBuffer.slice(frameLength);
+
+            const slcan = parseBinaryFrame(frameBuffer);
+            if (!slcan.ok) {
+               continue;
+            }
+
+            const parsedFrame = parseSlcanToBoard(slcan, slcan.raw);
 
             this.stats.recordLine(parsedFrame, now);
             if (parsedFrame.ok && parsedFrame.source === 'board' && parsedFrame.board) {
@@ -722,7 +783,7 @@ class DeviceMonitor extends EventEmitter {
                 : null,
             };
 
-            this.emit('frame', event);
+            this.pendingFrames.push(event);
             this.logWriter.write({
               type: 'frame',
               ...event,

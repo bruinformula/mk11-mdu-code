@@ -629,17 +629,38 @@ function renderPorts() {
   }
 
   for (const port of state.ports) {
-    const labelParts = [port.path];
-    if (port.matchesTarget) {
-      labelParts.push("STM32 USB CDC");
-    }
-    if (port.locationId) {
-      labelParts.push(`hub ${port.locationId}`);
-    }
+    try {
+      const labelParts = [port.path];
+      
+      if (port.manufacturer) {
+        labelParts.push(port.manufacturer);
+      }
+      
+      if (port.vendorId && port.productId) {
+        labelParts.push(`USB ${port.vendorId}:${port.productId}`);
+      }
 
-    options.push(
-      `<option value="${escapeHtml(port.path)}" ${selectedPath === port.path ? "selected" : ""}>${escapeHtml(labelParts.join(" · "))}</option>`,
-    );
+      if (port.matchesTarget) {
+        labelParts.push('TARGET MDU');
+      }
+
+      if (port.serialNumber) {
+        labelParts.push(`SN: ${port.serialNumber}`);
+      }
+
+      if (port.locationId) {
+        labelParts.push(`hub ${port.locationId}`);
+      }
+
+      options.push(
+        `<option value="${escapeHtml(port.path)}" ${selectedPath === port.path ? 'selected' : ''}>${escapeHtml(labelParts.join(' · '))}</option>`
+      );
+    } catch (err) {
+      console.error('Error rendering port details:', port, err);
+      options.push(
+        `<option value="${escapeHtml(port?.path || '')}" ${selectedPath === port?.path ? 'selected' : ''}>${escapeHtml(port?.path || 'Unknown Port')}</option>`
+      );
+    }
   }
 
   elements.portSelect.innerHTML = options.join("");
@@ -1225,6 +1246,76 @@ function renderImuDetails(fast) {
   `;
 }
 
+function renderTestPayloadDetails(fast) {
+  if (!fast?.dataBytes?.length) {
+    return '';
+  }
+
+  const rows = [];
+  // Render payload in rows of 8 bytes
+  for (let i = 0; i < fast.dataBytes.length; i += 8) {
+    const chunk = fast.dataBytes.slice(i, i + 8);
+    const hexVal = chunk.map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+    rows.push(`
+      <tr>
+        <td class="mono">Byte ${i} - ${i + 7}</td>
+        <td class="mono">${escapeHtml(hexVal)}</td>
+      </tr>
+    `);
+  }
+
+  return `
+    <details class="board-detail" data-detail="test-payload" style="margin-top: 8px;">
+      <summary>Full 64-Byte Payload</summary>
+      ${renderTable(['Byte Range', 'Hex values'], rows)}
+    </details>
+  `;
+}
+
+function renderTestBlock(fast, board) {
+  if (!fast) {
+    return '<p class="board-empty">Waiting for Test frame...</p>';
+  }
+
+  const rateHz = fast.rateHz ?? (fast.timeSinceLastMs > 0 ? Math.round(1000 / fast.timeSinceLastMs) : 0);
+  const rateText = `${rateHz} Hz`;
+
+  // Dynamic Mbps calculation
+  const payloadBytes = fast.dataBytes ? fast.dataBytes.length : 0;
+  const payloadMbps = ((rateHz * payloadBytes * 8) / 1000000).toFixed(2);
+  
+  // CAN FD Overhead: Nominal phase (70us @ 1Mbps) + Data phase (payload*8 + 28 bits) * 0.2us @ 5Mbps
+  // Frame time = 70us + (payloadBytes*8 + 28) * 0.2us
+  // Bus utilization = rateHz * frameTime; express as fraction then percentage
+  const frameTimeUs = 70 + (payloadBytes * 8 + 28) * 0.2;
+  const busUtil = rateHz * frameTimeUs / 1000000;
+  const busMbps = busUtil.toFixed(2);
+  const busPct = (busUtil * 100).toFixed(1);
+
+  // Format first 16 bytes for quick preview
+  const previewBytes = fast.dataBytes.slice(0, 16);
+  const previewHex = previewBytes.map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+
+  return `
+    <p class="board-meta">${escapeHtml(fast.idText)} · Δt ${fast.timeSinceLastMs} ms · ${escapeHtml(formatBoardAge(fast.ageMs))}</p>
+    <dl class="board-readings">
+      <dt>Message Rate</dt><dd>${rateText}</dd>
+      <dt>Payload Rate</dt><dd>${payloadMbps} Mbps</dd>
+      <dt>Est. Bus Load</dt><dd>${busPct}%</dd>
+      <dt>Last Rx Seq</dt><dd>${fast.rxSeq}</dd>
+      <dt>Total Rx</dt><dd>${board.fastCount}</dd>
+      <dt>Dropped</dt><dd style="color: ${board.counterMismatchCount > 0 ? 'var(--accent-red, #ff5c5c)' : 'inherit'}; font-weight: bold;">${board.counterMismatchCount}</dd>
+    </dl>
+    
+    <div style="margin-top: 10px; font-size: 0.8rem;">
+      <strong style="color: var(--accent); display: block; margin-bottom: 4px;">Payload Preview (First 16B):</strong>
+      <code style="font-family: monospace; display: block; background: rgba(0,0,0,0.15); padding: 6px; border-radius: 4px; word-break: break-all;">${previewHex} ...</code>
+    </div>
+    
+    ${renderTestPayloadDetails(fast)}
+  `;
+}
+
 function renderBoards() {
   const boards = state.diagnostics?.boards ?? [];
   if (boards.length === 0) {
@@ -1281,6 +1372,25 @@ function renderBoards() {
               <div class="board-col">
                 <h3>Slow (Temp: 0x${tempHex})</h3>
                 ${renderTspmuSlowBlock(board.slow)}
+              </div>
+            </div>
+          </article>
+        `;
+      } else if (board.boardType === 4) {
+        const boardName = `Test Board (Overload)`;
+
+        return `
+          <article class="board-card" data-board-key="${boardKey}">
+            <header class="board-card-header">
+              <strong>${escapeHtml(boardName)}</strong>
+              <span class="board-age">${escapeHtml(formatBoardAge(board.lastSeenAgeMs))}</span>
+              <span class="board-counter">CNT: ${board.lastMessageCounterReceived != null ? board.lastMessageCounterReceived : '--'} (Drops: ${board.counterMismatchCount})</span>
+              ${board.counterMismatch ? '<span class="pill error">CNT MISMATCH</span>' : ''}
+            </header>
+            <div class="board-cols">
+              <div class="board-col" style="flex: 1;">
+                <h3>Fast (Test: 0x111)</h3>
+                ${renderTestBlock(board.fast, board)}
               </div>
             </div>
           </article>
@@ -1443,15 +1553,10 @@ function renderLog() {
           `;
         }
 
-        if (entry.source === "board" && entry.board) {
-          const typeLabel =
-            entry.board.boardType === 6
-              ? "TSPMU"
-              : entry.board.boardType === 1
-                ? "SMU"
-                : "SDU";
-          const idLabel = `${typeLabel} ${entry.board.boardId ?? 0} · ${entry.board.kind === "fast" ? "Fast" : "Slow"} · ${entry.frame?.idText ?? "--"}`;
-          let summary = "";
+        if (entry.source === 'board' && entry.board) {
+          const typeLabel = entry.board.boardType === 6 ? 'TSPMU' : entry.board.boardType === 1 ? 'SMU' : entry.board.boardType === 4 ? 'TEST' : 'SDU';
+          const idLabel = `${typeLabel} ${entry.board.boardId ?? 0} · ${entry.board.kind === 'fast' ? 'Fast' : 'Slow'} · ${entry.frame?.idText ?? '--'}`;
+          let summary = '';
           if (entry.board.boardType === 6) {
             summary =
               entry.board.kind === "fast"
@@ -1459,6 +1564,9 @@ function renderLog() {
                 : `Temp ${formatSigned(entry.board.tspmuTemp1, 1)}/${formatSigned(entry.board.tspmuTemp2, 1)}/${formatSigned(entry.board.tspmuTemp3, 1)}/${formatSigned(entry.board.tspmuTemp4, 1)} °C`;
           } else if (entry.board.boardType === 1) {
             summary = `Accel X/Y/Z: ${entry.board.accelX}/${entry.board.accelY}/${entry.board.accelZ} · Velo X/Y/Z: ${entry.board.veloX}/${entry.board.veloY}/${entry.board.veloZ}`;
+          } else if (entry.board.boardType === 4) {
+            const hz = entry.board.timeSinceLastMs > 0 ? (1000 / entry.board.timeSinceLastMs).toFixed(1) : '0.0';
+            summary = `Seq ${entry.board.rxSeq} · Rate ${hz} Hz`;
           } else {
             summary =
               entry.board.kind === "fast"
@@ -1666,6 +1774,12 @@ function appendBoardSample(frameEvent) {
         veloB: Number(mergedFast.veloB),
         veloC: Number(mergedFast.veloC),
         jitter: Number(mergedFast.jitter ?? 0),
+      });
+    } else if (boardType === 4) {
+      historyEntry.fast.push({
+        t: now,
+        rxSeq: Number(mergedFast.rxSeq),
+        timeSinceLastMs: Number(mergedFast.timeSinceLastMs),
       });
     } else {
       historyEntry.fast.push({
@@ -3892,13 +4006,15 @@ function wireEvents() {
     scheduleRender("graphs", renderGraphs);
   });
 
-  api.onFrame((frame) => {
-    addLogRow(frame);
-    if (frame && frame.ok && frame.source === "board" && frame.board) {
-      mergeBoardIntoDiagnostics(frame);
-      appendBoardSample(frame);
-      scheduleRender("boards", renderBoards);
+  api.onFrames((frames) => {
+    for (const frame of frames) {
+      addLogRow(frame);
+      if (frame && frame.ok && frame.source === 'board' && frame.board) {
+        mergeBoardIntoDiagnostics(frame);
+        appendBoardSample(frame);
+      }
     }
+    scheduleRender('boards', renderBoards);
   });
 
   api.onRuntime((runtime) => {

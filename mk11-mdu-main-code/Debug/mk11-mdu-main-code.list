@@ -27,25 +27,25 @@ Idx Name          Size      VMA       LMA       File off  Algn
                   ALLOC
  11 .ARM.attributes 00000036  00000000  00000000  0000500c  2**0
                   CONTENTS, READONLY
- 12 .debug_info   0000a3d9  00000000  00000000  00005042  2**0
+ 12 .debug_info   0000a3da  00000000  00000000  00005042  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 13 .debug_abbrev 00001dd3  00000000  00000000  0000f41b  2**0
+ 13 .debug_abbrev 00001dbd  00000000  00000000  0000f41c  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 14 .debug_aranges 00000a90  00000000  00000000  000111f0  2**3
+ 14 .debug_aranges 00000a90  00000000  00000000  000111e0  2**3
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 15 .debug_rnglists 000007d4  00000000  00000000  00011c80  2**0
+ 15 .debug_rnglists 000007d4  00000000  00000000  00011c70  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 16 .debug_macro  00028634  00000000  00000000  00012454  2**0
+ 16 .debug_macro  00028634  00000000  00000000  00012444  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 17 .debug_line   0000c308  00000000  00000000  0003aa88  2**0
+ 17 .debug_line   0000c7dd  00000000  00000000  0003aa78  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 18 .debug_str    0010607c  00000000  00000000  00046d90  2**0
+ 18 .debug_str    00106079  00000000  00000000  00047255  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 19 .comment      00000043  00000000  00000000  0014ce0c  2**0
+ 19 .comment      00000043  00000000  00000000  0014d2ce  2**0
                   CONTENTS, READONLY
- 20 .debug_frame  00002690  00000000  00000000  0014ce50  2**2
+ 20 .debug_frame  000029a0  00000000  00000000  0014d314  2**2
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 21 .debug_line_str 00000066  00000000  00000000  0014f4e0  2**0
+ 21 .debug_line_str 00000063  00000000  00000000  0014fcb4  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
 
 Disassembly of section .text:
@@ -1331,7 +1331,7 @@ __weak HAL_StatusTypeDef HAL_InitTick(uint32_t TickPriority)
         HAL_NVIC_SetPriority(SysTick_IRQn, TickPriority, 0U);
  80008b8:	2200      	movs	r2, #0
  80008ba:	6879      	ldr	r1, [r7, #4]
- 80008bc:	f04f 30ff 	mov.w	r0, #4294967295	@ 0xffffffff
+ 80008bc:	f04f 30ff 	mov.w	r0, #4294967295
  80008c0:	f001 fc09 	bl	80020d6 <HAL_NVIC_SetPriority>
         uwTickPrio = TickPriority;
  80008c4:	4a0a      	ldr	r2, [pc, #40]	@ (80008f0 <HAL_InitTick+0x74>)
@@ -1443,7 +1443,7 @@ __weak void HAL_Delay(uint32_t Delay)
   /* Add a period to guaranty minimum wait */
   if (wait < HAL_MAX_DELAY)
  8000946:	68fb      	ldr	r3, [r7, #12]
- 8000948:	f1b3 3fff 	cmp.w	r3, #4294967295	@ 0xffffffff
+ 8000948:	f1b3 3fff 	cmp.w	r3, #4294967295
  800094c:	d005      	beq.n	800095a <HAL_Delay+0x26>
   {
     wait += (uint32_t)uwTickFreq;
@@ -3270,7 +3270,7 @@ HAL_StatusTypeDef HAL_ADC_PollForConversion(ADC_HandleTypeDef *hadc, uint32_t Ti
     /* Check if timeout is disabled (set to infinite wait) */
     if (Timeout != HAL_MAX_DELAY)
  80012f6:	683b      	ldr	r3, [r7, #0]
- 80012f8:	f1b3 3fff 	cmp.w	r3, #4294967295	@ 0xffffffff
+ 80012f8:	f1b3 3fff 	cmp.w	r3, #4294967295
  80012fc:	d01d      	beq.n	800133a <HAL_ADC_PollForConversion+0xc2>
     {
       if (((HAL_GetTick() - tickstart) > Timeout) || (Timeout == 0UL))
@@ -4453,10 +4453,8 @@ HAL_StatusTypeDef HAL_ADC_ConfigChannel(ADC_HandleTypeDef *hadc, const ADC_Chann
  8001b18:	d161      	bne.n	8001bde <HAL_ADC_ConfigChannel+0x79a>
             {
               LL_ADC_SetCommonPathInternalCh(__LL_ADC_COMMON_INSTANCE(hadc->Instance),
-                                             LL_ADC_PATH_INTERNAL_TEMPSENSOR | tmp_config_internal_channel);
  8001b1a:	f8d7 30c4 	ldr.w	r3, [r7, #196]	@ 0xc4
  8001b1e:	f443 0300 	orr.w	r3, r3, #8388608	@ 0x800000
-              LL_ADC_SetCommonPathInternalCh(__LL_ADC_COMMON_INSTANCE(hadc->Instance),
  8001b22:	4619      	mov	r1, r3
  8001b24:	4834      	ldr	r0, [pc, #208]	@ (8001bf8 <HAL_ADC_ConfigChannel+0x7b4>)
  8001b26:	f7fe ff3c 	bl	80009a2 <LL_ADC_SetCommonPathInternalCh>
@@ -4515,15 +4513,14 @@ HAL_StatusTypeDef HAL_ADC_ConfigChannel(ADC_HandleTypeDef *hadc, const ADC_Chann
  8001b72:	d134      	bne.n	8001bde <HAL_ADC_ConfigChannel+0x79a>
             {
               LL_ADC_SetCommonPathInternalCh(__LL_ADC_COMMON_INSTANCE(hadc->Instance),
-                                             LL_ADC_PATH_INTERNAL_VBAT | tmp_config_internal_channel);
  8001b74:	f8d7 30c4 	ldr.w	r3, [r7, #196]	@ 0xc4
  8001b78:	f043 7380 	orr.w	r3, r3, #16777216	@ 0x1000000
-              LL_ADC_SetCommonPathInternalCh(__LL_ADC_COMMON_INSTANCE(hadc->Instance),
  8001b7c:	4619      	mov	r1, r3
  8001b7e:	481e      	ldr	r0, [pc, #120]	@ (8001bf8 <HAL_ADC_ConfigChannel+0x7b4>)
  8001b80:	f7fe ff0f 	bl	80009a2 <LL_ADC_SetCommonPathInternalCh>
             if (ADC_BATTERY_VOLTAGE_INSTANCE(hadc))
  8001b84:	e02b      	b.n	8001bde <HAL_ADC_ConfigChannel+0x79a>
+                                             LL_ADC_PATH_INTERNAL_VBAT | tmp_config_internal_channel);
             }
           }
           else if ((pConfig->Channel == ADC_CHANNEL_VREFINT)
@@ -4546,10 +4543,8 @@ HAL_StatusTypeDef HAL_ADC_ConfigChannel(ADC_HandleTypeDef *hadc, const ADC_Chann
  8001ba4:	d11b      	bne.n	8001bde <HAL_ADC_ConfigChannel+0x79a>
             {
               LL_ADC_SetCommonPathInternalCh(__LL_ADC_COMMON_INSTANCE(hadc->Instance),
-                                             LL_ADC_PATH_INTERNAL_VREFINT | tmp_config_internal_channel);
  8001ba6:	f8d7 30c4 	ldr.w	r3, [r7, #196]	@ 0xc4
  8001baa:	f443 0380 	orr.w	r3, r3, #4194304	@ 0x400000
-              LL_ADC_SetCommonPathInternalCh(__LL_ADC_COMMON_INSTANCE(hadc->Instance),
  8001bae:	4619      	mov	r1, r3
  8001bb0:	4811      	ldr	r0, [pc, #68]	@ (8001bf8 <HAL_ADC_ConfigChannel+0x7b4>)
  8001bb2:	f7fe fef6 	bl	80009a2 <LL_ADC_SetCommonPathInternalCh>
@@ -5407,7 +5402,7 @@ __STATIC_INLINE uint32_t NVIC_EncodePriority (uint32_t PriorityGroup, uint32_t P
 
   return (
            ((PreemptPriority & (uint32_t)((1UL << (PreemptPriorityBits)) - 1UL)) << SubPriorityBits) |
- 8002048:	f04f 32ff 	mov.w	r2, #4294967295	@ 0xffffffff
+ 8002048:	f04f 32ff 	mov.w	r2, #4294967295
  800204c:	69bb      	ldr	r3, [r7, #24]
  800204e:	fa02 f303 	lsl.w	r3, r2, r3
  8002052:	43da      	mvns	r2, r3
@@ -5416,7 +5411,7 @@ __STATIC_INLINE uint32_t NVIC_EncodePriority (uint32_t PriorityGroup, uint32_t P
  8002058:	697b      	ldr	r3, [r7, #20]
  800205a:	409a      	lsls	r2, r3
            ((SubPriority     & (uint32_t)((1UL << (SubPriorityBits    )) - 1UL)))
- 800205c:	f04f 31ff 	mov.w	r1, #4294967295	@ 0xffffffff
+ 800205c:	f04f 31ff 	mov.w	r1, #4294967295
  8002060:	697b      	ldr	r3, [r7, #20]
  8002062:	fa01 f303 	lsl.w	r3, r1, r3
  8002066:	43d9      	mvns	r1, r3
@@ -5462,7 +5457,7 @@ __STATIC_INLINE uint32_t SysTick_Config(uint32_t ticks)
  8002098:	6053      	str	r3, [r2, #4]
   NVIC_SetPriority (SysTick_IRQn, (1UL << __NVIC_PRIO_BITS) - 1UL); /* set Priority for Systick Interrupt */
  800209a:	2107      	movs	r1, #7
- 800209c:	f04f 30ff 	mov.w	r0, #4294967295	@ 0xffffffff
+ 800209c:	f04f 30ff 	mov.w	r0, #4294967295
  80020a0:	f7ff ff8e 	bl	8001fc0 <__NVIC_SetPriority>
   SysTick->VAL   = 0UL;                                             /* Load the SysTick Counter Value */
  80020a4:	4b05      	ldr	r3, [pc, #20]	@ (80020bc <SysTick_Config+0x40>)
@@ -10922,19 +10917,19 @@ Infinite_Loop:
 
 08003f38 <__libc_init_array>:
  8003f38:	b570      	push	{r4, r5, r6, lr}
- 8003f3a:	4b0d      	ldr	r3, [pc, #52]	@ (8003f70 <__libc_init_array+0x38>)
+ 8003f3a:	4d0d      	ldr	r5, [pc, #52]	@ (8003f70 <__libc_init_array+0x38>)
  8003f3c:	2600      	movs	r6, #0
- 8003f3e:	4d0d      	ldr	r5, [pc, #52]	@ (8003f74 <__libc_init_array+0x3c>)
- 8003f40:	1b5b      	subs	r3, r3, r5
- 8003f42:	109c      	asrs	r4, r3, #2
+ 8003f3e:	4c0d      	ldr	r4, [pc, #52]	@ (8003f74 <__libc_init_array+0x3c>)
+ 8003f40:	1b64      	subs	r4, r4, r5
+ 8003f42:	10a4      	asrs	r4, r4, #2
  8003f44:	42a6      	cmp	r6, r4
  8003f46:	d109      	bne.n	8003f5c <__libc_init_array+0x24>
  8003f48:	4d0b      	ldr	r5, [pc, #44]	@ (8003f78 <__libc_init_array+0x40>)
- 8003f4a:	f000 f819 	bl	8003f80 <_init>
- 8003f4e:	4b0b      	ldr	r3, [pc, #44]	@ (8003f7c <__libc_init_array+0x44>)
- 8003f50:	2600      	movs	r6, #0
- 8003f52:	1b5b      	subs	r3, r3, r5
- 8003f54:	109c      	asrs	r4, r3, #2
+ 8003f4a:	2600      	movs	r6, #0
+ 8003f4c:	4c0b      	ldr	r4, [pc, #44]	@ (8003f7c <__libc_init_array+0x44>)
+ 8003f4e:	f000 f817 	bl	8003f80 <_init>
+ 8003f52:	1b64      	subs	r4, r4, r5
+ 8003f54:	10a4      	asrs	r4, r4, #2
  8003f56:	42a6      	cmp	r6, r4
  8003f58:	d105      	bne.n	8003f66 <__libc_init_array+0x2e>
  8003f5a:	bd70      	pop	{r4, r5, r6, pc}

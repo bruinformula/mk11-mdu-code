@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('mduDebug', {
   onConnection: (callback) => subscribe('device:connection', callback),
   onDiagnostics: (callback) => subscribe('device:diagnostics', callback),
   onFrame: (callback) => subscribe('device:frame', callback),
+  onFrames: (callback) => subscribe('device:frames', callback),
   onRuntime: (callback) => subscribe('device:runtime', callback),
   onLogStatus: (callback) => subscribe('device:log-status', callback),
   getBfrConfig: () => ipcRenderer.invoke('bfr:get-config'),

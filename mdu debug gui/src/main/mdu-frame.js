@@ -590,7 +590,50 @@ function parseMduLine(rawLine) {
 
   const slcan = parseSlcanFrame(cleaned);
   if (slcan.ok) {
-    const id = slcan.identifier;
+    return parseSlcanToBoard(slcan, cleaned);
+  }
+
+  return {
+    ok: false,
+    reason: slcan.reason ?? 'unrecognized-line',
+    raw: cleaned,
+  };
+}
+
+function parseSlcanToBoard(slcan, rawLine) {
+  const id = slcan.identifier;
+
+  if (id === 0x111 && slcan.dataBytes.length >= 64) {
+    const data = slcan.dataBytes;
+    const rxSeq = data[0];
+    const err = (rxSeq & 0x07) << 7; 
+    const timeSinceLastMs = getCalculatedDeltaMs(id, 10);
+
+    return {
+      ok: true,
+      source: 'board',
+      raw: rawLine,
+        idText: slcan.idText,
+        idType: slcan.idType,
+        identifier: slcan.identifier,
+        identifierHex: slcan.identifierHex,
+        dataLength: slcan.dataLength,
+        dataHex: slcan.dataHex,
+        dataBytes: slcan.dataBytes,
+        board: {
+          boardType: 4, // Test Board
+          boardId: 0,
+          kind: 'fast',
+          identifier: slcan.identifier,
+          identifierHex: slcan.identifierHex,
+          idText: slcan.idText,
+          timeSinceLastMs,
+          errorFlags: err,
+          rxSeq,
+          dataBytes: slcan.dataBytes,
+        }
+      };
+    }
 
     // Extract bit-packed fields from the 11-bit standard ID
     const boardType = (id >> 6) & 0x0F; // Bits 9-6   (Board Type: 2 for SDU)
@@ -607,7 +650,7 @@ function parseMduLine(rawLine) {
         return {
           ok: true,
           source: 'board',
-          raw: cleaned,
+          raw: rawLine,
           idText: slcan.idText,
           idType: slcan.idType,
           identifier: slcan.identifier,
@@ -636,7 +679,7 @@ function parseMduLine(rawLine) {
         return {
           ok: true,
           source: 'board',
-          raw: cleaned,
+          raw: rawLine,
           idText: slcan.idText,
           idType: slcan.idType,
           identifier: slcan.identifier,
@@ -665,7 +708,7 @@ function parseMduLine(rawLine) {
         return {
           ok: true,
           source: 'board',
-          raw: cleaned,
+          raw: rawLine,
           idText: slcan.idText,
           idType: slcan.idType,
           identifier: slcan.identifier,
@@ -696,7 +739,7 @@ function parseMduLine(rawLine) {
         return {
           ok: true,
           source: 'board',
-          raw: cleaned,
+          raw: rawLine,
           idText: slcan.idText,
           idType: slcan.idType,
           identifier: slcan.identifier,
@@ -730,7 +773,7 @@ function parseMduLine(rawLine) {
         return {
           ok: true,
           source: 'board',
-          raw: cleaned,
+          raw: rawLine,
           idText: slcan.idText,
           idType: slcan.idType,
           identifier: slcan.identifier,
@@ -764,7 +807,7 @@ function parseMduLine(rawLine) {
         return {
           ok: true,
           source: 'board',
-          raw: cleaned,
+          raw: rawLine,
           idText: slcan.idText,
           idType: slcan.idType,
           identifier: slcan.identifier,
@@ -795,7 +838,7 @@ function parseMduLine(rawLine) {
         return {
           ok: true,
           source: 'board',
-          raw: cleaned,
+          raw: rawLine,
           idText: slcan.idText,
           idType: slcan.idType,
           identifier: slcan.identifier,
@@ -830,7 +873,7 @@ function parseMduLine(rawLine) {
         return {
           ok: true,
           source: 'board',
-          raw: cleaned,
+          raw: rawLine,
           idText: slcan.idText,
           idType: slcan.idType,
           identifier: slcan.identifier,
@@ -871,7 +914,7 @@ function parseMduLine(rawLine) {
     return {
       ok: true,
       source: 'slcan',
-      raw: cleaned,
+      raw: rawLine,
       idText: slcan.idText,
       idType: slcan.idType,
       identifier: slcan.identifier,
@@ -881,17 +924,11 @@ function parseMduLine(rawLine) {
       dataBytes: slcan.dataBytes,
       board: null,
     };
-  }
-
-  return {
-    ok: false,
-    reason: slcan.reason ?? 'unrecognized-line',
-    raw: cleaned,
-  };
 }
 
 module.exports = {
   parseMduLine,
+  parseSlcanToBoard,
   normalizeMduLine,
   stripAnsiAndControl,
 };
