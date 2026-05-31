@@ -85,7 +85,52 @@ function parseSlcanFrame(rawLine) {
   };
 }
 
+function parseBinaryFrame(buffer) {
+  if (buffer.length < 5) return { ok: false, reason: 'too-short' };
+  if (buffer[0] !== 0xAA) return { ok: false, reason: 'invalid-sync' };
+  if (buffer[buffer.length - 1] !== 0x55) return { ok: false, reason: 'invalid-end' };
+
+  const identifier = buffer.readUInt16LE(1);
+  const dataLength = buffer[3];
+  
+  if (buffer.length !== 5 + dataLength) {
+    return { ok: false, reason: 'length-mismatch' };
+  }
+
+  const dataBytes = [];
+  for (let i = 0; i < dataLength; i++) {
+    dataBytes.push(buffer[4 + i]);
+  }
+
+  const identifierHex = identifier.toString(16).toUpperCase().padStart(3, '0');
+
+  let rawHex = '';
+  for (let i = 0; i < buffer.length; i++) {
+    rawHex += buffer[i].toString(16).padStart(2, '0').toUpperCase() + ' ';
+  }
+  rawHex = rawHex.trim();
+
+  let dataHex = '';
+  for (let i = 0; i < dataBytes.length; i++) {
+    dataHex += dataBytes[i].toString(16).padStart(2, '0').toUpperCase();
+  }
+
+  return {
+    ok: true,
+    raw: rawHex,
+    frameType: 't',
+    idType: 'standard',
+    identifier,
+    identifierHex,
+    idText: `0x${identifierHex}`,
+    dataLength,
+    dataHex,
+    dataBytes,
+  };
+}
+
 module.exports = {
   normalizeLine,
   parseSlcanFrame,
+  parseBinaryFrame,
 };

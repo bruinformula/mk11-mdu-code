@@ -66,6 +66,13 @@ volatile uint32_t fdcan_rx_last_id     = 0U;
 volatile uint8_t  fdcan_rx_last_len    = 0U;
 volatile uint8_t  fdcan_rx_pending     = 0U;
 
+/* TEST CODE ONLY: Variables for FDCAN limits and sequence gap drop tracking.
+   (Not part of standard MDU operational functionality) */
+volatile uint32_t fdcan_seq_skip_count    = 0U; // Total dropped/skipped frames detected
+volatile uint8_t  fdcan_expected_seq      = 0U; // Expected next sequence counter byte
+volatile uint8_t  fdcan_first_seq_seen    = 0U; // Flag to initialize the sequence check
+
+
 
 extern USBD_HandleTypeDef hUsbDeviceFS;
 //
@@ -387,6 +394,21 @@ int main(void)
       // Call the SLCAN converter directly
       CAN_To_USB_Process();
 
+      // Automatic CAN Bus-Off Recovery with a 500ms debounce timer
+      static uint32_t last_recovery_tick = 0;
+      if (hfdcan1.Instance != NULL) {
+        uint32_t psr = hfdcan1.Instance->PSR;
+        if (psr & FDCAN_PSR_BO) {
+          uint32_t now = HAL_GetTick();
+          if (now - last_recovery_tick > 500) {
+            last_recovery_tick = now;
+            HAL_FDCAN_Stop(&hfdcan1);
+            HAL_FDCAN_Start(&hfdcan1);
+            HAL_FDCAN_ActivateNotification(&hfdcan1, FDCAN_IT_RX_FIFO0_NEW_MESSAGE, 0);
+          }
+        }
+      }
+
       /* USER CODE END WHILE */
       /* USER CODE BEGIN 3 */
     }
@@ -472,6 +494,11 @@ void MDU_Get_Rx_Queue_Data(uint8_t index, FDCAN_RxHeaderTypeDef *hdr_out, uint8_
     memcpy(data_out, fdcan_rx_queue[index].data, 64);
 }
 
+void MDU_Get_Rx_Queue_Frame(uint8_t index, FDCAN_RxHeaderTypeDef **hdr_out, uint8_t **data_out) {
+    *hdr_out = &fdcan_rx_queue[index].header;
+    *data_out = fdcan_rx_queue[index].data;
+}
+
 void MDU_Advance_Rx_Queue_Head(void) {
     __disable_irq();
     // Uses the official FDCAN_RX_QUEUE_SIZE from fdcan.h (8U)
@@ -492,6 +519,27 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
       fdcan_rx_msg_count++;
       fdcan_rx_last_id  = temp_hdr.Identifier;
       fdcan_rx_last_len = FDCAN_DlcToBytes(temp_hdr.DataLength);
+
+      /* TEST CODE ONLY: Sequence Skip Detection (Not for standard MDU functionality) */
+      if (temp_hdr.Identifier == 0x111 && temp_hdr.DataLength == FDCAN_DLC_BYTES_64)
+      {
+        uint8_t rx_seq = temp_data[0];
+        if (fdcan_first_seq_seen)
+        {
+          if (rx_seq != fdcan_expected_seq)
+          {
+            int32_t diff = (int32_t)rx_seq - (int32_t)fdcan_expected_seq;
+            if (diff < 0) diff += 256;
+            fdcan_seq_skip_count += (uint32_t)diff;
+          }
+        }
+        else
+        {
+          fdcan_first_seq_seen = 1;
+        }
+        fdcan_expected_seq = (uint8_t)(rx_seq + 1U);
+      }
+      /* END OF TEST CODE */
 
       // Thread-safe Ring advancement write strategy
       uint8_t current_tail = fdcan_rx_tail;

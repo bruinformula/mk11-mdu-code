@@ -62,6 +62,7 @@ function registerMonitorEvents() {
   monitor.on('connection', (connection) => broadcast('device:connection', connection));
   monitor.on('diagnostics', (diagnostics) => broadcast('device:diagnostics', diagnostics));
   monitor.on('frame', (frame) => broadcast('device:frame', frame));
+  monitor.on('frames', (frames) => broadcast('device:frames', frames));
   monitor.on('runtime', (runtime) => broadcast('device:runtime', runtime));
   monitor.on('log-status', (status) => broadcast('device:log-status', status));
 }

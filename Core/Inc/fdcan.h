@@ -36,7 +36,7 @@ extern "C" {
 extern FDCAN_HandleTypeDef hfdcan1;
 
 /* USER CODE BEGIN Private defines */
-#define FDCAN_RX_QUEUE_SIZE           8U
+#define FDCAN_RX_QUEUE_SIZE           128U
 #define FDCAN_ACCEPTED_STD_ID_BASE    0x000U
 #define FDCAN_ACCEPTED_STD_ID_MASK    0x7FFU
 

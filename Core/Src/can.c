@@ -7,6 +7,7 @@
 
 extern uint8_t MDU_Get_Rx_Queue_State(uint8_t *head_out, uint8_t *tail_out);
 extern void MDU_Get_Rx_Queue_Data(uint8_t index, FDCAN_RxHeaderTypeDef *hdr_out, uint8_t *data_out);
+extern void MDU_Get_Rx_Queue_Frame(uint8_t index, FDCAN_RxHeaderTypeDef **hdr_out, uint8_t **data_out);
 extern void MDU_Advance_Rx_Queue_Head(void);
 
 static const char k_hex_digits[16] = {
@@ -81,9 +82,18 @@ void CAN_Process(uint32_t now_ms) {}
  *        transfer. Frames stay in the queue if USB is busy so nothing is lost.
  */
 void CAN_To_USB_Process(void) {
-  // Per-frame worst case: "T" + 8 hex id + 2 dlc digits + 64*2 hex payload + "\r" = 140
-  // FDCAN_RX_QUEUE_SIZE is 8, so a full drain is ~1.1 KB; cap below APP_TX_DATA_SIZE.
-  static char batch[1536];
+  // Prevent CPU starvation/busy formatting loop if USB endpoint is busy
+  extern USBD_HandleTypeDef hUsbDeviceFS;
+  if (hUsbDeviceFS.pClassData != NULL) {
+    USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef *)hUsbDeviceFS.pClassData;
+    if (hcdc->TxState != 0U) {
+      return;
+    }
+  }
+
+  // FDCAN_RX_QUEUE_SIZE is 128, a full drain of standard frames can take up to ~17 KB.
+  // Sized to match the expanded APP_TX_DATA_SIZE (16 KB) to send maximum batch sizes in one transfer.
+  static char batch[16384];
   int batch_len = 0;
   int frames_consumed = 0;
 
@@ -94,38 +104,28 @@ void CAN_To_USB_Process(void) {
 
   uint8_t idx = head;
   while (idx != tail) {
-    FDCAN_RxHeaderTypeDef hdr;
-    uint8_t frame_data[64];
-    MDU_Get_Rx_Queue_Data(idx, &hdr, frame_data);
+    FDCAN_RxHeaderTypeDef *hdr;
+    uint8_t *frame_data;
+    MDU_Get_Rx_Queue_Frame(idx, &hdr, &frame_data);
 
-    uint32_t len = Convert_DLC_To_Bytes(hdr.DataLength);
+    uint32_t len = Convert_DLC_To_Bytes(hdr->DataLength);
     if (len > 64) len = 64;
 
-    // Reserve worst-case room for this line; stop batching if it would overflow.
-    int needed = 11 + (int)(len * 2) + 1;
+    // Reserve space: 1 sync + 2 ID + 1 len + payload len + 1 end
+    int needed = 1 + 2 + 1 + (int)len + 1;
     if (batch_len + needed > (int)sizeof(batch)) {
       break;
     }
 
-    int n;
-    if (hdr.IdType == FDCAN_STANDARD_ID) {
-      n = snprintf(batch + batch_len, sizeof(batch) - batch_len, "t%03lX%lu",
-                   (unsigned long)hdr.Identifier, (unsigned long)len);
-    } else {
-      n = snprintf(batch + batch_len, sizeof(batch) - batch_len, "T%08lX%lu",
-                   (unsigned long)hdr.Identifier, (unsigned long)len);
-    }
-    if (n <= 0) {
-      break;
-    }
-    batch_len += n;
+    batch[batch_len++] = 0xAA; // Sync byte
+    batch[batch_len++] = (uint8_t)(hdr->Identifier & 0xFF);
+    batch[batch_len++] = (uint8_t)((hdr->Identifier >> 8) & 0xFF);
+    batch[batch_len++] = (uint8_t)len;
 
     for (uint32_t i = 0; i < len; i++) {
-      uint8_t b = frame_data[i];
-      batch[batch_len++] = k_hex_digits[b >> 4];
-      batch[batch_len++] = k_hex_digits[b & 0x0F];
+      batch[batch_len++] = frame_data[i];
     }
-    batch[batch_len++] = '\r';
+    batch[batch_len++] = 0x55; // End byte
 
     frames_consumed++;
     idx = (uint8_t)((idx + 1U) % FDCAN_RX_QUEUE_SIZE);

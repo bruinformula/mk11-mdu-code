@@ -147,7 +147,7 @@ void MX_FDCAN1_Init(void)
   hfdcan1.Init.AutoRetransmission = ENABLE;
   hfdcan1.Init.TransmitPause = DISABLE;
   hfdcan1.Init.ProtocolException = DISABLE;
-  hfdcan1.Init.NominalPrescaler = 10;
+  hfdcan1.Init.NominalPrescaler = 5;
   hfdcan1.Init.NominalSyncJumpWidth = 4;
   hfdcan1.Init.NominalTimeSeg1 = 17;
   hfdcan1.Init.NominalTimeSeg2 = 4;
@@ -156,7 +156,7 @@ void MX_FDCAN1_Init(void)
   hfdcan1.Init.DataTimeSeg1 = 8;
   hfdcan1.Init.DataTimeSeg2 = 2;
   hfdcan1.Init.StdFiltersNbr = 1;
-  hfdcan1.Init.ExtFiltersNbr = 1;
+  hfdcan1.Init.ExtFiltersNbr = 0;
   hfdcan1.Init.TxFifoQueueMode = FDCAN_TX_FIFO_OPERATION;
   if (HAL_FDCAN_Init(&hfdcan1) != HAL_OK)
   {
@@ -199,7 +199,7 @@ void HAL_FDCAN_MspInit(FDCAN_HandleTypeDef* fdcanHandle)
     GPIO_InitStruct.Pin = GPIO_PIN_8|GPIO_PIN_9;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
     GPIO_InitStruct.Alternate = GPIO_AF9_FDCAN1;
     HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
@@ -244,7 +244,6 @@ void HAL_FDCAN_MspDeInit(FDCAN_HandleTypeDef* fdcanHandle)
 HAL_StatusTypeDef FDCAN_App_Init(void)
 {
   FDCAN_FilterTypeDef std_filter = {0};
-  FDCAN_FilterTypeDef ext_filter = {0};
 
   std_filter.IdType = FDCAN_STANDARD_ID;
   std_filter.FilterIndex = 0;
@@ -254,18 +253,6 @@ HAL_StatusTypeDef FDCAN_App_Init(void)
   std_filter.FilterID2 = FDCAN_ACCEPTED_STD_ID_MASK;
 
   if (HAL_FDCAN_ConfigFilter(&hfdcan1, &std_filter) != HAL_OK)
-  {
-    return HAL_ERROR;
-  }
-
-  ext_filter.IdType = FDCAN_EXTENDED_ID;
-  ext_filter.FilterIndex = 0;
-  ext_filter.FilterType = FDCAN_FILTER_RANGE_NO_EIDM;
-  ext_filter.FilterConfig = FDCAN_FILTER_TO_RXFIFO0;
-  ext_filter.FilterID1 = 0x00000000U;
-  ext_filter.FilterID2 = 0x1FFFFFFFU;
-
-  if (HAL_FDCAN_ConfigFilter(&hfdcan1, &ext_filter) != HAL_OK)
   {
     return HAL_ERROR;
   }

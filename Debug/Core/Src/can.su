@@ -1,4 +1,3 @@
-../Core/Src/can.c:28:17:Convert_DLC_To_Bytes	16	static
-../Core/Src/can.c:55:19:CAN_Init	16	static
-../Core/Src/can.c:77:6:CAN_Process	16	static
-../Core/Src/can.c:83:6:CAN_To_USB_Process	160	static
+../Core/Src/can.c:56:19:CAN_Init	8	static
+../Core/Src/can.c:78:6:CAN_Process	0	static
+../Core/Src/can.c:84:6:CAN_To_USB_Process	40	static
