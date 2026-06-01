@@ -716,46 +716,62 @@ class DeviceMonitor extends EventEmitter {
           autoOpen: false,
         });
 
-        let pendingBuffer = Buffer.alloc(0);
+        const rxBuffer = Buffer.allocUnsafe(65536);
+        let rxRead = 0;
+        let rxWrite = 0;
+
         serialPort.on('data', (chunk) => {
           const now = Date.now();
           this.stats.recordChunk(chunk.length, now);
           
-          pendingBuffer = Buffer.concat([pendingBuffer, chunk]);
+          if (rxWrite + chunk.length > rxBuffer.length) {
+            const len = rxWrite - rxRead;
+            if (len > 0) {
+              rxBuffer.copy(rxBuffer, 0, rxRead, rxWrite);
+            }
+            rxRead = 0;
+            rxWrite = len;
+          }
 
-          while (pendingBuffer.length > 0) {
-            const syncIndex = pendingBuffer.indexOf(0xAA);
-            if (syncIndex === -1) {
-              // No sync byte found, discard everything
-              pendingBuffer = Buffer.alloc(0);
+          if (rxWrite + chunk.length > rxBuffer.length) {
+            rxRead = 0;
+            rxWrite = 0; 
+          }
+
+          chunk.copy(rxBuffer, rxWrite);
+          rxWrite += chunk.length;
+
+          while (rxWrite - rxRead > 0) {
+            const syncIndex = rxBuffer.indexOf(0xAA, rxRead);
+            
+            if (syncIndex === -1 || syncIndex >= rxWrite) {
+              rxRead = rxWrite; 
               break;
             }
 
-            if (syncIndex > 0) {
-              // Discard bytes before sync
-              pendingBuffer = pendingBuffer.slice(syncIndex);
-            }
+            rxRead = syncIndex;
+            const available = rxWrite - rxRead;
 
-            if (pendingBuffer.length < 5) {
-              // Need at least 5 bytes to read length
+            if (available < 5) {
               break;
             }
 
-            const dataLength = pendingBuffer[3];
+            const dataLength = rxBuffer[rxRead + 3];
             const frameLength = 5 + dataLength;
 
-            if (pendingBuffer.length < frameLength) {
-              // Not enough data for full frame
+            if (available < frameLength) {
               break;
             }
 
-            const frameBuffer = pendingBuffer.slice(0, frameLength);
-            pendingBuffer = pendingBuffer.slice(frameLength);
-
+            const frameBuffer = rxBuffer.subarray(rxRead, rxRead + frameLength);
             const slcan = parseBinaryFrame(frameBuffer);
+            
             if (!slcan.ok) {
+               rxRead += 1;
                continue;
             }
+
+            rxRead += frameLength;
 
             const parsedFrame = parseSlcanToBoard(slcan, slcan.raw);
 
