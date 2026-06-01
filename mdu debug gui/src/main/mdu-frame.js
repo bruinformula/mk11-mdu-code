@@ -160,19 +160,23 @@ function decodeTspmuPressureBlocks(data) {
 
 function decodeFlowBlocks(data) {
   const blocks = [];
-  for (let index = 0; index < 11; index += 1) {
-    const offset = 6 + index * 5;
-    if (offset + 4 >= data.length) {
+  for (let index = 0; index < 6; index += 1) {
+    const offset = 6 + index * 9;
+    if (offset + 8 >= data.length) {
       break;
     }
-    const rawF1 = data[offset] | (data[offset + 1] << 8);
-    const rawF2 = data[offset + 2] | (data[offset + 3] << 8);
+    const rawR1 = data[offset] | (data[offset + 1] << 8);
+    const rawF1 = data[offset + 2] | (data[offset + 3] << 8);
+    const rawR2 = data[offset + 4] | (data[offset + 5] << 8);
+    const rawF2 = data[offset + 6] | (data[offset + 7] << 8);
     const flow1 = rawF1 / 10.0;
     const flow2 = rawF2 / 10.0;
-    const jitter = toSigned8(data[offset + 4]);
+    const jitter = toSigned8(data[offset + 8]);
     blocks.push({
       index,
+      raw1: rawR1,
       flow1,
+      raw2: rawR2,
       flow2,
       jitter,
     });
@@ -260,6 +264,63 @@ function decodeImuSamples(data) {
     expectedPeriod,
     errorFlags,
     samples: [sample1, sample2]
+  };
+}
+
+function decodeGpsTimesync(data) {
+  const getU32 = (offset) => (data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24)) >>> 0;
+  return {
+    timestampUs: getU32(0),
+    utcMsOfDay: getU32(4),
+    utcDate: getU32(8),
+    fixValid: data[12],
+    fixQuality: data[13],
+    satellites: data[14],
+    headingValid: data[15],
+    sentenceCount: getU32(16),
+    rmcCount: getU32(20),
+    ggaCount: getU32(24),
+    pqtmtarCount: getU32(28),
+    errorFlags: data[63]
+  };
+}
+
+function decodeGpsPos(data) {
+  const getU32 = (offset) => (data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24)) >>> 0;
+  const getS32 = (offset) => {
+    const u32 = getU32(offset);
+    return u32 > 0x7FFFFFFF ? u32 - 0x100000000 : u32;
+  };
+  return {
+    timestampUs: getU32(0),
+    latDeg: getS32(4) / 10000000.0,
+    lonDeg: getS32(8) / 10000000.0,
+    altM: getS32(12) / 1000.0,
+    hdop: (data[16] | (data[17] << 8)) / 100.0,
+    fixValid: data[18],
+    fixQuality: data[19],
+    satellites: data[20],
+    errorFlags: data[63]
+  };
+}
+
+function decodeGpsNav(data) {
+  const getU32 = (offset) => (data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24)) >>> 0;
+  const getS32 = (offset) => {
+    const u32 = getU32(offset);
+    return u32 > 0x7FFFFFFF ? u32 - 0x100000000 : u32;
+  };
+  return {
+    timestampUs: getU32(0),
+    velMps: getU32(4) / 100.0,
+    courseDeg: getS32(8) / 100.0,
+    headingDeg: getS32(12) / 100.0,
+    headingAccDeg: (data[16] | (data[17] << 8)) / 100.0,
+    headingValid: data[18],
+    headingQuality: data[19],
+    baselineM: getU32(20) / 1000.0,
+    pitchDeg: getS32(24) / 100.0,
+    errorFlags: data[63]
   };
 }
 
@@ -812,9 +873,11 @@ function parseSlcanToBoard(slcan, rawLine) {
             identifier: slcan.identifier,
             identifierHex: slcan.identifierHex,
             idText: slcan.idText,
-            timeSinceLastMs: 1100,
+            timeSinceLastMs: 600,
             errorFlags: err,
+            raw1: flowBlocks[0]?.raw1 ?? 0,
             flow1: flowBlocks[0]?.flow1 ?? 0,
+            raw2: flowBlocks[0]?.raw2 ?? 0,
             flow2: flowBlocks[0]?.flow2 ?? 0,
             jitter: flowBlocks[0]?.jitter ?? 0,
             flowBlocks,
@@ -894,7 +957,82 @@ function parseSlcanToBoard(slcan, rawLine) {
 
     if (boardType === 1 && slcan.dataBytes.length >= 64) {
       const data = slcan.dataBytes;
-      if (sensorNum === 3) {
+      if (sensorNum === 0) {
+        const timesync = decodeGpsTimesync(data);
+        return {
+          ok: true,
+          source: 'board',
+          raw: rawLine,
+          idText: slcan.idText,
+          idType: slcan.idType,
+          identifier: slcan.identifier,
+          identifierHex: slcan.identifierHex,
+          dataLength: slcan.dataLength,
+          dataHex: slcan.dataHex,
+          dataBytes: slcan.dataBytes,
+          board: {
+            boardType,
+            boardId,
+            kind: 'slow',
+            identifier: slcan.identifier,
+            identifierHex: slcan.identifierHex,
+            idText: slcan.idText,
+            timeSinceLastMs: 100,
+            errorFlags: timesync.errorFlags,
+            gpsTimesync: timesync,
+          }
+        };
+      } else if (sensorNum === 1) {
+        const pos = decodeGpsPos(data);
+        return {
+          ok: true,
+          source: 'board',
+          raw: rawLine,
+          idText: slcan.idText,
+          idType: slcan.idType,
+          identifier: slcan.identifier,
+          identifierHex: slcan.identifierHex,
+          dataLength: slcan.dataLength,
+          dataHex: slcan.dataHex,
+          dataBytes: slcan.dataBytes,
+          board: {
+            boardType,
+            boardId,
+            kind: 'slow',
+            identifier: slcan.identifier,
+            identifierHex: slcan.identifierHex,
+            idText: slcan.idText,
+            timeSinceLastMs: 50,
+            errorFlags: pos.errorFlags,
+            gpsPos: pos,
+          }
+        };
+      } else if (sensorNum === 2) {
+        const nav = decodeGpsNav(data);
+        return {
+          ok: true,
+          source: 'board',
+          raw: rawLine,
+          idText: slcan.idText,
+          idType: slcan.idType,
+          identifier: slcan.identifier,
+          identifierHex: slcan.identifierHex,
+          dataLength: slcan.dataLength,
+          dataHex: slcan.dataHex,
+          dataBytes: slcan.dataBytes,
+          board: {
+            boardType,
+            boardId,
+            kind: 'slow',
+            identifier: slcan.identifier,
+            identifierHex: slcan.identifierHex,
+            idText: slcan.idText,
+            timeSinceLastMs: 50,
+            errorFlags: nav.errorFlags,
+            gpsNav: nav,
+          }
+        };
+      } else if (sensorNum === 3) {
         const imuData = decodeImuSamples(data);
         return {
           ok: true,

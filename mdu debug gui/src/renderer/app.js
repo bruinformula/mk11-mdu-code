@@ -1246,6 +1246,26 @@ function renderImuDetails(fast) {
   `;
 }
 
+function renderGpsSlowBlock(slow) {
+  if (!slow || (!slow.gpsTimesync && !slow.gpsPos && !slow.gpsNav)) {
+    return '<p class="board-empty">Waiting for GPS frames...</p>';
+  }
+
+  return `
+    <dl class="board-readings">
+      <dt>Satellites</dt><dd>${slow.gpsTimesync?.satellites ?? "--"}</dd>
+      <dt>Fix Valid</dt><dd>${slow.gpsTimesync?.fixValid ? "Yes" : "No"}</dd>
+      <dt>Latitude</dt><dd>${slow.gpsPos?.latDeg?.toFixed(6) ?? "--"}°</dd>
+      <dt>Longitude</dt><dd>${slow.gpsPos?.lonDeg?.toFixed(6) ?? "--"}°</dd>
+      <dt>Altitude</dt><dd>${slow.gpsPos?.altM?.toFixed(2) ?? "--"} m</dd>
+      <dt>Velocity</dt><dd>${slow.gpsNav?.velMps?.toFixed(2) ?? "--"} m/s</dd>
+      <dt>Heading</dt><dd>${slow.gpsNav?.headingDeg?.toFixed(2) ?? "--"}°</dd>
+      <dt>HDOP</dt><dd>${slow.gpsPos?.hdop?.toFixed(2) ?? "--"}</dd>
+      <dt>Error Flags</dt><dd>0x${(slow.gpsTimesync?.errorFlags ?? 0).toString(16).toUpperCase()}</dd>
+    </dl>
+  `;
+}
+
 function renderTshmuSlowBlock(slow) {
   if (!slow) {
     return '<p class="board-empty">Waiting for TSHMU frame...</p>';
@@ -1258,7 +1278,9 @@ function renderTshmuSlowBlock(slow) {
     <p class="board-meta">${escapeHtml(slow.idText)} · Δt ${slow.timeSinceLastMs} ms · ${escapeHtml(formatBoardAge(slow.ageMs))}</p>
     <dl class="board-readings">
       <dt>Message Rate</dt><dd>${rateText}</dd>
+      <dt>Raw Trigger 1</dt><dd>${slow.raw1} pulses</dd>
       <dt>Flow 1</dt><dd>${slow.flow1.toFixed(1)} LPM</dd>
+      <dt>Raw Trigger 2</dt><dd>${slow.raw2} pulses</dd>
       <dt>Flow 2</dt><dd>${slow.flow2.toFixed(1)} LPM</dd>
       <dt>Jitter</dt><dd>${slow.jitter} µs</dd>
       <dt>Error Flags</dt><dd>0x${slow.errorFlags.toString(16).toUpperCase()}</dd>
@@ -1355,6 +1377,18 @@ function renderBoards() {
           .toUpperCase()
           .padStart(3, "0");
 
+        let slowColHtml = "";
+        if (board.boardId === 0) {
+          const gpsBaseHex = (0x040 + (board.boardId << 3)).toString(16).toUpperCase().padStart(3, "0");
+          const gpsEndHex = (0x040 + (board.boardId << 3) + 2).toString(16).toUpperCase().padStart(3, "0");
+          slowColHtml = `
+              <div class="board-col">
+                <h3>Slow (GPS: 0x${gpsBaseHex}-0x${gpsEndHex})</h3>
+                ${renderGpsSlowBlock(board.slow)}
+              </div>
+          `;
+        }
+
         return `
           <article class="board-card" data-board-key="${boardKey}">
             <header class="board-card-header">
@@ -1363,11 +1397,12 @@ function renderBoards() {
               <span class="board-counter">CNT: ${board.lastMessageCounterReceived != null ? board.lastMessageCounterReceived : "--"} (Drops: ${board.counterMismatchCount})</span>
               ${board.counterMismatch ? '<span class="pill error">CNT MISMATCH</span>' : ""}
             </header>
-            <div class="board-cols" style="grid-template-columns: 1fr;">
+            <div class="board-cols" ${board.boardId === 0 ? "" : 'style="grid-template-columns: 1fr;"'}>
               <div class="board-col">
                 <h3>Fast (IMU: 0x${imuHex})</h3>
                 ${renderImuBlock(board.fast)}
               </div>
+              ${slowColHtml}
             </div>
           </article>
         `;
@@ -1518,7 +1553,7 @@ function renderLog() {
           } else if (entry.board.boardType === 1) {
             summary = `Accel X/Y/Z: ${entry.board.accelX}/${entry.board.accelY}/${entry.board.accelZ} · Velo X/Y/Z: ${entry.board.veloX}/${entry.board.veloY}/${entry.board.veloZ}`;
           } else if (entry.board.boardType === 4) {
-            summary = `Flow1 ${formatSigned(entry.board.flow1, 1)} LPM · Flow2 ${formatSigned(entry.board.flow2, 1)} LPM · Jitter ${entry.board.jitter ?? 0} µs`;
+            summary = `Flow1 ${formatSigned(entry.board.flow1, 1)} LPM (${entry.board.raw1} raw) · Flow2 ${formatSigned(entry.board.flow2, 1)} LPM (${entry.board.raw2} raw) · Jitter ${entry.board.jitter ?? 0} µs`;
           } else {
             summary =
               entry.board.kind === "fast"
@@ -1758,7 +1793,9 @@ function appendBoardSample(frameEvent) {
     } else if (boardType === 4) {
       historyEntry.slow.push({
         t: now,
+        raw1: Number(mergedSlow.raw1),
         flow1: Number(mergedSlow.flow1),
+        raw2: Number(mergedSlow.raw2),
         flow2: Number(mergedSlow.flow2),
         jitter: Number(mergedSlow.jitter)
       });
@@ -2617,6 +2654,91 @@ function buildAllPlotDefs(now, windowMs) {
       });
     } else if (boardType === 1) {
       const boardName = SMU_NAMES[boardId] || `SMU ${boardId}`;
+      if (boardId === 0) {
+        defs.push({
+          id: `board:${boardKey}:gps:pos`,
+          section: "board",
+          boardKey,
+          title: `${boardName} · GPS Lat/Lon (deg)`,
+          badge: `${slowPoints.length} pts`,
+          lines: [
+            {
+              label: "Latitude",
+              color: "#ffaa5c",
+              points: slowPoints.filter(r => r.gpsPos).map((row) => ({ t: row.t, v: row.gpsPos.latDeg })),
+            },
+            {
+              label: "Longitude",
+              color: "#5cffaa",
+              points: slowPoints.filter(r => r.gpsPos).map((row) => ({ t: row.t, v: row.gpsPos.lonDeg })),
+            },
+          ],
+          plotOptions: { now, windowMs, formatY: (v) => v.toFixed(6), emptyText: "Waiting for GPS Pos" },
+          legendFormatter: (v) => `${v.toFixed(6)}°`,
+        });
+
+        defs.push({
+          id: `board:${boardKey}:gps:nav`,
+          section: "board",
+          boardKey,
+          title: `${boardName} · GPS Velocity & Heading`,
+          badge: `${slowPoints.length} pts`,
+          lines: [
+            {
+              label: "Velo (m/s)",
+              color: "#ef7457",
+              points: slowPoints.filter(r => r.gpsNav).map((row) => ({ t: row.t, v: row.gpsNav.velMps })),
+            },
+            {
+              label: "Heading (°)",
+              color: "#6ce0e6",
+              points: slowPoints.filter(r => r.gpsNav).map((row) => ({ t: row.t, v: row.gpsNav.headingDeg })),
+            },
+          ],
+          plotOptions: { now, windowMs, formatY: (v) => v.toFixed(2), emptyText: "Waiting for GPS Nav" },
+          legendFormatter: (v) => `${v.toFixed(2)}`,
+        });
+
+        defs.push({
+          id: `board:${boardKey}:gps:alt`,
+          section: "board",
+          boardKey,
+          title: `${boardName} · GPS Alt (m) & HDOP`,
+          badge: `${slowPoints.length} pts`,
+          lines: [
+            {
+              label: "Alt (m)",
+              color: "#b9c47a",
+              points: slowPoints.filter(r => r.gpsPos).map((row) => ({ t: row.t, v: row.gpsPos.altM })),
+            },
+            {
+              label: "HDOP",
+              color: "#e6b657",
+              points: slowPoints.filter(r => r.gpsPos).map((row) => ({ t: row.t, v: row.gpsPos.hdop })),
+            },
+          ],
+          plotOptions: { now, windowMs, formatY: (v) => v.toFixed(2), emptyText: "Waiting for GPS Pos" },
+          legendFormatter: (v) => `${v.toFixed(2)}`,
+        });
+
+        defs.push({
+          id: `board:${boardKey}:gps:sats`,
+          section: "board",
+          boardKey,
+          title: `${boardName} · GPS Satellites`,
+          badge: `${slowPoints.length} pts`,
+          lines: [
+            {
+              label: "Satellites",
+              color: "#5c5cff",
+              points: slowPoints.filter(r => r.gpsTimesync).map((row) => ({ t: row.t, v: row.gpsTimesync.satellites })),
+            },
+          ],
+          plotOptions: { now, windowMs, yMinClamp: 0, formatY: (v) => v.toFixed(0), emptyText: "Waiting for GPS Timesync" },
+          legendFormatter: (v) => `${v.toFixed(0)}`,
+        });
+      }
+
       if (activeSmuKeys.length <= 1) {
         defs.push({
           id: `board:${boardKey}:imu:accel`,
