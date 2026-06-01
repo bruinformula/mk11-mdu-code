@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MDU Debug GUI</title>
   <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     (function () {
       try {
@@ -184,7 +188,8 @@
           <button class="board-tab-button" data-filter-type="2" data-filter-id="3" type="button" role="tab" aria-selected="false">SDU 3 (RR)</button>
           <button class="board-tab-button" data-filter-type="6" data-filter-id="0" type="button" role="tab" aria-selected="false">TSPMU 0</button>
           <button class="board-tab-button" data-filter-type="6" data-filter-id="1" type="button" role="tab" aria-selected="false">TSPMU 1</button>
-          <button class="board-tab-button" data-filter-type="1" data-filter-id="0" type="button" role="tab" aria-selected="false">SMU 0 (GPS)</button>
+          <button class="board-tab-button" data-filter-type="7" data-filter-id="0" type="button" role="tab" aria-selected="false">SMU 0 (GPS)</button>
+          <button class="board-tab-button" data-filter-type="1" data-filter-id="0" type="button" role="tab" aria-selected="false">SMU 0 (IMU)</button>
           <button class="board-tab-button" data-filter-type="1" data-filter-id="1" type="button" role="tab" aria-selected="false">SMU 1 (Mid IMU)</button>
           <button class="board-tab-button" data-filter-type="1" data-filter-id="2" type="button" role="tab" aria-selected="false">SMU 2 (Rear IMU)</button>
           <button class="board-tab-button" data-filter-type="4" data-filter-id="0" type="button" role="tab" aria-selected="false">Test Board</button>
@@ -214,6 +219,28 @@
               </tr>
             </thead>
             <tbody id="top-ids-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel all-ids-panel stagger-6">
+        <div class="panel-heading">
+          <h2>All CAN IDs · Time Since Last</h2>
+          <p>Every CAN ID seen this session and how long since the last frame for that ID.</p>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Source</th>
+                <th>Total</th>
+                <th>Time Since Last</th>
+                <th>DLC</th>
+              </tr>
+            </thead>
+            <tbody id="all-ids-body"></tbody>
           </table>
         </div>
       </section>
@@ -347,7 +374,8 @@
               <option value="2-3">SDU 3 (RR)</option>
               <option value="6-0">TSPMU 0</option>
               <option value="6-1">TSPMU 1</option>
-              <option value="1-0">SMU 0 (GPS)</option>
+              <option value="7-0">SMU 0 (GPS)</option>
+              <option value="1-0">SMU 0 (IMU)</option>
               <option value="1-1">SMU 1 (Mid IMU)</option>
               <option value="1-2">SMU 2 (Rear IMU)</option>
             </select>
@@ -370,6 +398,17 @@
           <button id="graphs-clear-button" class="ghost-button" type="button">Clear graph history</button>
           <p class="helper-text" id="graphs-status-line">Waiting for board telemetry frames.</p>
         </div>
+      </section>
+
+      <section class="panel gps-map-panel stagger-3">
+        <div class="panel-heading">
+          <h2>GPS Position · Live Map</h2>
+          <p>
+            Latitude / longitude from <code>0x041</code>. Marker follows the most recent fix; track shows the last 500 points.
+            <span id="gps-map-status" class="gps-map-status">Waiting for GPS frames…</span>
+          </p>
+        </div>
+        <div id="gps-map" class="gps-map"></div>
       </section>
 
       <section class="panel graphs-panel stagger-4">

@@ -56,6 +56,7 @@ const state = {
   logRows: [],
   loadedLogFile: "",
   loadedLogRows: [],
+  allIds: new Map(),
   logView: "live",
   logPaused: false,
   boardFilter: { type: "all", id: "all" },
@@ -99,6 +100,7 @@ const pendingRenders = {
   diagnostics: false,
   boards: false,
   topIds: false,
+  allIds: false,
   graphs: false,
 };
 
@@ -108,6 +110,7 @@ const lastRenderTime = {
   diagnostics: 0,
   boards: 0,
   topIds: 0,
+  allIds: 0,
   graphs: 0,
   log: 0,
 };
@@ -176,6 +179,7 @@ const elements = {
   framesChart: document.getElementById("frames-chart"),
   bytesChart: document.getElementById("bytes-chart"),
   topIdsBody: document.getElementById("top-ids-body"),
+  allIdsBody: document.getElementById("all-ids-body"),
   boardsGrid: document.getElementById("boards-grid"),
   logBody: document.getElementById("log-body"),
   logSearchInput: document.getElementById("log-search-input"),
@@ -770,6 +774,173 @@ function renderTopIds() {
       `;
     })
     .join("");
+}
+
+function formatTimeSinceLast(ms) {
+  if (ms == null || !Number.isFinite(ms)) return "--";
+  if (ms < 1000) return `${ms} ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)} s`;
+  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ${Math.floor((ms % 60_000) / 1000)}s`;
+  return `${Math.floor(ms / 3_600_000)}h ${Math.floor((ms % 3_600_000) / 60_000)}m`;
+}
+
+function recordIdSeen(frame) {
+  if (!frame) return;
+  const f = frame.frame || frame;
+  const idText = f.idText || frame.idText;
+  if (!idText) return;
+  const identifier =
+    typeof f.identifier === 'number'
+      ? f.identifier
+      : typeof frame.identifier === 'number'
+        ? frame.identifier
+        : (f.identifierHex ? Number.parseInt(f.identifierHex, 16) : NaN);
+  const idType = f.idType || frame.idType || 'std';
+  const dataLength = f.dataLength ?? frame.dataLength ?? 0;
+  const key = Number.isFinite(identifier) ? `${idType}:${identifier}` : idText;
+  let entry = state.allIds.get(key);
+  const now = Date.now();
+  if (!entry) {
+    entry = {
+      key,
+      idText,
+      identifier: Number.isFinite(identifier) ? identifier : null,
+      source: frame.source || 'slcan',
+      count: 0,
+      lastSeenAt: now,
+      lastDataLength: dataLength,
+    };
+    state.allIds.set(key, entry);
+  }
+  entry.count += 1;
+  entry.lastSeenAt = now;
+  entry.lastDataLength = dataLength;
+  if (frame.source) entry.source = frame.source;
+}
+
+const gpsMap = {
+  instance: null,
+  marker: null,
+  trail: null,
+  trailPoints: [],
+  trailMaxPoints: 500,
+  hasCentered: false,
+  containerEl: null,
+  statusEl: null,
+};
+
+function ensureGpsMap() {
+  if (gpsMap.instance) return gpsMap.instance;
+  if (typeof window === "undefined" || typeof window.L === "undefined") return null;
+  const container = document.getElementById("gps-map");
+  if (!container) return null;
+  gpsMap.containerEl = container;
+  gpsMap.statusEl = document.getElementById("gps-map-status");
+
+  const map = window.L.map(container, {
+    zoomControl: true,
+    attributionControl: true,
+    worldCopyJump: true,
+  }).setView([0, 0], 2);
+
+  // Esri World Imagery (satellite) — looks like Google Maps satellite view, no API key required.
+  const satellite = window.L.tileLayer(
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    {
+      maxZoom: 20,
+      attribution:
+        'Imagery © <a href="https://www.esri.com/">Esri</a>, Maxar, Earthstar Geographics, USDA FSA, USGS, IGN',
+    },
+  );
+  // Roads / labels overlay so it reads like a Google Maps hybrid view.
+  const labels = window.L.tileLayer(
+    "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+    { maxZoom: 20, opacity: 0.85 },
+  );
+  satellite.addTo(map);
+  labels.addTo(map);
+
+  gpsMap.trail = window.L.polyline([], {
+    color: "#6ce0e6",
+    weight: 3,
+    opacity: 0.85,
+  }).addTo(map);
+
+  gpsMap.instance = map;
+
+  // Leaflet sometimes mis-sizes when its tab is hidden on creation; force a refresh.
+  setTimeout(() => map.invalidateSize(), 0);
+
+  return map;
+}
+
+function updateGpsMap(lat, lon, fixQuality, headingDeg) {
+  const map = ensureGpsMap();
+  if (!map || !window.L) return;
+
+  const latlng = [lat, lon];
+  if (!gpsMap.marker) {
+    gpsMap.marker = window.L.circleMarker(latlng, {
+      radius: 8,
+      color: "#ffffff",
+      weight: 2,
+      fillColor: "#ff3b30",
+      fillOpacity: 0.95,
+    }).addTo(map);
+  } else {
+    gpsMap.marker.setLatLng(latlng);
+  }
+
+  gpsMap.trailPoints.push(latlng);
+  if (gpsMap.trailPoints.length > gpsMap.trailMaxPoints) {
+    gpsMap.trailPoints.shift();
+  }
+  if (gpsMap.trail) {
+    gpsMap.trail.setLatLngs(gpsMap.trailPoints);
+  }
+
+  if (!gpsMap.hasCentered) {
+    map.setView(latlng, 18);
+    gpsMap.hasCentered = true;
+  }
+
+  if (gpsMap.statusEl) {
+    const fq = Number.isFinite(fixQuality) ? fixQuality : "?";
+    const hd = Number.isFinite(headingDeg) ? `${headingDeg.toFixed(1)}°` : "—";
+    gpsMap.statusEl.textContent = `lat ${lat.toFixed(7)}, lon ${lon.toFixed(7)} · fixQ ${fq} · hdg ${hd}`;
+  }
+}
+
+function renderAllIds() {
+  if (!elements.allIdsBody) return;
+  const entries = [...state.allIds.values()];
+  if (entries.length === 0) {
+    elements.allIdsBody.innerHTML =
+      '<tr><td class="empty-state" colspan="5">No frames seen yet.</td></tr>';
+    return;
+  }
+  entries.sort((a, b) => {
+    const av = typeof a.identifier === 'number' ? a.identifier : Number.MAX_SAFE_INTEGER;
+    const bv = typeof b.identifier === 'number' ? b.identifier : Number.MAX_SAFE_INTEGER;
+    if (av !== bv) return av - bv;
+    return a.idText.localeCompare(b.idText);
+  });
+  const now = Date.now();
+  elements.allIdsBody.innerHTML = entries
+    .map((e) => {
+      const sourceLabel = e.source === 'board' ? 'Board' : 'SLCAN';
+      const ageMs = now - e.lastSeenAt;
+      return `
+        <tr>
+          <td class="mono">${escapeHtml(e.idText)}</td>
+          <td><span class="pill ${e.source === 'board' ? 'ok' : 'info'}">${escapeHtml(sourceLabel)}</span></td>
+          <td>${e.count}</td>
+          <td>${escapeHtml(formatTimeSinceLast(ageMs))}</td>
+          <td>${e.lastDataLength}</td>
+        </tr>
+      `;
+    })
+    .join('');
 }
 
 function formatSigned(value, digits) {
@@ -1371,6 +1542,49 @@ function renderBoards() {
             </div>
           </article>
         `;
+      } else if (board.boardType === 7) {
+        const f = board.fast ?? {};
+        const fixQualityLabel = ['No fix','GPS','DGPS','PPS','RTK','Float RTK','Estimated','Manual','Simulation'];
+        const fqStr = fixQualityLabel[f.fix_quality ?? 0] ?? `Q${f.fix_quality}`;
+        const latStr = f.latitude_deg != null ? f.latitude_deg.toFixed(7) : '--';
+        const lonStr = f.longitude_deg != null ? f.longitude_deg.toFixed(7) : '--';
+        const altStr = f.altitude_m != null ? f.altitude_m.toFixed(1) + ' m' : '--';
+        const hdopStr = f.hdop != null ? f.hdop.toFixed(2) : '--';
+        const satStr = f.satellites != null ? f.satellites : '--';
+        const headingStr = f.heading_deg != null ? f.heading_deg.toFixed(1) + '°' : '--';
+        const headAccStr = f.heading_accuracy_deg != null ? '±' + f.heading_accuracy_deg.toFixed(1) + '°' : '--';
+        const velStr = f.velocity_mps != null ? f.velocity_mps.toFixed(2) + ' m/s' : '--';
+        const courseStr = f.course_deg != null ? f.course_deg.toFixed(1) + '°' : '--';
+        return `
+          <article class="board-card" data-board-key="${boardKey}">
+            <header class="board-card-header">
+              <strong>GPS (SMU 0)</strong>
+              <span class="board-age">${escapeHtml(formatBoardAge(board.lastSeenAgeMs))}</span>
+              <span class="board-counter">Fix: ${escapeHtml(fqStr)} · Sats: ${satStr}</span>
+            </header>
+            <div class="board-cols" style="grid-template-columns: 1fr 1fr;">
+              <div class="board-col">
+                <h3>Position (0x041)</h3>
+                <table class="board-kv"><tbody>
+                  <tr><th>Latitude</th><td>${escapeHtml(latStr)}</td></tr>
+                  <tr><th>Longitude</th><td>${escapeHtml(lonStr)}</td></tr>
+                  <tr><th>Altitude</th><td>${escapeHtml(altStr)}</td></tr>
+                  <tr><th>HDOP</th><td>${escapeHtml(hdopStr)}</td></tr>
+                  <tr><th>Fix Valid</th><td>${f.fix_valid ? 'Yes' : 'No'}</td></tr>
+                </tbody></table>
+              </div>
+              <div class="board-col">
+                <h3>Navigation (0x042)</h3>
+                <table class="board-kv"><tbody>
+                  <tr><th>Heading</th><td>${escapeHtml(headingStr)} ${escapeHtml(headAccStr)}</td></tr>
+                  <tr><th>Course</th><td>${escapeHtml(courseStr)}</td></tr>
+                  <tr><th>Velocity</th><td>${escapeHtml(velStr)}</td></tr>
+                  <tr><th>Hdg Valid</th><td>${f.heading_valid ? 'Yes' : 'No'}</td></tr>
+                </tbody></table>
+              </div>
+            </div>
+          </article>
+        `;
       } else {
         const boardName =
           BOARD_NAMES[board.boardId] || `Board ${board.boardId}`;
@@ -1620,6 +1834,7 @@ function initializeBoardHistories() {
   state.graphs.boards.set("1-2", { fast: [], slow: [], lastSeenAt: null });
   state.graphs.boards.set("4-0", { fast: [], slow: [], lastSeenAt: null });
   state.graphs.boards.set("4-1", { fast: [], slow: [], lastSeenAt: null });
+  state.graphs.boards.set("7-0", { fast: [], slow: [], lastSeenAt: null });
 }
 
 function getOrCreateBoardHistory(boardKey) {
@@ -1705,7 +1920,28 @@ function appendBoardSample(frameEvent) {
 
   if (board.kind === "fast") {
     const mergedFast = diagEntry?.fast ?? board;
-    if (boardType === 6) {
+    if (boardType === 7) {
+      const prev = historyEntry.fast.length > 0
+        ? historyEntry.fast[historyEntry.fast.length - 1]
+        : {};
+      const pickNum = (v, fallback) => {
+        const n = Number(v);
+        return Number.isFinite(n) ? n : fallback;
+      };
+      historyEntry.fast.push({
+        t: now,
+        latitude_deg: pickNum(mergedFast.latitude_deg, prev.latitude_deg),
+        longitude_deg: pickNum(mergedFast.longitude_deg, prev.longitude_deg),
+        fix_quality: pickNum(mergedFast.fix_quality, prev.fix_quality),
+        heading_deg: pickNum(mergedFast.heading_deg, prev.heading_deg),
+        heading_accuracy_deg: pickNum(mergedFast.heading_accuracy_deg, prev.heading_accuracy_deg),
+      });
+      const lat = pickNum(mergedFast.latitude_deg, NaN);
+      const lon = pickNum(mergedFast.longitude_deg, NaN);
+      if (Number.isFinite(lat) && Number.isFinite(lon) && (lat !== 0 || lon !== 0)) {
+        updateGpsMap(lat, lon, pickNum(mergedFast.fix_quality, NaN), pickNum(mergedFast.heading_deg, NaN));
+      }
+    } else if (boardType === 6) {
       historyEntry.fast.push({
         t: now,
         pressure1: Number(mergedFast.pressure1),
@@ -1814,6 +2050,9 @@ function setActiveTab(tab) {
   }
   if (next === "graphs") {
     renderGraphs();
+    if (gpsMap.instance) {
+      setTimeout(() => gpsMap.instance.invalidateSize(), 0);
+    }
   } else if (next === "deploy") {
     loadBfrConfig();
   }
@@ -2550,7 +2789,75 @@ function buildAllPlotDefs(now, windowMs) {
     const fastPoints = pickWindowedPoints(history.fast, now, windowMs);
     const slowPoints = pickWindowedPoints(history.slow, now, windowMs);
 
-    if (boardType === 6) {
+    if (boardType === 7) {
+      const boardName = `GPS COG`;
+      // Latitude / Longitude are visualized on the live map above instead of as line plots.
+      defs.push({
+        id: `board:${boardKey}:gps:fix_quality`,
+        section: "board",
+        boardKey,
+        title: `${boardName} · Fix Quality`,
+        badge: `${fastPoints.length} pts`,
+        lines: [
+          {
+            label: "Fix Q",
+            color: "#b9c47a",
+            points: fastPoints.map((row) => ({ t: row.t, v: row.fix_quality })),
+          },
+        ],
+        plotOptions: {
+          now,
+          windowMs,
+          yMinClamp: 0,
+          formatY: (v) => v.toFixed(0),
+          emptyText: "Waiting for GPS frames",
+        },
+        legendFormatter: (v) => v.toFixed(0),
+      });
+      defs.push({
+        id: `board:${boardKey}:gps:heading`,
+        section: "board",
+        boardKey,
+        title: `${boardName} · Heading (deg)`,
+        badge: `${fastPoints.length} pts`,
+        lines: [
+          {
+            label: "Heading",
+            color: "#9badd9",
+            points: fastPoints.map((row) => ({ t: row.t, v: row.heading_deg })),
+          },
+        ],
+        plotOptions: {
+          now,
+          windowMs,
+          formatY: (v) => v.toFixed(2),
+          emptyText: "Waiting for GPS frames",
+        },
+        legendFormatter: (v) => `${v.toFixed(2)}°`,
+      });
+      defs.push({
+        id: `board:${boardKey}:gps:heading_accuracy`,
+        section: "board",
+        boardKey,
+        title: `${boardName} · Heading Accuracy (deg)`,
+        badge: `${fastPoints.length} pts`,
+        lines: [
+          {
+            label: "Heading Acc",
+            color: "#ef7457",
+            points: fastPoints.map((row) => ({ t: row.t, v: row.heading_accuracy_deg })),
+          },
+        ],
+        plotOptions: {
+          now,
+          windowMs,
+          yMinClamp: 0,
+          formatY: (v) => v.toFixed(2),
+          emptyText: "Waiting for GPS frames",
+        },
+        legendFormatter: (v) => `${v.toFixed(2)}°`,
+      });
+    } else if (boardType === 6) {
       const boardName = `TSPMU ${boardId}`;
       defs.push({
         id: `board:${boardKey}:pressure`,
@@ -3075,7 +3382,9 @@ function renderBoardSection(boardKeys, defsByBoard, now) {
     const boardName =
       boardKey === "imu-overlay"
         ? "IMU Acceleration Overlays"
-        : boardType === 6
+        : boardType === 7
+          ? "GPS COG"
+          : boardType === 6
           ? `TSPMU ${boardId}`
           : boardType === 1
             ? SMU_NAMES[boardId] || `SMU ${boardId}`
@@ -3185,6 +3494,7 @@ function renderAll() {
   renderDiagnostics();
   renderBoards();
   renderTopIds();
+  renderAllIds();
   renderLog();
   renderLoggingControls();
   renderGraphs();
@@ -3964,12 +4274,16 @@ function wireEvents() {
   api.onFrames((frames) => {
     for (const frame of frames) {
       addLogRow(frame);
+      if (frame) {
+        recordIdSeen(frame);
+      }
       if (frame && frame.ok && frame.source === 'board' && frame.board) {
         mergeBoardIntoDiagnostics(frame);
         appendBoardSample(frame);
       }
     }
     scheduleRender('boards', renderBoards);
+    scheduleRender('allIds', renderAllIds);
   });
 
   api.onRuntime((runtime) => {
@@ -4021,6 +4335,7 @@ async function init() {
   }
   setActiveTab(state.graphs.activeTab);
   renderAll();
+  setInterval(() => renderAllIds(), 500);
 }
 
 init().catch((error) => {

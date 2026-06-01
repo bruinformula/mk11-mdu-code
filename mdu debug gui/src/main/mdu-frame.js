@@ -622,8 +622,72 @@ function parseMduLine(rawLine) {
   };
 }
 
+function getSigned32LE(data, offset) {
+  return (
+    (data[offset] |
+      (data[offset + 1] << 8) |
+      (data[offset + 2] << 16) |
+      (data[offset + 3] << 24)) | 0
+  );
+}
+
+function getUnsigned16LE(data, offset) {
+  return data[offset] | (data[offset + 1] << 8);
+}
+
 function parseSlcanToBoard(slcan, rawLine) {
   const id = slcan.identifier;
+
+  // GPS COG SMU frames from mk11-smu (FDCAN 64-byte payloads)
+  // 0x040 timesync, 0x041 position, 0x042 nav, 0x043 imu (handled by IMU path)
+  if ((id === 0x040 || id === 0x041 || id === 0x042) && slcan.dataBytes.length >= 64) {
+    const data = slcan.dataBytes;
+    const board = {
+      boardType: 7,
+      boardId: 0,
+      kind: 'fast',
+      identifier: slcan.identifier,
+      identifierHex: slcan.identifierHex,
+      idText: slcan.idText,
+      timeSinceLastMs: 100,
+      errorFlags: data[63],
+    };
+    if (id === 0x040) {
+      board.fix_valid = data[12];
+      board.fix_quality = data[13];
+      board.satellites = data[14];
+      board.heading_valid = data[15];
+    } else if (id === 0x041) {
+      board.latitude_deg = getSigned32LE(data, 4) / 1e7;
+      board.longitude_deg = getSigned32LE(data, 8) / 1e7;
+      board.altitude_m = getSigned32LE(data, 12) / 1000;
+      board.hdop = getUnsigned16LE(data, 16) / 100;
+      board.fix_valid = data[18];
+      board.fix_quality = data[19];
+      board.satellites = data[20];
+    } else if (id === 0x042) {
+      board.velocity_mps = (data[4] | (data[5] << 8) | (data[6] << 16) | (data[7] << 24)) >>> 0;
+      board.velocity_mps = board.velocity_mps / 100;
+      board.course_deg = getSigned32LE(data, 8) / 100;
+      board.heading_deg = getSigned32LE(data, 12) / 100;
+      board.heading_accuracy_deg = getUnsigned16LE(data, 16) / 100;
+      board.heading_valid = data[18];
+      board.heading_quality = data[19];
+    }
+    return {
+      ok: true,
+      source: 'board',
+      raw: rawLine,
+      idText: slcan.idText,
+      idType: slcan.idType,
+      identifier: slcan.identifier,
+      identifierHex: slcan.identifierHex,
+      dataLength: slcan.dataLength,
+      dataHex: slcan.dataHex,
+      dataBytes: slcan.dataBytes,
+      board,
+    };
+  }
 
     // Extract bit-packed fields from the 11-bit standard ID
     const boardType = (id >> 6) & 0x0F; // Bits 9-6   (Board Type: 2 for SDU)

@@ -817,6 +817,40 @@ tbody tr:hover {
   padding: 24px 28px;
 }
 
+.gps-map-panel {
+  padding: 24px 28px;
+}
+
+.gps-map {
+  height: 480px;
+  width: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #0b1a2e;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.gps-map-status {
+  margin-left: 10px;
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.gps-map .leaflet-container {
+  background: #0b1a2e;
+  font-family: inherit;
+}
+
+.gps-map .leaflet-control-attribution {
+  font-size: 10px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #ddd;
+}
+
+.gps-map .leaflet-control-attribution a {
+  color: #6ce0e6;
+}
+
 .graphs-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
