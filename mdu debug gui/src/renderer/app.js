@@ -1246,73 +1246,23 @@ function renderImuDetails(fast) {
   `;
 }
 
-function renderTestPayloadDetails(fast) {
-  if (!fast?.dataBytes?.length) {
-    return '';
+function renderTshmuSlowBlock(slow) {
+  if (!slow) {
+    return '<p class="board-empty">Waiting for TSHMU frame...</p>';
   }
 
-  const rows = [];
-  // Render payload in rows of 8 bytes
-  for (let i = 0; i < fast.dataBytes.length; i += 8) {
-    const chunk = fast.dataBytes.slice(i, i + 8);
-    const hexVal = chunk.map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
-    rows.push(`
-      <tr>
-        <td class="mono">Byte ${i} - ${i + 7}</td>
-        <td class="mono">${escapeHtml(hexVal)}</td>
-      </tr>
-    `);
-  }
-
-  return `
-    <details class="board-detail" data-detail="test-payload" style="margin-top: 8px;">
-      <summary>Full 64-Byte Payload</summary>
-      ${renderTable(['Byte Range', 'Hex values'], rows)}
-    </details>
-  `;
-}
-
-function renderTestBlock(fast, board) {
-  if (!fast) {
-    return '<p class="board-empty">Waiting for Test frame...</p>';
-  }
-
-  const rateHz = fast.rateHz ?? (fast.timeSinceLastMs > 0 ? Math.round(1000 / fast.timeSinceLastMs) : 0);
+  const rateHz = slow.rateHz ?? (slow.timeSinceLastMs > 0 ? Math.round(1000 / slow.timeSinceLastMs) : 0);
   const rateText = `${rateHz} Hz`;
 
-  // Dynamic Mbps calculation
-  const payloadBytes = fast.dataBytes ? fast.dataBytes.length : 0;
-  const payloadMbps = ((rateHz * payloadBytes * 8) / 1000000).toFixed(2);
-  
-  // CAN FD Overhead: Nominal phase (70us @ 1Mbps) + Data phase (payload*8 + 28 bits) * 0.2us @ 5Mbps
-  // Frame time = 70us + (payloadBytes*8 + 28) * 0.2us
-  // Bus utilization = rateHz * frameTime; express as fraction then percentage
-  const frameTimeUs = 70 + (payloadBytes * 8 + 28) * 0.2;
-  const busUtil = rateHz * frameTimeUs / 1000000;
-  const busMbps = busUtil.toFixed(2);
-  const busPct = (busUtil * 100).toFixed(1);
-
-  // Format first 16 bytes for quick preview
-  const previewBytes = fast.dataBytes.slice(0, 16);
-  const previewHex = previewBytes.map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
-
   return `
-    <p class="board-meta">${escapeHtml(fast.idText)} · Δt ${fast.timeSinceLastMs} ms · ${escapeHtml(formatBoardAge(fast.ageMs))}</p>
+    <p class="board-meta">${escapeHtml(slow.idText)} · Δt ${slow.timeSinceLastMs} ms · ${escapeHtml(formatBoardAge(slow.ageMs))}</p>
     <dl class="board-readings">
       <dt>Message Rate</dt><dd>${rateText}</dd>
-      <dt>Payload Rate</dt><dd>${payloadMbps} Mbps</dd>
-      <dt>Est. Bus Load</dt><dd>${busPct}%</dd>
-      <dt>Last Rx Seq</dt><dd>${fast.rxSeq}</dd>
-      <dt>Total Rx</dt><dd>${board.fastCount}</dd>
-      <dt>Dropped</dt><dd style="color: ${board.counterMismatchCount > 0 ? 'var(--accent-red, #ff5c5c)' : 'inherit'}; font-weight: bold;">${board.counterMismatchCount}</dd>
+      <dt>Flow 1</dt><dd>${slow.flow1.toFixed(1)} LPM</dd>
+      <dt>Flow 2</dt><dd>${slow.flow2.toFixed(1)} LPM</dd>
+      <dt>Jitter</dt><dd>${slow.jitter} µs</dd>
+      <dt>Error Flags</dt><dd>0x${slow.errorFlags.toString(16).toUpperCase()}</dd>
     </dl>
-    
-    <div style="margin-top: 10px; font-size: 0.8rem;">
-      <strong style="color: var(--accent); display: block; margin-bottom: 4px;">Payload Preview (First 16B):</strong>
-      <code style="font-family: monospace; display: block; background: rgba(0,0,0,0.15); padding: 6px; border-radius: 4px; word-break: break-all;">${previewHex} ...</code>
-    </div>
-    
-    ${renderTestPayloadDetails(fast)}
   `;
 }
 
@@ -1377,20 +1327,23 @@ function renderBoards() {
           </article>
         `;
       } else if (board.boardType === 4) {
-        const boardName = `Test Board (Overload)`;
+        const boardName = `TSHMU ${board.boardId}`;
+        const flowHex = (0x100 + (board.boardId << 3) + 2)
+          .toString(16)
+          .toUpperCase()
+          .padStart(3, "0");
 
         return `
           <article class="board-card" data-board-key="${boardKey}">
             <header class="board-card-header">
               <strong>${escapeHtml(boardName)}</strong>
               <span class="board-age">${escapeHtml(formatBoardAge(board.lastSeenAgeMs))}</span>
-              <span class="board-counter">CNT: ${board.lastMessageCounterReceived != null ? board.lastMessageCounterReceived : '--'} (Drops: ${board.counterMismatchCount})</span>
-              ${board.counterMismatch ? '<span class="pill error">CNT MISMATCH</span>' : ''}
+              <span class="board-counter">ERR: 0x${board.slow?.errorFlags?.toString(16).toUpperCase() ?? "0"}</span>
             </header>
             <div class="board-cols">
               <div class="board-col" style="flex: 1;">
-                <h3>Fast (Test: 0x111)</h3>
-                ${renderTestBlock(board.fast, board)}
+                <h3>Slow (Flow Rate: 0x${flowHex})</h3>
+                ${renderTshmuSlowBlock(board.slow)}
               </div>
             </div>
           </article>
@@ -1554,7 +1507,7 @@ function renderLog() {
         }
 
         if (entry.source === 'board' && entry.board) {
-          const typeLabel = entry.board.boardType === 6 ? 'TSPMU' : entry.board.boardType === 1 ? 'SMU' : entry.board.boardType === 4 ? 'TEST' : 'SDU';
+          const typeLabel = entry.board.boardType === 6 ? 'TSPMU' : entry.board.boardType === 1 ? 'SMU' : entry.board.boardType === 4 ? 'TSHMU' : 'SDU';
           const idLabel = `${typeLabel} ${entry.board.boardId ?? 0} · ${entry.board.kind === 'fast' ? 'Fast' : 'Slow'} · ${entry.frame?.idText ?? '--'}`;
           let summary = '';
           if (entry.board.boardType === 6) {
@@ -1565,8 +1518,7 @@ function renderLog() {
           } else if (entry.board.boardType === 1) {
             summary = `Accel X/Y/Z: ${entry.board.accelX}/${entry.board.accelY}/${entry.board.accelZ} · Velo X/Y/Z: ${entry.board.veloX}/${entry.board.veloY}/${entry.board.veloZ}`;
           } else if (entry.board.boardType === 4) {
-            const hz = entry.board.timeSinceLastMs > 0 ? (1000 / entry.board.timeSinceLastMs).toFixed(1) : '0.0';
-            summary = `Seq ${entry.board.rxSeq} · Rate ${hz} Hz`;
+            summary = `Flow1 ${formatSigned(entry.board.flow1, 1)} LPM · Flow2 ${formatSigned(entry.board.flow2, 1)} LPM · Jitter ${entry.board.jitter ?? 0} µs`;
           } else {
             summary =
               entry.board.kind === "fast"
@@ -1666,6 +1618,8 @@ function initializeBoardHistories() {
   state.graphs.boards.set("1-0", { fast: [], slow: [], lastSeenAt: null });
   state.graphs.boards.set("1-1", { fast: [], slow: [], lastSeenAt: null });
   state.graphs.boards.set("1-2", { fast: [], slow: [], lastSeenAt: null });
+  state.graphs.boards.set("4-0", { fast: [], slow: [], lastSeenAt: null });
+  state.graphs.boards.set("4-1", { fast: [], slow: [], lastSeenAt: null });
 }
 
 function getOrCreateBoardHistory(boardKey) {
@@ -1775,12 +1729,6 @@ function appendBoardSample(frameEvent) {
         veloC: Number(mergedFast.veloC),
         jitter: Number(mergedFast.jitter ?? 0),
       });
-    } else if (boardType === 4) {
-      historyEntry.fast.push({
-        t: now,
-        rxSeq: Number(mergedFast.rxSeq),
-        timeSinceLastMs: Number(mergedFast.timeSinceLastMs),
-      });
     } else {
       historyEntry.fast.push({
         t: now,
@@ -1806,6 +1754,13 @@ function appendBoardSample(frameEvent) {
         tspmuTemp2: Number(mergedSlow.tspmuTemp2),
         tspmuTemp3: Number(mergedSlow.tspmuTemp3),
         tspmuTemp4: Number(mergedSlow.tspmuTemp4),
+      });
+    } else if (boardType === 4) {
+      historyEntry.slow.push({
+        t: now,
+        flow1: Number(mergedSlow.flow1),
+        flow2: Number(mergedSlow.flow2),
+        jitter: Number(mergedSlow.jitter)
       });
     } else {
       historyEntry.slow.push({

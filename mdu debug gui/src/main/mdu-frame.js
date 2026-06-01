@@ -158,6 +158,28 @@ function decodeTspmuPressureBlocks(data) {
   return blocks;
 }
 
+function decodeFlowBlocks(data) {
+  const blocks = [];
+  for (let index = 0; index < 11; index += 1) {
+    const offset = 6 + index * 5;
+    if (offset + 4 >= data.length) {
+      break;
+    }
+    const rawF1 = data[offset] | (data[offset + 1] << 8);
+    const rawF2 = data[offset + 2] | (data[offset + 3] << 8);
+    const flow1 = rawF1 / 10.0;
+    const flow2 = rawF2 / 10.0;
+    const jitter = toSigned8(data[offset + 4]);
+    blocks.push({
+      index,
+      flow1,
+      flow2,
+      jitter,
+    });
+  }
+  return blocks;
+}
+
 function decodeTspmuTempBlocks(data) {
   const blocks = [];
   for (let index = 0; index < 6; index += 1) {
@@ -603,38 +625,6 @@ function parseMduLine(rawLine) {
 function parseSlcanToBoard(slcan, rawLine) {
   const id = slcan.identifier;
 
-  if (id === 0x111 && slcan.dataBytes.length >= 64) {
-    const data = slcan.dataBytes;
-    const rxSeq = data[0];
-    const err = (rxSeq & 0x07) << 7; 
-    const timeSinceLastMs = getCalculatedDeltaMs(id, 10);
-
-    return {
-      ok: true,
-      source: 'board',
-      raw: rawLine,
-        idText: slcan.idText,
-        idType: slcan.idType,
-        identifier: slcan.identifier,
-        identifierHex: slcan.identifierHex,
-        dataLength: slcan.dataLength,
-        dataHex: slcan.dataHex,
-        dataBytes: slcan.dataBytes,
-        board: {
-          boardType: 4, // Test Board
-          boardId: 0,
-          kind: 'fast',
-          identifier: slcan.identifier,
-          identifierHex: slcan.identifierHex,
-          idText: slcan.idText,
-          timeSinceLastMs,
-          errorFlags: err,
-          rxSeq,
-          dataBytes: slcan.dataBytes,
-        }
-      };
-    }
-
     // Extract bit-packed fields from the 11-bit standard ID
     const boardType = (id >> 6) & 0x0F; // Bits 9-6   (Board Type: 2 for SDU)
     const boardId = (id >> 3) & 0x07; // Bits 5-3   (Board Index: 0 to 3)
@@ -792,6 +782,42 @@ function parseSlcanToBoard(slcan, rawLine) {
             errorFlags: err,
             rpm: wheelSamples[0]?.value ?? 0,
             wheelSamples,
+          }
+        };
+      }
+    }
+
+    if (boardType === 4 && slcan.dataBytes.length >= 64) {
+      const data = slcan.dataBytes;
+      const err = data[4] | (data[5] << 8);
+
+      // Sensor 2: Flow Rate
+      if (sensorNum === 2) {
+        const flowBlocks = decodeFlowBlocks(data);
+        return {
+          ok: true,
+          source: 'board',
+          raw: rawLine,
+          idText: slcan.idText,
+          idType: slcan.idType,
+          identifier: slcan.identifier,
+          identifierHex: slcan.identifierHex,
+          dataLength: slcan.dataLength,
+          dataHex: slcan.dataHex,
+          dataBytes: slcan.dataBytes,
+          board: {
+            boardType,
+            boardId,
+            kind: 'slow',
+            identifier: slcan.identifier,
+            identifierHex: slcan.identifierHex,
+            idText: slcan.idText,
+            timeSinceLastMs: 1100,
+            errorFlags: err,
+            flow1: flowBlocks[0]?.flow1 ?? 0,
+            flow2: flowBlocks[0]?.flow2 ?? 0,
+            jitter: flowBlocks[0]?.jitter ?? 0,
+            flowBlocks,
           }
         };
       }
