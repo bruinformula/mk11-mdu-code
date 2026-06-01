@@ -821,87 +821,115 @@ function recordIdSeen(frame) {
 const gpsMap = {
   instance: null,
   marker: null,
-  trail: null,
-  trailPoints: [],
+  trailPoints: [],   // [lon, lat] pairs (GeoJSON order)
   trailMaxPoints: 500,
   hasCentered: false,
+  lastLatlng: null,   // [lat, lon] — matches updateGpsMap call convention
+  mapLoaded: false,
   containerEl: null,
   statusEl: null,
 };
 
 function ensureGpsMap() {
   if (gpsMap.instance) return gpsMap.instance;
-  if (typeof window === "undefined" || typeof window.L === "undefined") return null;
+  if (typeof maplibregl === "undefined") return null;
   const container = document.getElementById("gps-map");
   if (!container) return null;
   gpsMap.containerEl = container;
   gpsMap.statusEl = document.getElementById("gps-map-status");
 
-  const map = window.L.map(container, {
-    zoomControl: true,
-    attributionControl: true,
-    worldCopyJump: true,
-  }).setView([0, 0], 2);
-
-  // Esri World Imagery (satellite) — looks like Google Maps satellite view, no API key required.
-  const satellite = window.L.tileLayer(
-    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-    {
-      maxZoom: 20,
-      attribution:
-        'Imagery © <a href="https://www.esri.com/">Esri</a>, Maxar, Earthstar Geographics, USDA FSA, USGS, IGN',
+  const map = new maplibregl.Map({
+    container: container,
+    style: {
+      version: 8,
+      sources: {
+        'esri-satellite': {
+          type: 'raster',
+          tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+          tileSize: 256,
+          maxzoom: 20,
+          attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics',
+        },
+        'esri-labels': {
+          type: 'raster',
+          tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}'],
+          tileSize: 256,
+          maxzoom: 20,
+        },
+      },
+      layers: [
+        { id: 'satellite', type: 'raster', source: 'esri-satellite' },
+        { id: 'labels', type: 'raster', source: 'esri-labels', paint: { 'raster-opacity': 0.85 } },
+      ],
     },
-  );
-  // Roads / labels overlay so it reads like a Google Maps hybrid view.
-  const labels = window.L.tileLayer(
-    "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
-    { maxZoom: 20, opacity: 0.85 },
-  );
-  satellite.addTo(map);
-  labels.addTo(map);
+    center: [-118.4435, 34.0684],
+    zoom: 12,
+  });
 
-  gpsMap.trail = window.L.polyline([], {
-    color: "#6ce0e6",
-    weight: 3,
-    opacity: 0.85,
-  }).addTo(map);
+  map.addControl(new maplibregl.NavigationControl(), 'bottom-right');
+
+  map.on('load', () => {
+    map.addSource('trail-source', {
+      type: 'geojson',
+      data: {
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates: gpsMap.trailPoints },
+      },
+    });
+    map.addLayer({
+      id: 'trail-layer',
+      type: 'line',
+      source: 'trail-source',
+      paint: {
+        'line-color': '#6ce0e6',
+        'line-width': 3,
+        'line-opacity': 0.85,
+      },
+    });
+    gpsMap.mapLoaded = true;
+  });
 
   gpsMap.instance = map;
-
-  // Leaflet sometimes mis-sizes when its tab is hidden on creation; force a refresh.
-  setTimeout(() => map.invalidateSize(), 0);
+  setTimeout(() => map.resize(), 0);
 
   return map;
 }
 
 function updateGpsMap(lat, lon, fixQuality, headingDeg) {
   const map = ensureGpsMap();
-  if (!map || !window.L) return;
+  if (!map) return;
 
-  const latlng = [lat, lon];
+  const lnglat = [lon, lat]; // GeoJSON / MapLibre order
+  gpsMap.lastLatlng = [lat, lon];
+
+  // Marker works before map style is loaded (it's a DOM overlay)
   if (!gpsMap.marker) {
-    gpsMap.marker = window.L.circleMarker(latlng, {
-      radius: 8,
-      color: "#ffffff",
-      weight: 2,
-      fillColor: "#ff3b30",
-      fillOpacity: 0.95,
-    }).addTo(map);
+    gpsMap.marker = new maplibregl.Marker({ color: '#ff3b30' })
+      .setLngLat(lnglat)
+      .addTo(map);
   } else {
-    gpsMap.marker.setLatLng(latlng);
+    gpsMap.marker.setLngLat(lnglat);
   }
 
-  gpsMap.trailPoints.push(latlng);
+  // Trail (GeoJSON source — only after map style has loaded)
+  gpsMap.trailPoints.push(lnglat);
   if (gpsMap.trailPoints.length > gpsMap.trailMaxPoints) {
     gpsMap.trailPoints.shift();
   }
-  if (gpsMap.trail) {
-    gpsMap.trail.setLatLngs(gpsMap.trailPoints);
+  if (gpsMap.mapLoaded) {
+    const src = map.getSource('trail-source');
+    if (src) {
+      src.setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: gpsMap.trailPoints } });
+    }
   }
 
+  // First fix: jump to location and set zoom. Subsequent fixes: smooth-pan to follow.
+  // jumpTo stores state correctly even on a hidden container; resize() will re-render it.
   if (!gpsMap.hasCentered) {
-    map.setView(latlng, 18);
+    map.jumpTo({ center: lnglat, zoom: 18 });
     gpsMap.hasCentered = true;
+  } else {
+    map.easeTo({ center: lnglat, duration: 250 });
   }
 
   if (gpsMap.statusEl) {
@@ -1590,12 +1618,15 @@ function renderBoards() {
         const headAccStr = f.heading_accuracy_deg != null ? '±' + f.heading_accuracy_deg.toFixed(1) + '°' : '--';
         const velStr = f.velocity_mps != null ? f.velocity_mps.toFixed(2) + ' m/s' : '--';
         const courseStr = f.course_deg != null ? f.course_deg.toFixed(1) + '°' : '--';
+        const sentStr = f.sentence_count != null ? f.sentence_count : '--';
+        const rmcStr = f.rmc_count != null ? f.rmc_count : '--';
+        const ggaStr = f.gga_count != null ? f.gga_count : '--';
         return `
           <article class="board-card" data-board-key="${boardKey}">
             <header class="board-card-header">
               <strong>GPS (SMU 0)</strong>
               <span class="board-age">${escapeHtml(formatBoardAge(board.lastSeenAgeMs))}</span>
-              <span class="board-counter">Fix: ${escapeHtml(fqStr)} · Sats: ${satStr}</span>
+              <span class="board-counter">Fix: ${escapeHtml(fqStr)} · Sats: ${satStr} · NMEA: ${sentStr}</span>
             </header>
             <div class="board-cols" style="grid-template-columns: 1fr 1fr;">
               <div class="board-col">
@@ -1615,6 +1646,7 @@ function renderBoards() {
                   <tr><th>Course</th><td>${escapeHtml(courseStr)}</td></tr>
                   <tr><th>Velocity</th><td>${escapeHtml(velStr)}</td></tr>
                   <tr><th>Hdg Valid</th><td>${f.heading_valid ? 'Yes' : 'No'}</td></tr>
+                  <tr><th>RMC / GGA</th><td>${rmcStr} / ${ggaStr}</td></tr>
                 </tbody></table>
               </div>
             </div>
@@ -2087,9 +2119,19 @@ function setActiveTab(tab) {
   }
   if (next === "graphs") {
     renderGraphs();
-    if (gpsMap.instance) {
-      setTimeout(() => gpsMap.instance.invalidateSize(), 0);
-    }
+    setTimeout(() => {
+      if (state.boardFilter && state.boardFilter.type === "7") {
+        ensureGpsMap();
+        if (gpsMap.instance) {
+          gpsMap.instance.resize();
+          if (!gpsMap.hasCentered && gpsMap.lastLatlng) {
+            const [lat, lon] = gpsMap.lastLatlng;
+            gpsMap.instance.jumpTo({ center: [lon, lat], zoom: 18 });
+            gpsMap.hasCentered = true;
+          }
+        }
+      }
+    }, 50);
   } else if (next === "deploy") {
     loadBfrConfig();
   }
@@ -3594,7 +3636,31 @@ function renderGraphs() {
   renderFavoritesSection(favDefs);
   renderThroughputSection(throughputDefs);
   renderBoardSection(boardKeys, boardDefsByBoard, now);
+  updateGpsMapVisibility();
   reapplyHoverAfterRender();
+}
+
+function updateGpsMapVisibility() {
+  const panel = document.getElementById("gps-map-panel");
+  if (!panel) return;
+  const isGps = state.boardFilter && state.boardFilter.type === "7";
+  if (isGps) {
+    panel.removeAttribute("hidden");
+    // Ensure map is created and correctly sized now that the panel is visible
+    setTimeout(() => {
+      ensureGpsMap();
+      if (gpsMap.instance) {
+        gpsMap.instance.resize();
+        if (!gpsMap.hasCentered && gpsMap.lastLatlng) {
+          const [lat, lon] = gpsMap.lastLatlng;
+          gpsMap.instance.jumpTo({ center: [lon, lat], zoom: 18 });
+          gpsMap.hasCentered = true;
+        }
+      }
+    }, 0);
+  } else {
+    panel.setAttribute("hidden", "");
+  }
 }
 
 function reapplyHoverAfterRender() {

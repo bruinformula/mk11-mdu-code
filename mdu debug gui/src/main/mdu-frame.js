@@ -718,6 +718,9 @@ function parseSlcanToBoard(slcan, rawLine) {
       board.fix_quality = data[13];
       board.satellites = data[14];
       board.heading_valid = data[15];
+      board.sentence_count = (data[16] | (data[17] << 8) | (data[18] << 16) | (data[19] << 24)) >>> 0;
+      board.rmc_count = (data[20] | (data[21] << 8) | (data[22] << 16) | (data[23] << 24)) >>> 0;
+      board.gga_count = (data[24] | (data[25] << 8) | (data[26] << 16) | (data[27] << 24)) >>> 0;
     } else if (id === 0x041) {
       board.latitude_deg = getSigned32LE(data, 4) / 1e7;
       board.longitude_deg = getSigned32LE(data, 8) / 1e7;
