@@ -1,8 +1,0 @@
-../Core/Src/fdcan.c:173:6:MX_FDCAN1_Init	2
-../Core/Src/fdcan.c:210:6:HAL_FDCAN_MspInit	3
-../Core/Src/fdcan.c:256:6:HAL_FDCAN_MspDeInit	2
-../Core/Src/fdcan.c:283:19:FDCAN_App_Init	4
-../Core/Src/fdcan.c:317:19:FDCAN_Send_Message	30
-../Core/Src/fdcan.c:356:6:FDCAN_Receive_Callback	6
-../Core/Src/fdcan.c:383:6:FDCAN_GetRxMessage	5
-../Core/Src/fdcan.c:419:19:FDCAN_ApplyInitAndStart	4
