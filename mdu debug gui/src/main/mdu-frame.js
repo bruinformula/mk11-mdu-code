@@ -212,6 +212,40 @@ function decodeTspmuTempBlocks(data) {
   return blocks;
 }
 
+function decodeTshmuTempBlocks(data) {
+  const blocks = [];
+  for (let index = 0; index < 4; index += 1) {
+    const offset = 6 + index * 13;
+    if (offset + 12 >= data.length) {
+      break;
+    }
+    const rawT1 = data[offset] | (data[offset + 1] << 8);
+    const rawT2 = data[offset + 2] | (data[offset + 3] << 8);
+    const rawT3 = data[offset + 4] | (data[offset + 5] << 8);
+    const rawT4 = data[offset + 6] | (data[offset + 7] << 8);
+    const rawT5 = data[offset + 8] | (data[offset + 9] << 8);
+    const rawT6 = data[offset + 10] | (data[offset + 11] << 8);
+    const temp1 = toSigned16(rawT1) / 10.0;
+    const temp2 = toSigned16(rawT2) / 10.0;
+    const temp3 = toSigned16(rawT3) / 10.0;
+    const temp4 = toSigned16(rawT4) / 10.0;
+    const temp5 = toSigned16(rawT5) / 10.0;
+    const temp6 = toSigned16(rawT6) / 10.0;
+    const jitterMs = toSigned8(data[offset + 12]);
+    blocks.push({
+      index,
+      temp1,
+      temp2,
+      temp3,
+      temp4,
+      temp5,
+      temp6,
+      jitterMs,
+    });
+  }
+  return blocks;
+}
+
 function decodeImuSamples(data) {
   const baseTimestamp = (data[0] | (data[1] << 8) | (data[2] << 16) | (data[3] << 24)) >>> 0;
   const expectedPeriod = data[4];
@@ -948,6 +982,41 @@ function parseSlcanToBoard(slcan, rawLine) {
             flow2: flowBlocks[0]?.flow2 ?? 0,
             jitter: flowBlocks[0]?.jitter ?? 0,
             flowBlocks,
+          }
+        };
+      }
+
+      // Sensor 3: Temperature
+      if (sensorNum === 3) {
+        const tempBlocks = decodeTshmuTempBlocks(data);
+        return {
+          ok: true,
+          source: 'board',
+          raw: rawLine,
+          idText: slcan.idText,
+          idType: slcan.idType,
+          identifier: slcan.identifier,
+          identifierHex: slcan.identifierHex,
+          dataLength: slcan.dataLength,
+          dataHex: slcan.dataHex,
+          dataBytes: slcan.dataBytes,
+          board: {
+            boardType,
+            boardId,
+            kind: 'slow',
+            identifier: slcan.identifier,
+            identifierHex: slcan.identifierHex,
+            idText: slcan.idText,
+            timeSinceLastMs: 600,
+            errorFlags: err,
+            tshmuTemp1: tempBlocks[0]?.temp1 ?? 0,
+            tshmuTemp2: tempBlocks[0]?.temp2 ?? 0,
+            tshmuTemp3: tempBlocks[0]?.temp3 ?? 0,
+            tshmuTemp4: tempBlocks[0]?.temp4 ?? 0,
+            tshmuTemp5: tempBlocks[0]?.temp5 ?? 0,
+            tshmuTemp6: tempBlocks[0]?.temp6 ?? 0,
+            jitter: tempBlocks[0]?.jitterMs ?? 0,
+            tempBlocks,
           }
         };
       }

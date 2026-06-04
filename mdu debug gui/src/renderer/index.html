@@ -27,7 +27,7 @@
         <h1>MDU Debug Console</h1>
         <p class="hero-copy">
           Live monitoring for the STM32 native USB CDC debug stream behind the USB2514 hub.
-          The app mirrors the MCU's USB broadcast, decodes the per-board SDU telemetry frames (base 0x080 + 8*B + S for sensors 0-4) and falls back to SLCAN for other CAN IDs.
+          The app mirrors the MCU's USB broadcast, decodes telemetry frames from the CAN bus (including SDUs, SMUs, TSPMUs, TSHMUs, and GPS) and falls back to SLCAN for other CAN IDs.
         </p>
       </div>
       <div class="hero-status">
@@ -175,21 +175,25 @@
       <section class="panel boards-panel stagger-5">
         <div class="panel-heading">
           <h2>Live Board Telemetry</h2>
-          <p>Latest Fast (0x080+8*B for SG/Shock) and Slow (0x082+8*B to 0x084+8*B for Brake/Tire/Wheel) frames decoded from each SDU on the CAN bus, and TSPMU (0x180/0x181) CAN frames.</p>
+          <p>Latest decoded telemetry frames for all supported boards (SDU, SMU, TSPMU, TSHMU, GPS) on the CAN bus.</p>
         </div>
 
         <div class="board-selector-tabs" role="tablist">
           <button class="board-tab-button active" data-filter-type="all" data-filter-id="all" type="button" role="tab" aria-selected="true">All Boards</button>
+          <button class="board-tab-button" data-filter-type="type" data-filter-id="2" type="button" role="tab" aria-selected="false">All SDUs</button>
           <button class="board-tab-button" data-filter-type="2" data-filter-id="0" type="button" role="tab" aria-selected="false">SDU 0 (FL)</button>
           <button class="board-tab-button" data-filter-type="2" data-filter-id="1" type="button" role="tab" aria-selected="false">SDU 1 (FR)</button>
           <button class="board-tab-button" data-filter-type="2" data-filter-id="2" type="button" role="tab" aria-selected="false">SDU 2 (RL)</button>
           <button class="board-tab-button" data-filter-type="2" data-filter-id="3" type="button" role="tab" aria-selected="false">SDU 3 (RR)</button>
-          <button class="board-tab-button" data-filter-type="6" data-filter-id="0" type="button" role="tab" aria-selected="false">TSPMU 0</button>
-          <button class="board-tab-button" data-filter-type="6" data-filter-id="1" type="button" role="tab" aria-selected="false">TSPMU 1</button>
+          <button class="board-tab-button" data-filter-type="type" data-filter-id="1" type="button" role="tab" aria-selected="false">All SMUs</button>
           <button class="board-tab-button" data-filter-type="7" data-filter-id="0" type="button" role="tab" aria-selected="false">SMU 0 (GPS)</button>
           <button class="board-tab-button" data-filter-type="1" data-filter-id="0" type="button" role="tab" aria-selected="false">SMU 0 (IMU)</button>
           <button class="board-tab-button" data-filter-type="1" data-filter-id="1" type="button" role="tab" aria-selected="false">SMU 1 (Mid IMU)</button>
           <button class="board-tab-button" data-filter-type="1" data-filter-id="2" type="button" role="tab" aria-selected="false">SMU 2 (Rear IMU)</button>
+          <button class="board-tab-button" data-filter-type="type" data-filter-id="6" type="button" role="tab" aria-selected="false">All TSPMUs</button>
+          <button class="board-tab-button" data-filter-type="6" data-filter-id="0" type="button" role="tab" aria-selected="false">TSPMU 0</button>
+          <button class="board-tab-button" data-filter-type="6" data-filter-id="1" type="button" role="tab" aria-selected="false">TSPMU 1</button>
+          <button class="board-tab-button" data-filter-type="type" data-filter-id="4" type="button" role="tab" aria-selected="false">All TSHMUs</button>
           <button class="board-tab-button" data-filter-type="4" data-filter-id="0" type="button" role="tab" aria-selected="false">TSHMU 0</button>
           <button class="board-tab-button" data-filter-type="4" data-filter-id="1" type="button" role="tab" aria-selected="false">TSHMU 1</button>
         </div>
@@ -222,7 +226,7 @@
         </div>
       </section>
 
-      <section class="panel all-ids-panel stagger-6">
+      <section class="panel ids-panel stagger-6">
         <div class="panel-heading">
           <h2>All CAN IDs · Time Since Last</h2>
           <p>Every CAN ID seen this session and how long since the last frame for that ID.</p>
@@ -347,7 +351,7 @@
     </section>
 
     <section class="tab-pane" id="tab-graphs" role="tabpanel" hidden>
-      <section class="panel graphs-controls stagger-3">
+      <section class="panel graphs-controls stagger-3" style="position: relative; z-index: 10;">
         <div class="panel-heading">
           <h2>Live Telemetry Graphs</h2>
           <p>Time-series view of decoded per-board telemetry. Each board renders independently as frames arrive.</p>
@@ -363,23 +367,32 @@
               <option value="600">Last 10m</option>
             </select>
           </label>
-          <label class="field-group field-compact">
+          <label class="field-group field-compact" id="board-filter-group" style="position: relative;">
             <span>Board filter</span>
-            <select id="graphs-board-select">
-              <option value="all-all">All Boards</option>
-              <option value="2-0">SDU 0 (FL)</option>
-              <option value="2-1">SDU 1 (FR)</option>
-              <option value="2-2">SDU 2 (RL)</option>
-              <option value="2-3">SDU 3 (RR)</option>
-              <option value="6-0">TSPMU 0</option>
-              <option value="6-1">TSPMU 1</option>
-              <option value="7-0">SMU 0 (GPS)</option>
-              <option value="1-0">SMU 0 (IMU)</option>
-              <option value="1-1">SMU 1 (Mid IMU)</option>
-              <option value="1-2">SMU 2 (Rear IMU)</option>
-              <option value="4-0">TSHMU 0</option>
-              <option value="4-1">TSHMU 1</option>
-            </select>
+            <button id="graphs-board-btn" type="button" class="custom-select-button">All Boards</button>
+            <div id="graphs-board-dropdown" class="custom-select-menu" hidden>
+              <label><input type="checkbox" value="all-all" checked> All Boards</label>
+              <div class="optgroup">SDUs</div>
+              <label><input type="checkbox" value="type-2"> All SDUs</label>
+              <label><input type="checkbox" value="2-0"> SDU 0 (FL)</label>
+              <label><input type="checkbox" value="2-1"> SDU 1 (FR)</label>
+              <label><input type="checkbox" value="2-2"> SDU 2 (RL)</label>
+              <label><input type="checkbox" value="2-3"> SDU 3 (RR)</label>
+              <div class="optgroup">SMUs</div>
+              <label><input type="checkbox" value="type-1"> All SMUs</label>
+              <label><input type="checkbox" value="7-0"> SMU 0 (GPS)</label>
+              <label><input type="checkbox" value="1-0"> SMU 0 (IMU)</label>
+              <label><input type="checkbox" value="1-1"> SMU 1 (Mid IMU)</label>
+              <label><input type="checkbox" value="1-2"> SMU 2 (Rear IMU)</label>
+              <div class="optgroup">TSPMUs</div>
+              <label><input type="checkbox" value="type-6"> All TSPMUs</label>
+              <label><input type="checkbox" value="6-0"> TSPMU 0</label>
+              <label><input type="checkbox" value="6-1"> TSPMU 1</label>
+              <div class="optgroup">TSHMUs</div>
+              <label><input type="checkbox" value="type-4"> All TSHMUs</label>
+              <label><input type="checkbox" value="4-0"> TSHMU 0</label>
+              <label><input type="checkbox" value="4-1"> TSHMU 1</label>
+            </div>
           </label>
           <label class="field-group field-compact">
             <span>Velocity unit</span>
