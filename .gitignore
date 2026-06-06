@@ -1,0 +1,25 @@
+# STM32CubeIDE Build outputs (root and subprojects)
+Debug/
+Release/
+**/Debug/
+**/Release/
+
+# Local IDE configuration settings
+.settings/
+**/.settings/
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Node.js dependencies/outputs in GUI
+node_modules/
+dist/
+*.log
+*.jsonl
+
+# Scratch and diff files
+main_origin.c
+smu_commits.diff
+struct.txt
+yaxis.diff

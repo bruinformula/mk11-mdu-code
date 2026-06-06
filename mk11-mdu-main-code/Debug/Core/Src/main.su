@@ -1,4 +1,0 @@
-../Core/Src/main.c:59:7:ADC_Read_Current	48	static
-../Core/Src/main.c:93:5:main	8	static
-../Core/Src/main.c:151:6:SystemClock_Config	104	static
-../Core/Src/main.c:201:6:Error_Handler	4	static,ignoring_inline_asm

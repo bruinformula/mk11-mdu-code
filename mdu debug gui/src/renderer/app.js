@@ -59,7 +59,7 @@ const state = {
   allIds: new Map(),
   logView: "live",
   logPaused: false,
-  boardFilter: { type: "all", id: "all" },
+  boardFilter: [{ type: "all", id: "all" }],
   logFilters: {
     search: "",
     boardId: "",
@@ -204,7 +204,9 @@ const elements = {
     deploy: document.getElementById("tab-deploy"),
   },
   graphsWindowSelect: document.getElementById("graphs-window-select"),
-  graphsBoardSelect: document.getElementById("graphs-board-select"),
+  graphsBoardBtn: document.getElementById("graphs-board-btn"),
+  graphsBoardDropdown: document.getElementById("graphs-board-dropdown"),
+  graphsBoardCheckboxes: Array.from(document.querySelectorAll("#graphs-board-dropdown input[type='checkbox']")),
   graphsVeloUnitSelect: document.getElementById("graphs-velo-unit-select"),
   graphsAccelUnitSelect: document.getElementById("graphs-accel-unit-select"),
   graphsClearButton: document.getElementById("graphs-clear-button"),
@@ -1441,8 +1443,8 @@ function renderGpsSlowBlock(slow) {
 }
 
 function renderTshmuSlowBlock(slow) {
-  if (!slow) {
-    return '<p class="board-empty">Waiting for TSHMU frame...</p>';
+  if (!slow || slow.flow1 === undefined) {
+    return '<p class="board-empty">Waiting for flow frame...</p>';
   }
 
   const rateHz = slow.rateHz ?? (slow.timeSinceLastMs > 0 ? Math.round(1000 / slow.timeSinceLastMs) : 0);
@@ -1462,6 +1464,36 @@ function renderTshmuSlowBlock(slow) {
   `;
 }
 
+function renderTshmuTempDetails(fast) {
+  if (!fast?.tempBlocks?.length) {
+    return "";
+  }
+
+  const rows = fast.tempBlocks.map(
+    (block) => `
+    <tr>
+      <td>${block.index + 1}</td>
+      <td>${escapeHtml(formatSigned(block.temp1, 1))} °C</td>
+      <td>${escapeHtml(formatSigned(block.temp2, 1))} °C</td>
+      <td>${escapeHtml(formatSigned(block.temp3, 1))} °C</td>
+      <td>${escapeHtml(formatSigned(block.temp4, 1))} °C</td>
+      <td>${escapeHtml(formatSigned(block.temp5, 1))} °C</td>
+      <td>${escapeHtml(formatSigned(block.temp6, 1))} °C</td>
+      <td>${escapeHtml(String(block.jitterMs))} ms</td>
+    </tr>
+  `,
+  );
+
+  return `
+    <details class="board-detail" data-detail="tshmu-temp">
+      <summary>Temperature blocks (${fast.tempBlocks.length})</summary>
+      <div class="board-detail-scroll">
+        ${renderTable(["Block", "T1", "T2", "T3", "T4", "T5", "T6", "Jitter"], rows)}
+      </div>
+    </details>
+  `;
+}
+
 function renderTshmuTempBlock(fast) {
   if (!fast || fast.temp1 == null) {
     return '<p class="board-empty">Waiting for TSHMU temp frame...</p>';
@@ -1478,6 +1510,7 @@ function renderTshmuTempBlock(fast) {
       <dt>Jitter</dt><dd>${fast.jitterMs} ms</dd>
       <dt>Error Flags</dt><dd>0x${fast.errorFlags.toString(16).toUpperCase()}</dd>
     </dl>
+    ${renderTshmuTempDetails(fast)}
   `;
 }
 
@@ -1490,12 +1523,13 @@ function renderBoards() {
   }
 
   let filteredBoards = boards;
-  if (state.boardFilter && state.boardFilter.type !== "all") {
-    const filterType = Number(state.boardFilter.type);
-    const filterId = Number(state.boardFilter.id);
-    filteredBoards = boards.filter(
-      (b) => b.boardType === filterType && b.boardId === filterId,
-    );
+  if (state.boardFilter && !state.boardFilter.some(f => f.type === "all")) {
+    filteredBoards = boards.filter((b) => {
+      return state.boardFilter.some((f) => {
+        if (f.type === "type") return b.boardType === Number(f.id);
+        return b.boardType === Number(f.type) && b.boardId === Number(f.id);
+      });
+    });
   }
 
   if (filteredBoards.length === 0) {
@@ -2082,7 +2116,13 @@ function appendBoardSample(frameEvent) {
         flow1: Number(mergedSlow.flow1),
         raw2: Number(mergedSlow.raw2),
         flow2: Number(mergedSlow.flow2),
-        jitter: Number(mergedSlow.jitter)
+        jitter: Number(mergedSlow.jitter),
+        tshmuTemp1: Number(mergedSlow.tshmuTemp1),
+        tshmuTemp2: Number(mergedSlow.tshmuTemp2),
+        tshmuTemp3: Number(mergedSlow.tshmuTemp3),
+        tshmuTemp4: Number(mergedSlow.tshmuTemp4),
+        tshmuTemp5: Number(mergedSlow.tshmuTemp5),
+        tshmuTemp6: Number(mergedSlow.tshmuTemp6)
       });
     } else {
       historyEntry.slow.push({
@@ -2137,7 +2177,7 @@ function setActiveTab(tab) {
   if (next === "graphs") {
     renderGraphs();
     setTimeout(() => {
-      if (state.boardFilter && state.boardFilter.type === "7") {
+      if (state.boardFilter && state.boardFilter.some(f => f.type === "7" || f.type === "all")) {
         ensureGpsMap();
         if (gpsMap.instance) {
           gpsMap.instance.resize();
@@ -2878,16 +2918,21 @@ function buildAllPlotDefs(now, windowMs) {
     legendFormatter: (v) => `${formatBytes(v)}/s`,
   });
 
-  const boardKeys = [...state.graphs.boards.keys()].sort((a, b) =>
-    a.localeCompare(b),
-  );
+  const boardKeys = [...state.graphs.boards.keys()].sort((a, b) => {
+    let aWeight = a;
+    let bWeight = b;
+    if (a === "7-0") aWeight = "1-0a";
+    if (b === "7-0") bWeight = "1-0a";
+    return aWeight.localeCompare(bWeight);
+  });
   let filteredBoardKeys = boardKeys;
-  if (state.boardFilter && state.boardFilter.type !== "all") {
-    const filterType = Number(state.boardFilter.type);
-    const filterId = Number(state.boardFilter.id);
+  if (state.boardFilter && !state.boardFilter.some(f => f.type === "all")) {
     filteredBoardKeys = boardKeys.filter((k) => {
       const [typeStr, idStr] = k.split("-");
-      return Number(typeStr) === filterType && Number(idStr) === filterId;
+      return state.boardFilter.some(f => {
+        if (f.type === "type") return Number(typeStr) === Number(f.id);
+        return Number(typeStr) === Number(f.type) && Number(idStr) === Number(f.id);
+      });
     });
   }
 
@@ -3346,7 +3391,7 @@ function buildAllPlotDefs(now, windowMs) {
         legendFormatter: (v) =>
           `${v.toFixed(2)} ${getVelocityUnitLabel(state.graphs.veloUnit)}`,
       });
-    } else {
+    } else if (boardKey.startsWith("2-")) {
       const boardName = BOARD_NAMES[boardId] || `Board ${boardId}`;
       defs.push({
         id: `board:${boardKey}:sg`,
@@ -3482,6 +3527,146 @@ function buildAllPlotDefs(now, windowMs) {
         },
         legendFormatter: (v) => `${v.toFixed(1)} °C`,
       });
+    } else if (boardKey.startsWith("6-")) {
+      const boardName = `TSPMU ${boardId}`;
+      defs.push({
+        id: `board:${boardKey}:pressure`,
+        section: "board",
+        boardKey,
+        title: `${boardName} · Pressures (psi)`,
+        badge: `${fastPoints.length} pts`,
+        lines: [
+          {
+            label: "Pressure 1",
+            color: "#6ce0e6",
+            points: fastPoints.map((row) => ({ t: row.t, v: row.pressure1 })),
+          },
+          {
+            label: "Pressure 2",
+            color: "#ef7457",
+            points: fastPoints.map((row) => ({ t: row.t, v: row.pressure2 })),
+          },
+        ],
+        plotOptions: {
+          now,
+          windowMs,
+          formatY: (v) => v.toFixed(1),
+          emptyText: "Waiting for fast frames",
+        },
+        legendFormatter: (v) => `${v.toFixed(1)} psi`,
+      });
+
+      defs.push({
+        id: `board:${boardKey}:temp`,
+        section: "board",
+        boardKey,
+        title: `${boardName} · Temps (°C)`,
+        badge: `${slowPoints.length} pts`,
+        lines: [
+          {
+            label: "Temp 1",
+            color: "#ffaa5c",
+            points: slowPoints.map((row) => ({ t: row.t, v: row.tspmuTemp1 })),
+          },
+          {
+            label: "Temp 2",
+            color: "#aaff5c",
+            points: slowPoints.map((row) => ({ t: row.t, v: row.tspmuTemp2 })),
+          },
+          {
+            label: "Temp 3",
+            color: "#5cffaa",
+            points: slowPoints.map((row) => ({ t: row.t, v: row.tspmuTemp3 })),
+          },
+          {
+            label: "Temp 4",
+            color: "#5c5cff",
+            points: slowPoints.map((row) => ({ t: row.t, v: row.tspmuTemp4 })),
+          },
+        ],
+        plotOptions: {
+          now,
+          windowMs,
+          formatY: (v) => v.toFixed(1),
+          emptyText: "Waiting for slow frames",
+        },
+        legendFormatter: (v) => `${v.toFixed(1)} °C`,
+      });
+    } else if (boardKey.startsWith("4-")) {
+      const boardName = `TSHMU ${boardId}`;
+      defs.push({
+        id: `board:${boardKey}:flow`,
+        section: "board",
+        boardKey,
+        title: `${boardName} · Flow Rates`,
+        badge: `${slowPoints.length} pts`,
+        lines: [
+          {
+            label: "Flow 1",
+            color: "#6ce0e6",
+            points: slowPoints.map((row) => ({ t: row.t, v: row.flow1 })),
+          },
+          {
+            label: "Flow 2",
+            color: "#ef7457",
+            points: slowPoints.map((row) => ({ t: row.t, v: row.flow2 })),
+          },
+        ],
+        plotOptions: {
+          now,
+          windowMs,
+          formatY: (v) => v.toFixed(2),
+          emptyText: "Waiting for slow frames",
+        },
+        legendFormatter: (v) => `${v.toFixed(2)}`,
+      });
+
+      defs.push({
+        id: `board:${boardKey}:temp`,
+        section: "board",
+        boardKey,
+        title: `${boardName} · Temps (°C)`,
+        badge: `${slowPoints.length} pts`,
+        lines: [
+          {
+            label: "Temp 1",
+            color: "#ffaa5c",
+            points: slowPoints.map((row) => ({ t: row.t, v: row.tshmuTemp1 })),
+          },
+          {
+            label: "Temp 2",
+            color: "#aaff5c",
+            points: slowPoints.map((row) => ({ t: row.t, v: row.tshmuTemp2 })),
+          },
+          {
+            label: "Temp 3",
+            color: "#5cffaa",
+            points: slowPoints.map((row) => ({ t: row.t, v: row.tshmuTemp3 })),
+          },
+          {
+            label: "Temp 4",
+            color: "#5c5cff",
+            points: slowPoints.map((row) => ({ t: row.t, v: row.tshmuTemp4 })),
+          },
+          {
+            label: "Temp 5",
+            color: "#ff5c5c",
+            points: slowPoints.map((row) => ({ t: row.t, v: row.tshmuTemp5 })),
+          },
+          {
+            label: "Temp 6",
+            color: "#5cff5c",
+            points: slowPoints.map((row) => ({ t: row.t, v: row.tshmuTemp6 })),
+          },
+        ],
+        plotOptions: {
+          now,
+          windowMs,
+          formatY: (v) => v.toFixed(1),
+          emptyText: "Waiting for slow frames",
+        },
+        legendFormatter: (v) => `${v.toFixed(1)} °C`,
+      });
     }
   }
 
@@ -3563,7 +3748,18 @@ function buildAllPlotDefs(now, windowMs) {
         `${v.toFixed(2)} ${getAccelUnitLabel(state.graphs.accelUnit)}`,
     });
 
-    filteredBoardKeys.push("imu-overlay");
+    let insertIdx = -1;
+    for (let i = filteredBoardKeys.length - 1; i >= 0; i--) {
+      if (filteredBoardKeys[i].startsWith("1-") || filteredBoardKeys[i].startsWith("7-")) {
+        insertIdx = i;
+        break;
+      }
+    }
+    if (insertIdx !== -1) {
+      filteredBoardKeys.splice(insertIdx + 1, 0, "imu-overlay");
+    } else {
+      filteredBoardKeys.push("imu-overlay");
+    }
   }
 
   return { defs, boardKeys: filteredBoardKeys };
@@ -3730,7 +3926,7 @@ function renderGraphs() {
 function updateGpsMapVisibility() {
   const panel = document.getElementById("gps-map-panel");
   if (!panel) return;
-  const isGps = state.boardFilter && state.boardFilter.type === "7";
+  const isGps = state.boardFilter && state.boardFilter.some(f => f.type === "7" || f.type === "all");
   if (isGps) {
     panel.removeAttribute("hidden");
     // Ensure map is created and correctly sized now that the panel is visible
@@ -4146,28 +4342,106 @@ function wireUi() {
     button.addEventListener("click", () => {
       const filterType = button.dataset.filterType;
       const filterId = button.dataset.filterId;
-      state.boardFilter = { type: filterType, id: filterId };
+      const filterObj = { type: filterType, id: filterId };
+      const isAll = filterType === "all";
+
+      if (isAll) {
+        state.boardFilter = [filterObj];
+      } else {
+        state.boardFilter = state.boardFilter.filter((f) => f.type !== "all");
+        const existingIdx = state.boardFilter.findIndex(
+          (f) => f.type === filterType && f.id === filterId,
+        );
+        if (existingIdx >= 0) {
+          state.boardFilter.splice(existingIdx, 1);
+        } else {
+          state.boardFilter.push(filterObj);
+        }
+        if (state.boardFilter.length === 0) {
+          state.boardFilter = [{ type: "all", id: "all" }];
+        }
+      }
+
       for (const btn of boardTabButtons) {
-        const active = btn === button;
+        const active = state.boardFilter.some(
+          (f) =>
+            f.type === btn.dataset.filterType && f.id === btn.dataset.filterId,
+        );
         btn.classList.toggle("active", active);
         btn.setAttribute("aria-selected", active ? "true" : "false");
       }
-      if (elements.graphsBoardSelect) {
-        elements.graphsBoardSelect.value = `${filterType}-${filterId}`;
+      if (elements.graphsBoardCheckboxes) {
+        elements.graphsBoardCheckboxes.forEach((cb) => {
+          if (cb.value === "all-all") {
+             cb.checked = state.boardFilter.some(f => f.type === "all");
+          } else {
+             const [t, i] = cb.value.split("-");
+             cb.checked = state.boardFilter.some(f => f.type === t && f.id === i);
+          }
+        });
+      }
+      if (elements.graphsBoardBtn) {
+        if (state.boardFilter.some(f => f.type === "all")) {
+           elements.graphsBoardBtn.textContent = "All Boards";
+        } else {
+           elements.graphsBoardBtn.textContent = `${state.boardFilter.length} selected`;
+        }
       }
       renderBoards();
       renderGraphs();
     });
   }
 
-  if (elements.graphsBoardSelect) {
-    elements.graphsBoardSelect.addEventListener("change", (event) => {
-      const val = event.target.value;
-      const [typeStr, idStr] = val.split("-");
-      state.boardFilter = { type: typeStr, id: idStr };
+  if (elements.graphsBoardBtn) {
+    elements.graphsBoardBtn.addEventListener("click", () => {
+      elements.graphsBoardDropdown.hidden = !elements.graphsBoardDropdown.hidden;
+    });
+    
+    document.addEventListener("click", (event) => {
+      if (!event.target.closest("#board-filter-group")) {
+        elements.graphsBoardDropdown.hidden = true;
+      }
+    });
+
+    elements.graphsBoardDropdown.addEventListener("change", (event) => {
+      const checkedBoxes = elements.graphsBoardCheckboxes.filter(cb => cb.checked);
+      
+      if (checkedBoxes.length === 0) {
+        state.boardFilter = [{ type: "all", id: "all" }];
+        const allCb = elements.graphsBoardCheckboxes.find(cb => cb.value === "all-all");
+        if (allCb) allCb.checked = true;
+      } else {
+        if (event.target.value === "all-all" && event.target.checked) {
+           elements.graphsBoardCheckboxes.forEach(cb => {
+              if (cb.value !== "all-all") cb.checked = false;
+           });
+           state.boardFilter = [{ type: "all", id: "all" }];
+        } else {
+           if (event.target.value !== "all-all") {
+              const allCb = elements.graphsBoardCheckboxes.find(cb => cb.value === "all-all");
+              if (allCb) allCb.checked = false;
+           }
+           
+           state.boardFilter = elements.graphsBoardCheckboxes
+             .filter(cb => cb.checked && cb.value !== "all-all")
+             .map((cb) => {
+               const [t, i] = cb.value.split("-");
+               return { type: t, id: i };
+             });
+        }
+      }
+
+      if (state.boardFilter.some(f => f.type === "all")) {
+         elements.graphsBoardBtn.textContent = "All Boards";
+      } else {
+         elements.graphsBoardBtn.textContent = `${state.boardFilter.length} selected`;
+      }
+
       for (const btn of boardTabButtons) {
-        const active =
-          btn.dataset.filterType === typeStr && btn.dataset.filterId === idStr;
+        const active = state.boardFilter.some(
+          (f) =>
+            f.type === btn.dataset.filterType && f.id === btn.dataset.filterId,
+        );
         btn.classList.toggle("active", active);
         btn.setAttribute("aria-selected", active ? "true" : "false");
       }
