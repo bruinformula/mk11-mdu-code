@@ -321,6 +321,7 @@ export function TelemetryProvider({ children }) {
         latestStateRef.current = { ...initialSignalState };
         
         if (liveIntervalRef.current) clearInterval(liveIntervalRef.current);
+        let renderCounter = 0;
         liveIntervalRef.current = setInterval(() => {
           const nowMs = Date.now();
           const tsSeconds = (nowMs - liveStartMsRef.current) / 1000;
@@ -336,7 +337,12 @@ export function TelemetryProvider({ children }) {
             liveBufferRef.current.shift();
           }
           
-          setActiveDataset([...liveBufferRef.current]);
+          // Only update React state every 5 ticks (500ms) to reduce render churn
+          renderCounter++;
+          if (renderCounter >= 5) {
+            renderCounter = 0;
+            setActiveDataset([...liveBufferRef.current]);
+          }
         }, 100);
       } else {
         if (liveIntervalRef.current) {

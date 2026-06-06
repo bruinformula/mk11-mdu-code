@@ -17,15 +17,12 @@ export default function Drivetrain({ data, boardDropouts, startTs }) {
     return valid.filter((_, idx) => idx % step === 0);
   }, [data]);
 
-  const timestamps = useMemo(() => {
-    if (processedData.length === 0) return [];
-    return processedData.map(row => (parseFloat(row.ts) - startTs).toFixed(2));
-  }, [processedData, startTs]);
 
   // Chart configuration helpers
   const getChartOptions = (yTitle, xTitle = 'Time (s)') => ({
     responsive: true,
     maintainAspectRatio: false,
+    animation: false,
     plugins: {
       legend: {
         position: 'top',
@@ -43,7 +40,7 @@ export default function Drivetrain({ data, boardDropouts, startTs }) {
         }
       },
       tooltip: {
-        mode: 'index',
+        mode: 'nearest',
         intersect: false,
         backgroundColor: 'rgba(15, 23, 42, 0.95)',
         titleColor: '#f8fafc',
@@ -64,7 +61,7 @@ export default function Drivetrain({ data, boardDropouts, startTs }) {
           font: { family: 'Inter', size: 12 }
         },
         grid: { color: 'rgba(255, 255, 255, 0.05)' },
-        ticks: { color: '#64748b' }
+        ticks: { color: '#64748b', maxTicksLimit: 10 }
       },
       y: {
         title: {
@@ -74,7 +71,7 @@ export default function Drivetrain({ data, boardDropouts, startTs }) {
           font: { family: 'Inter', size: 12 }
         },
         grid: { color: 'rgba(255, 255, 255, 0.05)' },
-        ticks: { color: '#64748b' }
+        ticks: { color: '#64748b', maxTicksLimit: 8 }
       }
     }
   });
@@ -102,7 +99,7 @@ export default function Drivetrain({ data, boardDropouts, startTs }) {
           borderColor: '#ef4444', // Red
           borderWidth: 2,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         },
         {
           label: 'Inverter Coolant',
@@ -110,7 +107,7 @@ export default function Drivetrain({ data, boardDropouts, startTs }) {
           borderColor: '#3b82f6', // Blue
           borderWidth: 2,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         },
         {
           label: 'Gate Driver Board',
@@ -119,7 +116,7 @@ export default function Drivetrain({ data, boardDropouts, startTs }) {
           borderWidth: 1.5,
           borderDash: [5, 5],
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         }
       ]
     };
@@ -135,7 +132,7 @@ export default function Drivetrain({ data, boardDropouts, startTs }) {
           borderColor: '#f59e0b', // Amber
           borderWidth: 2,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         },
         {
           label: 'Torque Feedback',
@@ -143,7 +140,7 @@ export default function Drivetrain({ data, boardDropouts, startTs }) {
           borderColor: '#a855f7', // Purple
           borderWidth: 2,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         }
       ]
     };
@@ -161,7 +158,7 @@ export default function Drivetrain({ data, boardDropouts, startTs }) {
           borderWidth: 2,
           fill: true,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         }
       ]
     };
@@ -177,7 +174,7 @@ export default function Drivetrain({ data, boardDropouts, startTs }) {
           borderColor: '#3b82f6', // Blue
           borderWidth: 1.5,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         },
         {
           label: 'Flow Rate 2',
@@ -185,7 +182,7 @@ export default function Drivetrain({ data, boardDropouts, startTs }) {
           borderColor: '#60a5fa', // Light Blue
           borderWidth: 1.5,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         },
         {
           label: 'Jitter (x0.1 us)',
@@ -194,7 +191,7 @@ export default function Drivetrain({ data, boardDropouts, startTs }) {
           borderWidth: 1,
           borderDash: [3, 3],
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         }
       ]
     };

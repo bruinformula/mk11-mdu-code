@@ -19,11 +19,6 @@ export default function TractiveSystem({ data, boardDropouts, startTs }) {
     return valid.filter((_, idx) => idx % step === 0);
   }, [data]);
 
-  const timestamps = useMemo(() => {
-    if (processedData.length === 0) return [];
-    return processedData.map(row => (parseFloat(row.ts) - startTs).toFixed(2));
-  }, [processedData, startTs]);
-
   // Check if BMS data is present in the current dataset
   const hasBms = useMemo(() => {
     if (processedData.length === 0) return false;
@@ -36,6 +31,7 @@ export default function TractiveSystem({ data, boardDropouts, startTs }) {
   const getChartOptions = (yTitle, xTitle = 'Time (s)', secondaryYTitle = null) => {
     const scales = {
       x: {
+        type: 'linear',
         title: {
           display: true,
           text: xTitle,
@@ -43,7 +39,7 @@ export default function TractiveSystem({ data, boardDropouts, startTs }) {
           font: { family: 'Inter', size: 12 }
         },
         grid: { color: 'rgba(255, 255, 255, 0.05)' },
-        ticks: { color: '#64748b' }
+        ticks: { color: '#64748b', maxTicksLimit: 10 }
       },
       y: {
         title: {
@@ -53,7 +49,7 @@ export default function TractiveSystem({ data, boardDropouts, startTs }) {
           font: { family: 'Inter', size: 12 }
         },
         grid: { color: 'rgba(255, 255, 255, 0.05)' },
-        ticks: { color: '#64748b' }
+        ticks: { color: '#64748b', maxTicksLimit: 8 }
       }
     };
 
@@ -67,13 +63,14 @@ export default function TractiveSystem({ data, boardDropouts, startTs }) {
         },
         position: 'right',
         grid: { drawOnChartArea: false },
-        ticks: { color: '#64748b' }
+        ticks: { color: '#64748b', maxTicksLimit: 8 }
       };
     }
 
     return {
       responsive: true,
       maintainAspectRatio: false,
+      animation: false,
       plugins: {
         legend: {
           position: 'top',
@@ -91,7 +88,7 @@ export default function TractiveSystem({ data, boardDropouts, startTs }) {
           }
         },
         tooltip: {
-          mode: 'index',
+          mode: 'nearest',
           intersect: false,
           backgroundColor: 'rgba(15, 23, 42, 0.95)',
           titleColor: '#f8fafc',
@@ -144,201 +141,204 @@ export default function TractiveSystem({ data, boardDropouts, startTs }) {
 
   const bmsPlugin = useMemo(() => createDropoutPlugin(bmsDropouts, startTs), [bmsDropouts, startTs]);
 
+  // Helper to parse a field to continuous linear datasets
+  const parseLinearData = (colName) => {
+    return processedData.map(row => {
+      const val = parseFloat(row[colName]);
+      const time = parseFloat(row.ts) - startTs;
+      return { x: time, y: isNaN(val) ? null : val };
+    });
+  };
+
   // 1. TSPMU Pressures (Board 0 & 1)
   const pressureChartData = useMemo(() => {
     return {
-      labels: timestamps,
       datasets: [
         {
           label: 'Board 0 Pressure 1 (p1)',
-          data: processedData.map(row => parseFloat(row['tspmu[0].p1']) || 0),
+          data: parseLinearData('tspmu[0].p1'),
           borderColor: '#f59e0b', // Amber
           borderWidth: 1.5,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         },
         {
           label: 'Board 0 Pressure 2 (p2)',
-          data: processedData.map(row => parseFloat(row['tspmu[0].p2']) || 0),
+          data: parseLinearData('tspmu[0].p2'),
           borderColor: '#d97706', // Darker Amber
           borderWidth: 1.5,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         },
         {
           label: 'Board 1 Pressure 1 (p1)',
-          data: processedData.map(row => parseFloat(row['tspmu[1].p1']) || 0),
+          data: parseLinearData('tspmu[1].p1'),
           borderColor: '#10b981', // Green
           borderWidth: 1.5,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         },
         {
           label: 'Board 1 Pressure 2 (p2)',
-          data: processedData.map(row => parseFloat(row['tspmu[1].p2']) || 0),
+          data: parseLinearData('tspmu[1].p2'),
           borderColor: '#059669', // Darker Green
           borderWidth: 1.5,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         }
       ]
     };
-  }, [timestamps, processedData]);
+  }, [processedData, startTs]);
 
   // 2. TSPMU Thermistor Temperatures (Selected Board)
   const tspmuTempChartData = useMemo(() => {
     const prefix = `tspmu[${selectedTspmuBoard}]`;
     return {
-      labels: timestamps,
       datasets: [
         {
           label: 'Temp 1',
-          data: processedData.map(row => parseFloat(row[`${prefix}.temps[0]`]) || 0),
+          data: parseLinearData(`${prefix}.temps[0]`),
           borderColor: '#60a5fa', // Light Blue
           borderWidth: 1.5,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         },
         {
           label: 'Temp 2',
-          data: processedData.map(row => parseFloat(row[`${prefix}.temps[1]`]) || 0),
+          data: parseLinearData(`${prefix}.temps[1]`),
           borderColor: '#3b82f6', // Medium Blue
           borderWidth: 1.5,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         },
         {
           label: 'Temp 3',
-          data: processedData.map(row => parseFloat(row[`${prefix}.temps[2]`]) || 0),
+          data: parseLinearData(`${prefix}.temps[2]`),
           borderColor: '#a855f7', // Purple
           borderWidth: 1.5,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         },
         {
           label: 'Temp 4',
-          data: processedData.map(row => parseFloat(row[`${prefix}.temps[3]`]) || 0),
+          data: parseLinearData(`${prefix}.temps[3]`),
           borderColor: '#ec4899', // Pink
           borderWidth: 1.5,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         }
       ]
     };
-  }, [selectedTspmuBoard, timestamps, processedData]);
+  }, [selectedTspmuBoard, processedData, startTs]);
 
   // BMS Charts (conditional on BMS data existence)
   const bmsPackChartData = useMemo(() => {
     if (!hasBms) return null;
     return {
-      labels: timestamps,
       datasets: [
         {
           label: 'Pack Voltage (V)',
-          data: processedData.map(row => parseFloat(row['bms.v']) || 0),
+          data: parseLinearData('bms.v'),
           borderColor: '#10b981', // Green
           borderWidth: 2,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
           yAxisID: 'y'
         },
         {
           label: 'Pack Current (A)',
-          data: processedData.map(row => parseFloat(row['bms.i']) || 0),
+          data: parseLinearData('bms.i'),
           borderColor: '#ef4444', // Red
           borderWidth: 1.5,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
           yAxisID: 'y1'
         }
       ]
     };
-  }, [hasBms, timestamps, processedData]);
+  }, [hasBms, processedData, startTs]);
 
   const bmsCellSpreadChartData = useMemo(() => {
     if (!hasBms) return null;
     return {
-      labels: timestamps,
       datasets: [
         {
           label: 'High Cell Voltage',
-          data: processedData.map(row => parseFloat(row['bms.hi_cv']) || 0),
+          data: parseLinearData('bms.hi_cv'),
           borderColor: '#10b981', // Green
           borderWidth: 1.5,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         },
         {
           label: 'Avg Cell Voltage',
-          data: processedData.map(row => parseFloat(row['bms.avg_cv']) || 0),
+          data: parseLinearData('bms.avg_cv'),
           borderColor: '#3b82f6', // Blue
           borderWidth: 2,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         },
         {
           label: 'Low Cell Voltage',
-          data: processedData.map(row => parseFloat(row['bms.lo_cv']) || 0),
+          data: parseLinearData('bms.lo_cv'),
           borderColor: '#f59e0b', // Amber
           borderWidth: 1.5,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         }
       ]
     };
-  }, [hasBms, timestamps, processedData]);
+  }, [hasBms, processedData, startTs]);
 
   const bmsTempSpreadChartData = useMemo(() => {
     if (!hasBms) return null;
     return {
-      labels: timestamps,
       datasets: [
         {
           label: 'High Cell Temp',
-          data: processedData.map(row => parseFloat(row['bms.hi_t']) || 0),
+          data: parseLinearData('bms.hi_t'),
           borderColor: '#ef4444', // Red
           borderWidth: 1.5,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         },
         {
           label: 'Avg Cell Temp',
-          data: processedData.map(row => parseFloat(row['bms.avg_t']) || 0),
+          data: parseLinearData('bms.avg_t'),
           borderColor: '#fb923c', // Orange
           borderWidth: 2,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         },
         {
           label: 'Low Cell Temp',
-          data: processedData.map(row => parseFloat(row['bms.lo_t']) || 0),
+          data: parseLinearData('bms.lo_t'),
           borderColor: '#60a5fa', // Blue
           borderWidth: 1.5,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         }
       ]
     };
-  }, [hasBms, timestamps, processedData]);
+  }, [hasBms, processedData, startTs]);
 
   const bmsSocChartData = useMemo(() => {
     if (!hasBms) return null;
     return {
-      labels: timestamps,
       datasets: [
         {
           label: 'BMS State of Charge (SoC)',
-          data: processedData.map(row => parseFloat(row['bms.soc']) || 0),
+          data: parseLinearData('bms.soc'),
           borderColor: '#06b6d4', // Cyan
           backgroundColor: 'rgba(6, 182, 212, 0.05)',
           borderWidth: 2,
           fill: true,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         }
       ]
     };
-  }, [hasBms, timestamps, processedData]);
+  }, [hasBms, processedData, startTs]);
 
   return (
     <div className="animated-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>

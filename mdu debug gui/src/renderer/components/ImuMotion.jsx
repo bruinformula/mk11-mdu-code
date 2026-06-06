@@ -17,15 +17,12 @@ export default function ImuMotion({ data, boardDropouts, startTs }) {
     return valid.filter((_, idx) => idx % step === 0);
   }, [data]);
 
-  const timestamps = useMemo(() => {
-    if (processedData.length === 0) return [];
-    return processedData.map(row => (parseFloat(row.ts) - startTs).toFixed(2));
-  }, [processedData, startTs]);
 
   // Chart configuration helpers
   const getChartOptions = (yTitle, xTitle = 'Time (s)') => ({
     responsive: true,
     maintainAspectRatio: false,
+    animation: false,
     plugins: {
       legend: {
         position: 'top',
@@ -43,7 +40,7 @@ export default function ImuMotion({ data, boardDropouts, startTs }) {
         }
       },
       tooltip: {
-        mode: 'index',
+        mode: 'nearest',
         intersect: false,
         backgroundColor: 'rgba(15, 23, 42, 0.95)',
         titleColor: '#f8fafc',
@@ -64,7 +61,7 @@ export default function ImuMotion({ data, boardDropouts, startTs }) {
           font: { family: 'Inter', size: 12 }
         },
         grid: { color: 'rgba(255, 255, 255, 0.05)' },
-        ticks: { color: '#64748b' }
+        ticks: { color: '#64748b', maxTicksLimit: 10 }
       },
       y: {
         title: {
@@ -74,7 +71,7 @@ export default function ImuMotion({ data, boardDropouts, startTs }) {
           font: { family: 'Inter', size: 12 }
         },
         grid: { color: 'rgba(255, 255, 255, 0.05)' },
-        ticks: { color: '#64748b' }
+        ticks: { color: '#64748b', maxTicksLimit: 8 }
       }
     }
   });
@@ -101,7 +98,7 @@ export default function ImuMotion({ data, boardDropouts, startTs }) {
           borderColor: '#ef4444', // Red
           borderWidth: 1.5,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         },
         {
           label: 'Lateral Gs (ay)',
@@ -109,7 +106,7 @@ export default function ImuMotion({ data, boardDropouts, startTs }) {
           borderColor: '#3b82f6', // Blue
           borderWidth: 1.5,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         },
         {
           label: 'Vertical Gs (az)',
@@ -118,7 +115,7 @@ export default function ImuMotion({ data, boardDropouts, startTs }) {
           borderWidth: 1,
           borderDash: [3, 3],
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         }
       ]
     };
@@ -134,7 +131,7 @@ export default function ImuMotion({ data, boardDropouts, startTs }) {
           borderColor: '#f97316', // Orange
           borderWidth: 1.5,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         },
         {
           label: 'Mid IMU (ax)',
@@ -142,7 +139,7 @@ export default function ImuMotion({ data, boardDropouts, startTs }) {
           borderColor: '#06b6d4', // Cyan
           borderWidth: 1.5,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         },
         {
           label: 'Rear IMU (ax)',
@@ -150,7 +147,7 @@ export default function ImuMotion({ data, boardDropouts, startTs }) {
           borderColor: '#8b5cf6', // Purple
           borderWidth: 1.5,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         }
       ]
     };
@@ -166,7 +163,7 @@ export default function ImuMotion({ data, boardDropouts, startTs }) {
           borderColor: '#f97316',
           borderWidth: 1.5,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         },
         {
           label: 'Mid IMU (ay)',
@@ -174,7 +171,7 @@ export default function ImuMotion({ data, boardDropouts, startTs }) {
           borderColor: '#06b6d4',
           borderWidth: 1.5,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         },
         {
           label: 'Rear IMU (ay)',
@@ -182,7 +179,7 @@ export default function ImuMotion({ data, boardDropouts, startTs }) {
           borderColor: '#8b5cf6',
           borderWidth: 1.5,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         }
       ]
     };
@@ -198,7 +195,7 @@ export default function ImuMotion({ data, boardDropouts, startTs }) {
           borderColor: '#eab308', // Yellow
           borderWidth: 1.5,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         },
         {
           label: 'Pitch Rate',
@@ -206,7 +203,7 @@ export default function ImuMotion({ data, boardDropouts, startTs }) {
           borderColor: '#ec4899', // Pink
           borderWidth: 1.5,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         },
         {
           label: 'Yaw Rate',
@@ -214,7 +211,7 @@ export default function ImuMotion({ data, boardDropouts, startTs }) {
           borderColor: '#6366f1', // Indigo
           borderWidth: 1.5,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         }
       ]
     };

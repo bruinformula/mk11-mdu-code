@@ -19,23 +19,15 @@ export default function CustomPlotter({ data, boardDropouts, startTs = 0 }) {
     return columns.filter(col => col.toLowerCase().includes(searchQuery.toLowerCase()));
   }, [columns, searchQuery]);
 
-  // Downsample data for visualization performance
+  // Build processed {x,y} data once for all selected columns
   const processedData = useMemo(() => {
     if (!data || data.length === 0) return [];
     const valid = data.filter(row => !isNaN(parseFloat(row.ts)));
-    
-    // Increased targetPoints to 4000 to preserve full high-frequency dropouts/details
     const targetPoints = 4000;
     if (valid.length <= targetPoints) return valid;
-    
     const step = Math.ceil(valid.length / targetPoints);
     return valid.filter((_, idx) => idx % step === 0);
   }, [data]);
-
-  const timestamps = useMemo(() => {
-    if (processedData.length === 0) return [];
-    return processedData.map(row => (parseFloat(row.ts) - startTs).toFixed(2));
-  }, [processedData, startTs]);
 
   // Auto-generate colors for the dynamic datasets
   const colors = [
@@ -53,25 +45,29 @@ export default function CustomPlotter({ data, boardDropouts, startTs = 0 }) {
 
   const chartData = useMemo(() => {
     return {
-      labels: timestamps,
       datasets: selectedColumns.map((col, idx) => {
         const color = colors[idx % colors.length];
         return {
           label: col,
-          data: processedData.map(row => parseFloat(row[col])),
+          data: processedData.map(row => {
+            const val = parseFloat(row[col]);
+            const time = parseFloat(row.ts) - startTs;
+            return { x: time, y: isNaN(val) ? null : val };
+          }),
           borderColor: color,
-          backgroundColor: `${color}10`, // translucent color
+          backgroundColor: `${color}10`,
           borderWidth: 1.5,
           pointRadius: 0,
-          tension: 0.1,
+          tension: 0,
         };
       })
     };
-  }, [timestamps, selectedColumns, processedData]);
+  }, [selectedColumns, processedData, startTs]);
 
   const chartOptions = {
     responsive: true,
     maintainAspectRatio: false,
+    animation: false,
     plugins: {
       legend: {
         position: 'top',
@@ -89,7 +85,7 @@ export default function CustomPlotter({ data, boardDropouts, startTs = 0 }) {
         }
       },
       tooltip: {
-        mode: 'index',
+        mode: 'nearest',
         intersect: false,
         backgroundColor: 'rgba(15, 23, 42, 0.95)',
         titleColor: '#f8fafc',
@@ -102,6 +98,7 @@ export default function CustomPlotter({ data, boardDropouts, startTs = 0 }) {
     },
     scales: {
       x: {
+        type: 'linear',
         title: {
           display: true,
           text: 'Time (s)',
@@ -109,7 +106,7 @@ export default function CustomPlotter({ data, boardDropouts, startTs = 0 }) {
           font: { family: 'Inter', size: 12 }
         },
         grid: { color: 'rgba(255, 255, 255, 0.05)' },
-        ticks: { color: '#64748b' }
+        ticks: { color: '#64748b', maxTicksLimit: 10 }
       },
       y: {
         title: {
@@ -119,7 +116,7 @@ export default function CustomPlotter({ data, boardDropouts, startTs = 0 }) {
           font: { family: 'Inter', size: 12 }
         },
         grid: { color: 'rgba(255, 255, 255, 0.05)' },
-        ticks: { color: '#64748b' }
+        ticks: { color: '#64748b', maxTicksLimit: 8 }
       }
     }
   };
