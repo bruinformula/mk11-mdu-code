@@ -7,10 +7,12 @@
   "main": "src/main/main.js",
   "type": "commonjs",
   "scripts": {
+    "dev:renderer": "vite",
+    "build:renderer": "vite build",
     "start": "electron .",
     "check": "node scripts/check.js",
-    "pack": "electron-builder --dir",
-    "dist": "electron-builder --mac",
+    "pack": "npm run build:renderer && electron-builder --dir",
+    "dist": "npm run build:renderer && electron-builder --mac",
     "build": "npm run dist"
   },
   "build": {
@@ -27,10 +29,21 @@
     }
   },
   "dependencies": {
+    "chart.js": "^4.5.1",
+    "chartjs-plugin-zoom": "^2.2.0",
+    "lucide-react": "^1.17.0",
+    "maplibre-gl": "^5.24.0",
+    "papaparse": "^5.5.3",
+    "react": "^19.2.6",
+    "react-chartjs-2": "^5.3.1",
+    "react-dom": "^19.2.6",
     "serialport": "^12.0.0"
   },
   "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.3",
     "electron": "^31.0.0",
-    "electron-builder": "^26.8.1"
+    "electron-builder": "^26.8.1",
+    "vite": "^5.4.11"
   }
 }
+

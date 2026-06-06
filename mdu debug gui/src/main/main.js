@@ -5,8 +5,11 @@ const path = require('path');
 const os = require('os');
 const { spawn } = require('child_process');
 const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
+const Papa = require('papaparse');
+const readline = require('readline');
 
 const { DeviceMonitor } = require('./device-monitor');
+const { parseMduLine } = require('./mdu-frame');
 
 let mainWindow = null;
 let monitor = null;
@@ -51,7 +54,15 @@ function createWindow() {
     return { action: 'allow' };
   });
 
-  mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  const isDev = !app.isPackaged;
+  if (isDev) {
+    mainWindow.loadURL('http://localhost:5173').catch(() => {
+      mainWindow.loadFile(path.join(__dirname, '..', '..', 'dist', 'renderer', 'index.html'));
+    });
+  } else {
+    mainWindow.loadFile(path.join(__dirname, '..', '..', 'dist', 'renderer', 'index.html'));
+  }
+
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
   });
@@ -68,6 +79,405 @@ function registerMonitorEvents() {
 }
 
 function registerIpcHandlers() {
+  ipcMain.handle('dialog:select-data-folder', async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Select Run Data Folder',
+      properties: ['openDirectory'],
+    });
+
+    if (result.canceled || !result.filePaths?.length) {
+      return null;
+    }
+
+    return result.filePaths[0];
+  });
+
+  async function scanDirectory(dir) {
+    let results = [];
+    try {
+      const list = await fs.promises.readdir(dir, { withFileTypes: true });
+      for (const file of list) {
+        const filePath = path.join(dir, file.name);
+        if (file.isDirectory()) {
+          if (file.name !== 'node_modules' && !file.name.startsWith('.')) {
+            try {
+              const res = await scanDirectory(filePath);
+              results = results.concat(res);
+            } catch (e) {
+              // Ignore sub-directory read errors
+            }
+          }
+        } else if (file.isFile()) {
+          const ext = path.extname(file.name).toLowerCase();
+          if (ext === '.csv' || ext === '.jsonl') {
+            const stats = await fs.promises.stat(filePath);
+            results.push({
+              name: file.name,
+              path: filePath,
+              size: stats.size,
+              mtime: stats.mtimeMs,
+            });
+          }
+        }
+      }
+    } catch (e) {
+      // Ignore directory read errors
+    }
+    return results;
+  }
+
+  ipcMain.handle('folder:scan', async (_event, folderPath) => {
+    if (!folderPath) return [];
+    try {
+      const results = await scanDirectory(folderPath);
+      // Sort by modified time descending (newest runs first)
+      return results.sort((a, b) => b.mtime - a.mtime);
+    } catch (e) {
+      console.error('Error scanning folder:', e);
+      return [];
+    }
+  });
+
+  ipcMain.handle('file:read', async (_event, filePath) => {
+    try {
+      const content = await fs.promises.readFile(filePath, 'utf8');
+      return content;
+    } catch (e) {
+      console.error('Error reading file:', e);
+      throw e;
+    }
+  });
+
+  function decodeStandardCan(id, dataBytes) {
+    if (!dataBytes || dataBytes.length < 8) return null;
+    
+    function toSigned16(value) {
+      return value > 32767 ? value - 65536 : value;
+    }
+    
+    if (id === 1712) { // BMS Voltages
+      return {
+        'bms.avg_cv': (dataBytes[0] | (dataBytes[1] << 8)) / 100,
+        'bms.lo_cv': (dataBytes[2] | (dataBytes[3] << 8)) / 100,
+        'bms.hi_cv': (dataBytes[4] | (dataBytes[5] << 8)) / 100,
+      };
+    }
+    if (id === 1713) { // BMS Temperatures
+      return {
+        'bms.avg_t': toSigned16(dataBytes[0] | (dataBytes[1] << 8)) / 100,
+        'bms.hi_t': toSigned16(dataBytes[2] | (dataBytes[3] << 8)) / 100,
+        'bms.lo_t': toSigned16(dataBytes[4] | (dataBytes[5] << 8)) / 100,
+      };
+    }
+    if (id === 1714) { // BMS SOC, Current, Voltage
+      return {
+        'bms.soc': (dataBytes[0] | (dataBytes[1] << 8)) / 100,
+        'bms.i': toSigned16(dataBytes[2] | (dataBytes[3] << 8)) / 100,
+        'bms.v': (dataBytes[4] | (dataBytes[5] << 8)) / 100,
+      };
+    }
+    if (id === 160) { // Inverter IGBT temps
+      return {
+        'inv.all.module_a_temp': toSigned16(dataBytes[0] | (dataBytes[1] << 8)) / 10,
+        'inv.all.module_b_temp': toSigned16(dataBytes[2] | (dataBytes[3] << 8)) / 10,
+        'inv.all.module_c_temp': toSigned16(dataBytes[4] | (dataBytes[5] << 8)) / 10,
+        'inv.all.gate_driver_board_temp': toSigned16(dataBytes[6] | (dataBytes[7] << 8)) / 10,
+      };
+    }
+    if (id === 162) { // Inverter coolant & motor temp
+      return {
+        'inv.cool_t': toSigned16(dataBytes[0] | (dataBytes[1] << 8)) / 10,
+        'inv.mot_t': toSigned16(dataBytes[4] | (dataBytes[5] << 8)) / 10,
+      };
+    }
+    if (id === 165) { // Inverter motor speed
+      return {
+        'inv.rpm': toSigned16(dataBytes[2] | (dataBytes[3] << 8)),
+      };
+    }
+    if (id === 166) { // Inverter phase currents
+      return {
+        'inv.all.phase_a_current': toSigned16(dataBytes[0] | (dataBytes[1] << 8)) / 10,
+        'inv.all.phase_b_current': toSigned16(dataBytes[2] | (dataBytes[3] << 8)) / 10,
+        'inv.all.phase_c_current': toSigned16(dataBytes[4] | (dataBytes[5] << 8)) / 10,
+        'inv.idc': toSigned16(dataBytes[6] | (dataBytes[7] << 8)) / 10,
+      };
+    }
+    if (id === 167) { // Inverter DC bus voltage
+      return {
+        'inv.vdc': toSigned16(dataBytes[0] | (dataBytes[1] << 8)) / 10,
+      };
+    }
+    if (id === 170) { // Inverter VSM state
+      return {
+        'inv.all.vsm_state': dataBytes[0] | (dataBytes[1] << 8),
+        'inv.all.inverter_state': dataBytes[2] | (dataBytes[3] << 8),
+      };
+    }
+    if (id === 172) { // Inverter torque CMD & feedback
+      return {
+        'inv.tq_cmd': toSigned16(dataBytes[0] | (dataBytes[1] << 8)) / 10,
+        'inv.tq_fb': toSigned16(dataBytes[2] | (dataBytes[3] << 8)) / 10,
+      };
+    }
+    if (id === 176) { // Inverter fast info
+      return {
+        'inv.rpm': toSigned16(dataBytes[0] | (dataBytes[1] << 8)),
+        'inv.vdc': toSigned16(dataBytes[2] | (dataBytes[3] << 8)) / 10,
+        'inv.tq_cmd': toSigned16(dataBytes[4] | (dataBytes[5] << 8)) / 10,
+        'inv.tq_fb': toSigned16(dataBytes[6] | (dataBytes[7] << 8)) / 10,
+      };
+    }
+    return null;
+  }
+
+  function updateStateFromBoard(state, board, id, dataBytes) {
+    if (board) {
+      const bt = board.boardType;
+      const bid = board.boardId;
+      
+      if (bt === 2) { // SDU
+        if (board.shockMm !== undefined) state[`sdu[${bid}].shock`] = board.shockMm;
+        if (board.brakeC !== undefined) state[`sdu[${bid}].brake`] = board.brakeC;
+        if (board.rpm !== undefined) state[`sdu[${bid}].wrpm`] = board.rpm;
+        if (board.tireC !== undefined) {
+          state[`sdu[${bid}].tire[0]`] = board.tireC.max;
+          state[`sdu[${bid}].tire[1]`] = board.tireC.min;
+          state[`sdu[${bid}].tire[2]`] = board.tireC.center;
+          state[`sdu[${bid}].tire[3]`] = board.tireC.ambient;
+        }
+      } else if (bt === 4) { // TSHMU
+        if (board.flow1 !== undefined) state['tshmu.flow1'] = board.flow1;
+        if (board.flow2 !== undefined) state['tshmu.flow2'] = board.flow2;
+        if (board.jitter !== undefined) state['tshmu.jitter_us'] = board.jitter;
+        if (board.errorFlags !== undefined) state['tshmu.error_flags'] = board.errorFlags;
+      } else if (bt === 6) { // TSPMU
+        if (board.pressure1 !== undefined) state[`tspmu[${bid}].p1`] = board.pressure1;
+        if (board.pressure2 !== undefined) state[`tspmu[${bid}].p2`] = board.pressure2;
+        if (board.tempBlocks && board.tempBlocks[0]) {
+          state[`tspmu[${bid}].temps[0]`] = board.tempBlocks[0].temp1;
+          state[`tspmu[${bid}].temps[1]`] = board.tempBlocks[0].temp2;
+          state[`tspmu[${bid}].temps[2]`] = board.tempBlocks[0].temp3;
+          state[`tspmu[${bid}].temps[3]`] = board.tempBlocks[0].temp4;
+        } else if (board.tspmuTemp1 !== undefined) {
+          state[`tspmu[${bid}].temps[0]`] = board.tspmuTemp1;
+          state[`tspmu[${bid}].temps[1]`] = board.tspmuTemp2;
+          state[`tspmu[${bid}].temps[2]`] = board.tspmuTemp3;
+          state[`tspmu[${bid}].temps[3]`] = board.tspmuTemp4;
+        }
+      } else if (bt === 7 || bt === 1) { // GPS / SMU
+        if (board.gpsPos) {
+          state['gps.lat'] = board.gpsPos.latDeg;
+          state['gps.lon'] = board.gpsPos.lonDeg;
+          state['gps.alt'] = board.gpsPos.altM;
+          state['gps.fix'] = board.gpsPos.fixValid;
+          state['gps.fix_quality'] = board.gpsPos.fixQuality;
+          state['gps.sats'] = board.gpsPos.satellites;
+          state['gps.hdop'] = board.gpsPos.hdop;
+          state['gps.error_flags'] = board.gpsPos.errorFlags;
+        } else if (board.gpsNav) {
+          state['gps.vel'] = board.gpsNav.velMps;
+          state['gps.hdg'] = board.gpsNav.headingDeg;
+          state['gps.heading_valid'] = board.gpsNav.headingValid;
+          state['gps.heading_quality'] = board.gpsNav.headingQuality;
+          state['gps.baseline_m'] = board.gpsNav.baselineM;
+          state['gps.pitch_deg'] = board.gpsNav.pitchDeg;
+          state['gps.error_flags'] = board.gpsNav.errorFlags;
+        } else if (board.latitude_deg !== undefined) {
+          state['gps.lat'] = board.latitude_deg;
+          state['gps.lon'] = board.longitude_deg;
+          state['gps.alt'] = board.altitude_m;
+          state['gps.fix'] = board.fix_valid;
+          state['gps.fix_quality'] = board.fix_quality;
+          state['gps.sats'] = board.satellites;
+          state['gps.hdop'] = board.hdop;
+        } else if (board.velocity_mps !== undefined) {
+          state['gps.vel'] = board.velocity_mps;
+          state['gps.hdg'] = board.course_deg;
+          state['gps.heading_valid'] = board.heading_valid;
+          state['gps.heading_quality'] = board.heading_quality;
+        }
+        
+        if (board.accelX !== undefined) {
+          state['imu.ax'] = board.accelX / 1000.0;
+          state['imu.ay'] = board.accelY / 1000.0;
+          state['imu.az'] = board.accelZ / 1000.0;
+          
+          const stateIdx = `imu[${bid}]`;
+          state[`${stateIdx}.ax`] = board.accelX / 1000.0;
+          state[`${stateIdx}.ay`] = board.accelY / 1000.0;
+          state[`${stateIdx}.az`] = board.accelZ / 1000.0;
+          state[`${stateIdx}.pitch`] = board.veloX / 100.0;
+          state[`${stateIdx}.roll`] = board.veloY / 100.0;
+          state[`${stateIdx}.yaw`] = board.veloZ / 100.0;
+        }
+      }
+    } else if (id !== undefined && dataBytes) {
+      const dec = decodeStandardCan(id, dataBytes);
+      if (dec) {
+        for (const [k, v] of Object.entries(dec)) {
+          state[k] = v;
+        }
+      }
+    }
+  }
+
+  function binFramesTo10Hz(frames) {
+    if (frames.length === 0) return [];
+    frames.sort((a, b) => a.timestampMs - b.timestampMs);
+    const startMs = frames[0].timestampMs;
+    
+    const latestState = {
+      'gps.lat': 0.0, 'gps.lon': 0.0, 'gps.alt': 0.0, 'gps.vel': 0.0, 'gps.hdg': 0.0,
+      'gps.fix': 0, 'gps.fix_quality': 0, 'gps.rtk_state': 'no_fix', 'gps.sats': 0, 'gps.hdop': 99.99,
+      'gps.heading_valid': 0, 'gps.heading_quality': 0, 'gps.heading_source': 'course_over_ground',
+      'gps.heading_accuracy_deg': 0.0, 'gps.baseline_m': 0.0, 'gps.pitch_deg': 0.0, 'gps.error_flags': 0,
+      'imu.ax': 0.0, 'imu.ay': 0.0, 'imu.az': 1.0,
+      'imu.pitch': 0.0, 'imu.roll': 0.0, 'imu.yaw': 0.0,
+      'imu[0].ax': 0.0, 'imu[0].ay': 0.0, 'imu[0].az': 1.0, 'imu[0].pitch': 0.0, 'imu[0].roll': 0.0, 'imu[0].yaw': 0.0,
+      'imu[1].ax': 0.0, 'imu[1].ay': 0.0, 'imu[1].az': 1.0, 'imu[1].pitch': 0.0, 'imu[1].roll': 0.0, 'imu[1].yaw': 0.0,
+      'imu[2].ax': 0.0, 'imu[2].ay': 0.0, 'imu[2].az': 1.0, 'imu[2].pitch': 0.0, 'imu[2].roll': 0.0, 'imu[2].yaw': 0.0,
+      'sdu[0].shock': 0.0, 'sdu[0].brake': 0.0, 'sdu[0].wrpm': 0.0,
+      'sdu[0].tire[0]': 0.0, 'sdu[0].tire[1]': 0.0, 'sdu[0].tire[2]': 0.0, 'sdu[0].tire[3]': 0.0,
+      'sdu[1].shock': 0.0, 'sdu[1].brake': 0.0, 'sdu[1].wrpm': 0.0,
+      'sdu[1].tire[0]': 0.0, 'sdu[1].tire[1]': 0.0, 'sdu[1].tire[2]': 0.0, 'sdu[1].tire[3]': 0.0,
+      'sdu[2].shock': 0.0, 'sdu[2].brake': 0.0, 'sdu[2].wrpm': 0.0,
+      'sdu[2].tire[0]': 0.0, 'sdu[2].tire[1]': 0.0, 'sdu[2].tire[2]': 0.0, 'sdu[2].tire[3]': 0.0,
+      'sdu[3].shock': 0.0, 'sdu[3].brake': 0.0, 'sdu[3].wrpm': 0.0,
+      'sdu[3].tire[0]': 0.0, 'sdu[3].tire[1]': 0.0, 'sdu[3].tire[2]': 0.0, 'sdu[3].tire[3]': 0.0,
+      'tspmu[0].p1': 0.0, 'tspmu[0].p2': 0.0,
+      'tspmu[0].temps[0]': 0.0, 'tspmu[0].temps[1]': 0.0, 'tspmu[0].temps[2]': 0.0, 'tspmu[0].temps[3]': 0.0,
+      'tspmu[1].p1': 0.0, 'tspmu[1].p2': 0.0,
+      'tspmu[1].temps[0]': 0.0, 'tspmu[1].temps[1]': 0.0, 'tspmu[1].temps[2]': 0.0, 'tspmu[1].temps[3]': 0.0,
+      'tshmu.flow1': 0.0, 'tshmu.flow2': 0.0, 'tshmu.jitter_us': 0, 'tshmu.error_flags': 0,
+      'bms.v': 0.0, 'bms.i': 0.0, 'bms.soc': 0.0, 'bms.avg_t': 0.0, 'bms.hi_t': 0.0, 'bms.lo_t': 0.0,
+      'bms.avg_cv': 0.0, 'bms.hi_cv': 0.0, 'bms.lo_cv': 0.0,
+      'inv.mot_t': 0.0, 'inv.cool_t': 0.0, 'inv.tq_cmd': 0.0, 'inv.tq_fb': 0.0, 'inv.idc': 0.0, 'inv.rpm': 0.0,
+      'inv.vdc': 0.0,
+    };
+    
+    const bins = new Map();
+    for (const frame of frames) {
+      const binIdx = Math.floor((frame.timestampMs - startMs) / 100);
+      if (!bins.has(binIdx)) {
+        bins.set(binIdx, []);
+      }
+      bins.get(binIdx).push(frame);
+    }
+    
+    let maxBin = 0;
+    for (const binIdx of bins.keys()) {
+      if (binIdx > maxBin) maxBin = binIdx;
+    }
+    
+    const rows = [];
+    for (let b = 0; b <= maxBin; b++) {
+      const binFrames = bins.get(b) || [];
+      for (const frame of binFrames) {
+        updateStateFromBoard(latestState, frame.board, frame.id, frame.dataBytes);
+      }
+      
+      const tsSeconds = (startMs + b * 100) / 1000;
+      rows.push({
+        ts: tsSeconds.toFixed(3),
+        ...latestState
+      });
+    }
+    return rows;
+  }
+
+  async function parseTelemetryFile(filePath) {
+    const ext = path.extname(filePath).toLowerCase();
+    
+    if (ext === '.csv') {
+      const content = await fs.promises.readFile(filePath, 'utf8');
+      const parsed = Papa.parse(content, { header: true, skipEmptyLines: true });
+      const headers = parsed.meta.fields || [];
+      
+      if (headers.includes('sdu[0].shock') || headers.includes('ts') || headers.includes('gps.lat')) {
+        return parsed.data;
+      }
+      
+      const rawCol = headers.find(h => h === 'raw' || h === 'message');
+      if (rawCol) {
+        const timeCol = headers.find(h => h === 'ts' || h.toLowerCase().includes('time')) || headers[0];
+        const frames = [];
+        for (const row of parsed.data) {
+          const rawStr = row[rawCol];
+          if (!rawStr) continue;
+          
+          let tsMs = parseFloat(row[timeCol]);
+          if (isNaN(tsMs)) {
+            tsMs = Date.now();
+          } else if (tsMs < 1000000000) {
+            tsMs = tsMs * 1000;
+          }
+          
+          const parsedFrame = parseMduLine(rawStr);
+          if (parsedFrame.ok) {
+            frames.push({
+              timestampMs: tsMs,
+              board: parsedFrame.board,
+              id: parsedFrame.identifier,
+              dataBytes: parsedFrame.dataBytes,
+            });
+          }
+        }
+        return binFramesTo10Hz(frames);
+      }
+      return parsed.data;
+    }
+    
+    if (ext === '.jsonl') {
+      const inStream = fs.createReadStream(filePath);
+      const rl = readline.createInterface({ input: inStream });
+      const frames = [];
+      
+      for await (const line of rl) {
+        if (!line.trim()) continue;
+        try {
+          const data = JSON.parse(line);
+          let tsMs = Date.now();
+          if (data.timestamp) {
+            tsMs = new Date(data.timestamp).getTime();
+          }
+          
+          if (data.type === 'frame' && data.board) {
+            frames.push({
+              timestampMs: tsMs,
+              board: data.board,
+              id: data.frame?.identifier || data.board?.identifier,
+              dataBytes: data.frame?.dataBytes || data.board?.dataBytes,
+            });
+          } else if (data.raw) {
+            const parsedFrame = parseMduLine(data.raw);
+            if (parsedFrame.ok) {
+              frames.push({
+                timestampMs: tsMs,
+                board: parsedFrame.board,
+                id: parsedFrame.identifier,
+                dataBytes: parsedFrame.dataBytes,
+              });
+            }
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+      return binFramesTo10Hz(frames);
+    }
+    return [];
+  }
+
+  ipcMain.handle('file:parse-telemetry', async (_event, filePath) => {
+    try {
+      return await parseTelemetryFile(filePath);
+    } catch (e) {
+      console.error('Error parsing telemetry file:', e);
+      throw e;
+    }
+  });
+
   ipcMain.handle('app:get-initial-state', async () => monitor.getInitialState());
   ipcMain.handle('serial:list-ports', async () => monitor.listPorts());
   ipcMain.handle('serial:connect', async (_event, options) => monitor.connect(options));

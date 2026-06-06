@@ -13,7 +13,6 @@ const filesToCheck = [
   'src/main/slcan.js',
   'src/main/mdu-frame.js',
   'src/main/usb-topology.js',
-  'src/renderer/app.js',
 ];
 
 for (const relativePath of filesToCheck) {
