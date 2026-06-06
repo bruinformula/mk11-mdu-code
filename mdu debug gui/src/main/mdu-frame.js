@@ -158,6 +158,25 @@ function decodeTspmuPressureBlocks(data) {
   return blocks;
 }
 
+function decodeTshmuTempBlocks(data) {
+  const blocks = [];
+  for (let index = 0; index < 4; index += 1) {
+    const offset = 6 + index * 13;
+    if (offset + 12 >= data.length) {
+      break;
+    }
+    const temp1 = toSigned16(data[offset] | (data[offset + 1] << 8)) / 10.0;
+    const temp2 = toSigned16(data[offset + 2] | (data[offset + 3] << 8)) / 10.0;
+    const temp3 = toSigned16(data[offset + 4] | (data[offset + 5] << 8)) / 10.0;
+    const temp4 = toSigned16(data[offset + 6] | (data[offset + 7] << 8)) / 10.0;
+    const temp5 = toSigned16(data[offset + 8] | (data[offset + 9] << 8)) / 10.0;
+    const temp6 = toSigned16(data[offset + 10] | (data[offset + 11] << 8)) / 10.0;
+    const jitterMs = toSigned8(data[offset + 12]);
+    blocks.push({ index, temp1, temp2, temp3, temp4, temp5, temp6, jitterMs });
+  }
+  return blocks;
+}
+
 function decodeFlowBlocks(data) {
   const blocks = [];
   for (let index = 0; index < 6; index += 1) {
@@ -948,6 +967,42 @@ function parseSlcanToBoard(slcan, rawLine) {
             flow2: flowBlocks[0]?.flow2 ?? 0,
             jitter: flowBlocks[0]?.jitter ?? 0,
             flowBlocks,
+          }
+        };
+      }
+
+      // Sensor 3: Thermistor Temperatures
+      if (sensorNum === 3) {
+        const tempBlocks = decodeTshmuTempBlocks(data);
+        const latest = tempBlocks[0] ?? {};
+        return {
+          ok: true,
+          source: 'board',
+          raw: rawLine,
+          idText: slcan.idText,
+          idType: slcan.idType,
+          identifier: slcan.identifier,
+          identifierHex: slcan.identifierHex,
+          dataLength: slcan.dataLength,
+          dataHex: slcan.dataHex,
+          dataBytes: slcan.dataBytes,
+          board: {
+            boardType,
+            boardId,
+            kind: 'fast',
+            identifier: slcan.identifier,
+            identifierHex: slcan.identifierHex,
+            idText: slcan.idText,
+            timeSinceLastMs: 600,
+            errorFlags: err,
+            temp1: latest.temp1 ?? 0,
+            temp2: latest.temp2 ?? 0,
+            temp3: latest.temp3 ?? 0,
+            temp4: latest.temp4 ?? 0,
+            temp5: latest.temp5 ?? 0,
+            temp6: latest.temp6 ?? 0,
+            jitterMs: latest.jitterMs ?? 0,
+            tempBlocks,
           }
         };
       }

@@ -37,50 +37,50 @@
         </button>
         <div class="status-chip" id="connection-chip">Disconnected</div>
         <div class="status-chip muted" id="target-chip">Looking for USB2514 hub 0424:2514</div>
+        <button id="conn-setup-btn" class="conn-setup-btn" type="button" aria-expanded="false" aria-controls="controls-popover">⚙ Setup</button>
+      </div>
+      <div id="controls-popover" class="controls-popover panel" hidden>
+        <div class="controls-row">
+          <label class="field-group field-wide">
+            <span>USB CDC endpoint</span>
+            <select id="port-select"></select>
+          </label>
+
+          <label class="field-group field-compact">
+            <span>CDC line coding</span>
+            <input id="baud-input" type="number" min="300" step="100" value="115200">
+          </label>
+
+          <label class="toggle-group">
+            <input id="auto-connect-toggle" type="checkbox" checked>
+            <span>Auto-connect</span>
+          </label>
+        </div>
+
+        <div class="controls-row action-row">
+          <button id="refresh-button" class="secondary-button">Refresh</button>
+          <button id="connect-button" class="primary-button">Connect</button>
+          <button id="disconnect-button" class="secondary-button">Disconnect</button>
+          <button id="clear-session-button" class="ghost-button">Clear stats</button>
+          <button id="clear-log-button" class="ghost-button">Clear log</button>
+        </div>
+
+        <div class="controls-row logging-row">
+          <label class="field-group field-wide">
+            <span>Log file</span>
+            <input id="log-path" type="text" readonly placeholder="Choose a .jsonl file for captures">
+          </label>
+
+          <button id="choose-log-button" class="secondary-button">Choose</button>
+          <button id="start-log-button" class="primary-button">Start</button>
+          <button id="stop-log-button" class="secondary-button">Stop</button>
+        </div>
+
+        <p class="helper-text" id="status-line">
+          Waiting for the USB2514 hub and its STM32 USB CDC child endpoint.
+        </p>
       </div>
     </header>
-
-    <section class="panel controls stagger-2">
-      <div class="controls-row">
-        <label class="field-group field-wide">
-          <span>USB CDC endpoint</span>
-          <select id="port-select"></select>
-        </label>
-
-        <label class="field-group field-compact">
-          <span>CDC line coding</span>
-          <input id="baud-input" type="number" min="300" step="100" value="115200">
-        </label>
-
-        <label class="toggle-group">
-          <input id="auto-connect-toggle" type="checkbox" checked>
-          <span>Auto-connect STM32 USB CDC endpoint</span>
-        </label>
-      </div>
-
-      <div class="controls-row action-row">
-        <button id="refresh-button" class="secondary-button">Refresh ports</button>
-        <button id="connect-button" class="primary-button">Connect</button>
-        <button id="disconnect-button" class="secondary-button">Disconnect</button>
-        <button id="clear-session-button" class="ghost-button">Clear session stats</button>
-        <button id="clear-log-button" class="ghost-button">Clear on-screen log</button>
-      </div>
-
-      <div class="controls-row logging-row">
-        <label class="field-group field-wide">
-          <span>Log file</span>
-          <input id="log-path" type="text" readonly placeholder="Choose a .jsonl file for captures">
-        </label>
-
-        <button id="choose-log-button" class="secondary-button">Choose file</button>
-        <button id="start-log-button" class="primary-button">Start logging</button>
-        <button id="stop-log-button" class="secondary-button">Stop logging</button>
-      </div>
-
-      <p class="helper-text" id="status-line">
-        Waiting for the USB2514 hub and its STM32 USB CDC child endpoint. Bluetooth-style pseudo ports are ignored.
-      </p>
-    </section>
 
     <nav class="tab-nav panel stagger-3" role="tablist">
       <button class="tab-button active" data-tab="dashboard" type="button" role="tab" aria-selected="true">Dashboard</button>
@@ -199,49 +199,12 @@
         </div>
       </section>
 
-      <section class="panel ids-panel stagger-6">
-        <div class="panel-heading">
-          <h2>Active CAN IDs</h2>
-          <p>Most active identifiers over the last 10 seconds. Board frames are decoded from the MDU's per-board lines; other IDs are SLCAN fallbacks.</p>
-        </div>
-
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Source</th>
-                <th>Total</th>
-                <th>Recent Hz</th>
-                <th>DLC</th>
-                <th>Last payload</th>
-              </tr>
-            </thead>
-            <tbody id="top-ids-body"></tbody>
-          </table>
-        </div>
-      </section>
-
       <section class="panel all-ids-panel stagger-6">
         <div class="panel-heading">
-          <h2>All CAN IDs · Time Since Last</h2>
-          <p>Every CAN ID seen this session and how long since the last frame for that ID.</p>
+          <h2>All CAN IDs</h2>
+          <p>Every CAN ID seen this session.</p>
         </div>
-
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Source</th>
-                <th>Total</th>
-                <th>Time Since Last</th>
-                <th>DLC</th>
-              </tr>
-            </thead>
-            <tbody id="all-ids-body"></tbody>
-          </table>
-        </div>
+        <div id="all-ids-body" class="all-ids-grid"></div>
       </section>
 
       <section class="panel log-panel stagger-7">

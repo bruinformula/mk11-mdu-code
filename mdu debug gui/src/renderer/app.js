@@ -143,6 +143,8 @@ function scheduleRender(kind, fn) {
 }
 
 const elements = {
+  connSetupBtn: document.getElementById("conn-setup-btn"),
+  controlsPopover: document.getElementById("controls-popover"),
   portSelect: document.getElementById("port-select"),
   baudInput: document.getElementById("baud-input"),
   autoConnectToggle: document.getElementById("auto-connect-toggle"),
@@ -178,7 +180,6 @@ const elements = {
   chartBpsCurrent: document.getElementById("chart-bps-current"),
   framesChart: document.getElementById("frames-chart"),
   bytesChart: document.getElementById("bytes-chart"),
-  topIdsBody: document.getElementById("top-ids-body"),
   allIdsBody: document.getElementById("all-ids-body"),
   boardsGrid: document.getElementById("boards-grid"),
   logBody: document.getElementById("log-body"),
@@ -723,7 +724,8 @@ function renderDiagnostics() {
   elements.metricTotalFrames.textContent = String(diagnostics.totalFrames ?? 0);
   elements.metricTotalLines.textContent = `${diagnostics.totalLines ?? 0} raw lines`;
   const boards = diagnostics.boards ?? [];
-  elements.metricBoardsSeen.textContent = String(boards.length);
+  const activeBoards = boards.filter((b) => b.lastSeenAgeMs != null && b.lastSeenAgeMs < 10000);
+  elements.metricBoardsSeen.textContent = String(activeBoards.length);
   elements.metricBoardFrames.textContent = `${diagnostics.boardFrames ?? 0} board / ${diagnostics.slcanFrames ?? 0} SLCAN`;
   elements.metricParseErrors.textContent = String(diagnostics.parseErrors ?? 0);
   elements.metricLastFrameAge.textContent =
@@ -751,30 +753,7 @@ function renderDiagnostics() {
   renderSparkline(elements.bytesChart, state.charts.bytes, "#6ce0e6");
 }
 
-function renderTopIds() {
-  const topIds = state.diagnostics?.topIds ?? [];
-  if (topIds.length === 0) {
-    elements.topIdsBody.innerHTML =
-      '<tr><td class="empty-state" colspan="6">No frames decoded yet.</td></tr>';
-    return;
-  }
 
-  elements.topIdsBody.innerHTML = topIds
-    .map((entry) => {
-      const sourceLabel = entry.source === "board" ? "Board" : "SLCAN";
-      return `
-        <tr>
-          <td class="mono">${escapeHtml(entry.idText)}</td>
-          <td><span class="pill ${entry.source === "board" ? "ok" : "info"}">${escapeHtml(sourceLabel)}</span></td>
-          <td>${entry.count}</td>
-          <td>${formatRate(entry.recentHz)}</td>
-          <td>${entry.lastDataLength}</td>
-          <td class="mono">${escapeHtml(entry.lastDataHex || "--")}</td>
-        </tr>
-      `;
-    })
-    .join("");
-}
 
 function formatTimeSinceLast(ms) {
   if (ms == null || !Number.isFinite(ms)) return "--";
@@ -943,8 +922,7 @@ function renderAllIds() {
   if (!elements.allIdsBody) return;
   const entries = [...state.allIds.values()];
   if (entries.length === 0) {
-    elements.allIdsBody.innerHTML =
-      '<tr><td class="empty-state" colspan="5">No frames seen yet.</td></tr>';
+    elements.allIdsBody.innerHTML = '<p class="empty-state">No frames seen yet.</p>';
     return;
   }
   entries.sort((a, b) => {
@@ -956,17 +934,14 @@ function renderAllIds() {
   const now = Date.now();
   elements.allIdsBody.innerHTML = entries
     .map((e) => {
-      const sourceLabel = e.source === 'board' ? 'Board' : 'SLCAN';
       const ageMs = now - e.lastSeenAt;
-      return `
-        <tr>
-          <td class="mono">${escapeHtml(e.idText)}</td>
-          <td><span class="pill ${e.source === 'board' ? 'ok' : 'info'}">${escapeHtml(sourceLabel)}</span></td>
-          <td>${e.count}</td>
-          <td>${escapeHtml(formatTimeSinceLast(ageMs))}</td>
-          <td>${e.lastDataLength}</td>
-        </tr>
-      `;
+      const age = formatTimeSinceLast(ageMs);
+      const fresh = ageMs < 2000;
+      return `<div class="can-id-chip${fresh ? ' can-id-fresh' : ''}">`
+        + `<span class="can-id-hex">${escapeHtml(e.idText)}</span>`
+        + `<span class="can-id-count">${e.count}</span>`
+        + `<span class="can-id-age">${escapeHtml(age)}</span>`
+        + `</div>`;
     })
     .join('');
 }
@@ -1487,6 +1462,25 @@ function renderTshmuSlowBlock(slow) {
   `;
 }
 
+function renderTshmuTempBlock(fast) {
+  if (!fast || fast.temp1 == null) {
+    return '<p class="board-empty">Waiting for TSHMU temp frame...</p>';
+  }
+  return `
+    <p class="board-meta">${escapeHtml(fast.idText)} · Δt ${fast.timeSinceLastMs} ms · ${escapeHtml(formatBoardAge(fast.ageMs))}</p>
+    <dl class="board-readings">
+      <dt>Therm 1</dt><dd>${fast.temp1.toFixed(1)} °C</dd>
+      <dt>Therm 2</dt><dd>${fast.temp2.toFixed(1)} °C</dd>
+      <dt>Therm 3</dt><dd>${fast.temp3.toFixed(1)} °C</dd>
+      <dt>Therm 4</dt><dd>${fast.temp4.toFixed(1)} °C</dd>
+      <dt>Therm 5</dt><dd>${fast.temp5.toFixed(1)} °C</dd>
+      <dt>Therm 6</dt><dd>${fast.temp6.toFixed(1)} °C</dd>
+      <dt>Jitter</dt><dd>${fast.jitterMs} ms</dd>
+      <dt>Error Flags</dt><dd>0x${fast.errorFlags.toString(16).toUpperCase()}</dd>
+    </dl>
+  `;
+}
+
 function renderBoards() {
   const boards = state.diagnostics?.boards ?? [];
   if (boards.length === 0) {
@@ -1553,6 +1547,10 @@ function renderBoards() {
           .toString(16)
           .toUpperCase()
           .padStart(3, "0");
+        const tempHex = (0x100 + (board.boardId << 3) + 3)
+          .toString(16)
+          .toUpperCase()
+          .padStart(3, "0");
 
         return `
           <article class="board-card" data-board-key="${boardKey}">
@@ -1562,9 +1560,13 @@ function renderBoards() {
               <span class="board-counter">ERR: 0x${board.slow?.errorFlags?.toString(16).toUpperCase() ?? "0"}</span>
             </header>
             <div class="board-cols">
-              <div class="board-col" style="flex: 1;">
-                <h3>Slow (Flow Rate: 0x${flowHex})</h3>
+              <div class="board-col">
+                <h3>Flow Rate (0x${flowHex})</h3>
                 ${renderTshmuSlowBlock(board.slow)}
+              </div>
+              <div class="board-col">
+                <h3>Thermistors (0x${tempHex})</h3>
+                ${renderTshmuTempBlock(board.fast)}
               </div>
             </div>
           </article>
@@ -1799,7 +1801,11 @@ function renderLog() {
           } else if (entry.board.boardType === 1) {
             summary = `Accel X/Y/Z: ${entry.board.accelX}/${entry.board.accelY}/${entry.board.accelZ} · Velo X/Y/Z: ${entry.board.veloX}/${entry.board.veloY}/${entry.board.veloZ}`;
           } else if (entry.board.boardType === 4) {
-            summary = `Flow1 ${formatSigned(entry.board.flow1, 1)} LPM (${entry.board.raw1} raw) · Flow2 ${formatSigned(entry.board.flow2, 1)} LPM (${entry.board.raw2} raw) · Jitter ${entry.board.jitter ?? 0} µs`;
+            if (entry.board.kind === 'fast' && entry.board.temp1 != null) {
+              summary = `T1 ${formatSigned(entry.board.temp1, 1)} T2 ${formatSigned(entry.board.temp2, 1)} T3 ${formatSigned(entry.board.temp3, 1)} T4 ${formatSigned(entry.board.temp4, 1)} T5 ${formatSigned(entry.board.temp5, 1)} T6 ${formatSigned(entry.board.temp6, 1)} °C · Jitter ${entry.board.jitterMs ?? 0} ms`;
+            } else {
+              summary = `Flow1 ${formatSigned(entry.board.flow1, 1)} LPM (${entry.board.raw1} raw) · Flow2 ${formatSigned(entry.board.flow2, 1)} LPM (${entry.board.raw2} raw) · Jitter ${entry.board.jitter ?? 0} µs`;
+            }
           } else {
             summary =
               entry.board.kind === "fast"
@@ -2014,6 +2020,17 @@ function appendBoardSample(frameEvent) {
         pressure1: Number(mergedFast.pressure1),
         pressure2: Number(mergedFast.pressure2),
         jitter: Number(mergedFast.jitter),
+      });
+    } else if (boardType === 4) {
+      historyEntry.fast.push({
+        t: now,
+        temp1: Number(mergedFast.temp1),
+        temp2: Number(mergedFast.temp2),
+        temp3: Number(mergedFast.temp3),
+        temp4: Number(mergedFast.temp4),
+        temp5: Number(mergedFast.temp5),
+        temp6: Number(mergedFast.temp6),
+        jitterMs: Number(mergedFast.jitterMs ?? 0),
       });
     } else if (boardType === 1) {
       historyEntry.fast.push({
@@ -2648,6 +2665,19 @@ function applyOrderedSort(defs, order) {
   return [...known, ...unknown];
 }
 
+function computePlotRateHz(def) {
+  if (!def.lines || !def.lines.length) return 0;
+  const now = def.plotOptions?.now ?? Date.now();
+  const cutoff = now - 1000;
+  const points = def.lines[0].points;
+  if (!points || !points.length) return 0;
+  let count = 0;
+  for (let i = points.length - 1; i >= 0 && points[i].t >= cutoff; i--) {
+    count++;
+  }
+  return count;
+}
+
 function buildPlotCard(def) {
   const escaped =
     window.CSS && CSS.escape ? CSS.escape(def.id) : def.id.replace(/"/g, '\\"');
@@ -2668,6 +2698,9 @@ function buildPlotCard(def) {
       favBtn.title = isFav ? "Unpin from favorites" : "Pin to favorites";
       favBtn.setAttribute("aria-pressed", isFav ? "true" : "false");
     }
+
+    const rateEl = card.querySelector(".graph-rate");
+    if (rateEl) rateEl.textContent = `${computePlotRateHz(def)}/s`;
 
     // Update legend
     const legendEl = card.querySelector(".graph-legend");
@@ -2697,6 +2730,7 @@ function buildPlotCard(def) {
     <div class="graph-header">
       <h3>${escapeHtml(def.title)}</h3>
       <div class="graph-card-actions">
+        <span class="graph-rate">${computePlotRateHz(def)}/s</span>
         <strong>${escapeHtml(def.badge ?? "")}</strong>
         <button class="favorite-btn ${isFav ? "is-favorite" : ""}" type="button" title="${isFav ? "Unpin from favorites" : "Pin to favorites"}" aria-pressed="${isFav ? "true" : "false"}">★</button>
         <span class="drag-handle" title="Drag to reorder" aria-hidden="true">⋮⋮</span>
@@ -2935,6 +2969,57 @@ function buildAllPlotDefs(now, windowMs) {
           emptyText: "Waiting for GPS frames",
         },
         legendFormatter: (v) => `${v.toFixed(2)}°`,
+      });
+    } else if (boardType === 4) {
+      const boardName = `TSHMU ${boardId}`;
+      defs.push({
+        id: `board:${boardKey}:flow`,
+        section: "board",
+        boardKey,
+        title: `${boardName} · Flow Rate (LPM)`,
+        badge: `${slowPoints.length} pts`,
+        lines: [
+          {
+            label: "Flow 1",
+            color: "#6ce0e6",
+            points: slowPoints.map((row) => ({ t: row.t, v: row.flow1 })),
+          },
+          {
+            label: "Flow 2",
+            color: "#f7a35c",
+            points: slowPoints.map((row) => ({ t: row.t, v: row.flow2 })),
+          },
+        ],
+        plotOptions: {
+          now,
+          windowMs,
+          yMinClamp: 0,
+          formatY: (v) => v.toFixed(1),
+          emptyText: "Waiting for flow frames",
+        },
+        legendFormatter: (v) => `${v.toFixed(1)} LPM`,
+      });
+      defs.push({
+        id: `board:${boardKey}:temp`,
+        section: "board",
+        boardKey,
+        title: `${boardName} · Thermistors (°C)`,
+        badge: `${fastPoints.length} pts`,
+        lines: [
+          { label: "Therm 1", color: "#ef7457", points: fastPoints.map((row) => ({ t: row.t, v: row.temp1 })) },
+          { label: "Therm 2", color: "#6ce0e6", points: fastPoints.map((row) => ({ t: row.t, v: row.temp2 })) },
+          { label: "Therm 3", color: "#b9c47a", points: fastPoints.map((row) => ({ t: row.t, v: row.temp3 })) },
+          { label: "Therm 4", color: "#e6b657", points: fastPoints.map((row) => ({ t: row.t, v: row.temp4 })) },
+          { label: "Therm 5", color: "#9badd9", points: fastPoints.map((row) => ({ t: row.t, v: row.temp5 })) },
+          { label: "Therm 6", color: "#f7a35c", points: fastPoints.map((row) => ({ t: row.t, v: row.temp6 })) },
+        ],
+        plotOptions: {
+          now,
+          windowMs,
+          formatY: (v) => v.toFixed(1),
+          emptyText: "Waiting for temp frames",
+        },
+        legendFormatter: (v) => `${v.toFixed(1)} °C`,
       });
     } else if (boardType === 6) {
       const boardName = `TSPMU ${boardId}`;
@@ -3550,6 +3635,8 @@ function renderBoardSection(boardKeys, defsByBoard, now) {
           ? "GPS COG"
           : boardType === 6
           ? `TSPMU ${boardId}`
+          : boardType === 4
+          ? `TSHMU ${boardId}`
           : boardType === 1
             ? SMU_NAMES[boardId] || `SMU ${boardId}`
             : BOARD_NAMES[boardId] || `Board ${boardId}`;
@@ -3681,7 +3768,6 @@ function renderAll() {
   renderConnection();
   renderDiagnostics();
   renderBoards();
-  renderTopIds();
   renderAllIds();
   renderLog();
   renderLoggingControls();
@@ -3967,6 +4053,25 @@ async function runDeployAction(action) {
 
 function wireUi() {
   applyTheme(document.documentElement.getAttribute("data-theme") || "dark");
+
+  if (elements.connSetupBtn && elements.controlsPopover) {
+    elements.connSetupBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const isOpen = !elements.controlsPopover.hidden;
+      elements.controlsPopover.hidden = isOpen;
+      elements.connSetupBtn.setAttribute("aria-expanded", String(!isOpen));
+    });
+    document.addEventListener("click", (e) => {
+      if (
+        !elements.controlsPopover.hidden &&
+        !elements.controlsPopover.contains(e.target) &&
+        e.target !== elements.connSetupBtn
+      ) {
+        elements.controlsPopover.hidden = true;
+        elements.connSetupBtn.setAttribute("aria-expanded", "false");
+      }
+    });
+  }
 
   elements.themeToggle.addEventListener("click", () => {
     const current =
@@ -4455,7 +4560,6 @@ function wireEvents() {
     recordThroughputSample(Date.now(), diagnostics);
     scheduleRender("diagnostics", renderDiagnostics);
     scheduleRender("boards", renderBoards);
-    scheduleRender("topIds", renderTopIds);
     scheduleRender("graphs", renderGraphs);
   });
 

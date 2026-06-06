@@ -169,6 +169,8 @@ body {
   justify-content: space-between;
   gap: 24px;
   align-items: flex-start;
+  position: relative;
+  overflow: visible;
 }
 
 .eyebrow {
@@ -205,6 +207,46 @@ body {
   align-items: flex-end;
   gap: 10px;
   min-width: 220px;
+}
+
+.conn-setup-btn {
+  min-height: 36px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid var(--panel-border);
+  background: var(--surface-strong);
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.conn-setup-btn:hover {
+  background: var(--bg-accent);
+  color: var(--accent);
+}
+
+.conn-setup-btn[aria-expanded="true"] {
+  background: var(--bg-accent);
+  color: var(--accent);
+}
+
+.controls-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 600px;
+  z-index: 200;
+  padding: 20px 22px;
+  display: grid;
+  gap: 14px;
+  animation: rise-in 160ms ease both;
+}
+
+.controls-popover[hidden] {
+  display: none;
 }
 
 .status-chip {
@@ -436,10 +478,14 @@ button:disabled {
 }
 
 .chart-card {
-  padding: 18px;
+  padding: 14px 18px 10px;
   border-radius: var(--radius-md);
   background: var(--chart-card-bg);
   color: var(--chart-card-ink);
+}
+
+.chart-card svg {
+  height: 72px;
 }
 
 .chart-header {
@@ -457,6 +503,54 @@ svg {
   width: 100%;
   height: 140px;
   display: block;
+}
+
+.all-ids-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 4px 0;
+}
+
+.can-id-chip {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--table-surface);
+  border: 1px solid var(--line);
+  font-size: 0.82rem;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.can-id-chip.can-id-fresh {
+  border-color: var(--accent);
+  background: var(--bg-accent);
+}
+
+.can-id-hex {
+  font-family: "SF Mono", "Menlo", monospace;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.can-id-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  text-align: right;
+}
+
+.can-id-age {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+  white-space: nowrap;
+  text-align: right;
 }
 
 .boards-grid {
@@ -900,6 +994,17 @@ tbody tr:hover {
 .graph-card-actions strong {
   font-family: "SF Mono", "Menlo", monospace;
   font-size: 1.05rem;
+}
+
+.graph-rate {
+  font-family: "SF Mono", "Menlo", monospace;
+  font-size: 0.8rem;
+  color: var(--chart-card-muted);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .favorite-btn {
