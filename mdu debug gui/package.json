@@ -9,7 +9,7 @@
   "scripts": {
     "dev:renderer": "vite",
     "build:renderer": "vite build",
-    "start": "electron .",
+    "start": "npm run build:renderer && electron .",
     "check": "node scripts/check.js",
     "pack": "npm run build:renderer && electron-builder --dir",
     "dist": "npm run build:renderer && electron-builder --mac",
