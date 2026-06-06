@@ -158,6 +158,25 @@ function decodeTspmuPressureBlocks(data) {
   return blocks;
 }
 
+function decodeTshmuTempBlocks(data) {
+  const blocks = [];
+  for (let index = 0; index < 4; index += 1) {
+    const offset = 6 + index * 13;
+    if (offset + 12 >= data.length) {
+      break;
+    }
+    const temp1 = toSigned16(data[offset] | (data[offset + 1] << 8)) / 10.0;
+    const temp2 = toSigned16(data[offset + 2] | (data[offset + 3] << 8)) / 10.0;
+    const temp3 = toSigned16(data[offset + 4] | (data[offset + 5] << 8)) / 10.0;
+    const temp4 = toSigned16(data[offset + 6] | (data[offset + 7] << 8)) / 10.0;
+    const temp5 = toSigned16(data[offset + 8] | (data[offset + 9] << 8)) / 10.0;
+    const temp6 = toSigned16(data[offset + 10] | (data[offset + 11] << 8)) / 10.0;
+    const jitterMs = toSigned8(data[offset + 12]);
+    blocks.push({ index, temp1, temp2, temp3, temp4, temp5, temp6, jitterMs });
+  }
+  return blocks;
+}
+
 function decodeFlowBlocks(data) {
   const blocks = [];
   for (let index = 0; index < 6; index += 1) {
@@ -206,40 +225,6 @@ function decodeTspmuTempBlocks(data) {
       temp2,
       temp3,
       temp4,
-      jitterMs,
-    });
-  }
-  return blocks;
-}
-
-function decodeTshmuTempBlocks(data) {
-  const blocks = [];
-  for (let index = 0; index < 4; index += 1) {
-    const offset = 6 + index * 13;
-    if (offset + 12 >= data.length) {
-      break;
-    }
-    const rawT1 = data[offset] | (data[offset + 1] << 8);
-    const rawT2 = data[offset + 2] | (data[offset + 3] << 8);
-    const rawT3 = data[offset + 4] | (data[offset + 5] << 8);
-    const rawT4 = data[offset + 6] | (data[offset + 7] << 8);
-    const rawT5 = data[offset + 8] | (data[offset + 9] << 8);
-    const rawT6 = data[offset + 10] | (data[offset + 11] << 8);
-    const temp1 = toSigned16(rawT1) / 10.0;
-    const temp2 = toSigned16(rawT2) / 10.0;
-    const temp3 = toSigned16(rawT3) / 10.0;
-    const temp4 = toSigned16(rawT4) / 10.0;
-    const temp5 = toSigned16(rawT5) / 10.0;
-    const temp6 = toSigned16(rawT6) / 10.0;
-    const jitterMs = toSigned8(data[offset + 12]);
-    blocks.push({
-      index,
-      temp1,
-      temp2,
-      temp3,
-      temp4,
-      temp5,
-      temp6,
       jitterMs,
     });
   }
@@ -986,9 +971,10 @@ function parseSlcanToBoard(slcan, rawLine) {
         };
       }
 
-      // Sensor 3: Temperature
+      // Sensor 3: Thermistor Temperatures
       if (sensorNum === 3) {
         const tempBlocks = decodeTshmuTempBlocks(data);
+        const latest = tempBlocks[0] ?? {};
         return {
           ok: true,
           source: 'board',
@@ -1003,19 +989,19 @@ function parseSlcanToBoard(slcan, rawLine) {
           board: {
             boardType,
             boardId,
-            kind: 'slow',
+            kind: 'fast',
             identifier: slcan.identifier,
             identifierHex: slcan.identifierHex,
             idText: slcan.idText,
             timeSinceLastMs: 600,
             errorFlags: err,
-            tshmuTemp1: tempBlocks[0]?.temp1 ?? 0,
-            tshmuTemp2: tempBlocks[0]?.temp2 ?? 0,
-            tshmuTemp3: tempBlocks[0]?.temp3 ?? 0,
-            tshmuTemp4: tempBlocks[0]?.temp4 ?? 0,
-            tshmuTemp5: tempBlocks[0]?.temp5 ?? 0,
-            tshmuTemp6: tempBlocks[0]?.temp6 ?? 0,
-            jitter: tempBlocks[0]?.jitterMs ?? 0,
+            temp1: latest.temp1 ?? 0,
+            temp2: latest.temp2 ?? 0,
+            temp3: latest.temp3 ?? 0,
+            temp4: latest.temp4 ?? 0,
+            temp5: latest.temp5 ?? 0,
+            temp6: latest.temp6 ?? 0,
+            jitterMs: latest.jitterMs ?? 0,
             tempBlocks,
           }
         };
