@@ -165,12 +165,12 @@ function decodeTshmuTempBlocks(data) {
     if (offset + 12 >= data.length) {
       break;
     }
-    const temp1 = toSigned16(data[offset] | (data[offset + 1] << 8)) / 10.0;
-    const temp2 = toSigned16(data[offset + 2] | (data[offset + 3] << 8)) / 10.0;
-    const temp3 = toSigned16(data[offset + 4] | (data[offset + 5] << 8)) / 10.0;
-    const temp4 = toSigned16(data[offset + 6] | (data[offset + 7] << 8)) / 10.0;
-    const temp5 = toSigned16(data[offset + 8] | (data[offset + 9] << 8)) / 10.0;
-    const temp6 = toSigned16(data[offset + 10] | (data[offset + 11] << 8)) / 10.0;
+    const temp1 = toSigned16(data[offset] | (data[offset + 1] << 8)) / 1000.0;
+    const temp2 = toSigned16(data[offset + 2] | (data[offset + 3] << 8)) / 1000.0;
+    const temp3 = toSigned16(data[offset + 4] | (data[offset + 5] << 8)) / 1000.0;
+    const temp4 = toSigned16(data[offset + 6] | (data[offset + 7] << 8)) / 1000.0;
+    const temp5 = toSigned16(data[offset + 8] | (data[offset + 9] << 8)) / 1000.0;
+    const temp6 = toSigned16(data[offset + 10] | (data[offset + 11] << 8)) / 1000.0;
     const jitterMs = toSigned8(data[offset + 12]);
     blocks.push({ index, temp1, temp2, temp3, temp4, temp5, temp6, jitterMs });
   }
@@ -230,6 +230,7 @@ function decodeTspmuTempBlocks(data) {
   }
   return blocks;
 }
+
 
 function decodeImuSamples(data) {
   const baseTimestamp = (data[0] | (data[1] << 8) | (data[2] << 16) | (data[3] << 24)) >>> 0;
