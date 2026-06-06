@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
-import { Line } from 'react-chartjs-2';
 import { Zap, Activity, Thermometer } from 'lucide-react';
 import { createDropoutPlugin } from '../utils/dropoutPlugin';
+import ZoomableLine from './ZoomableLine';
 
 export default function Drivetrain({ data, boardDropouts, startTs }) {
   // Downsample data for visualization performance
@@ -208,7 +208,7 @@ export default function Drivetrain({ data, boardDropouts, startTs }) {
             Compares motor torque request (Command) vs actual motor torque (Feedback). Translucent red bands indicate data dropouts.
           </p>
           <div className="chart-container">
-            <Line options={getChartOptions('Torque (Nm)')} data={torqueChartData} plugins={[inverterPlugin]} />
+            <ZoomableLine options={getChartOptions('Torque (Nm)')} data={torqueChartData} plugins={[inverterPlugin]} />
           </div>
         </div>
 
@@ -219,7 +219,7 @@ export default function Drivetrain({ data, boardDropouts, startTs }) {
             Rotor windings (Motor) vs cooling circuit (Inverter Coolant) and gate driver temperatures.
           </p>
           <div className="chart-container">
-            <Line options={getChartOptions('Temperature (°C)')} data={tempChartData} plugins={[inverterPlugin]} />
+            <ZoomableLine options={getChartOptions('Temperature (°C)')} data={tempChartData} plugins={[inverterPlugin]} />
           </div>
         </div>
       </div>
@@ -232,7 +232,7 @@ export default function Drivetrain({ data, boardDropouts, startTs }) {
             Current draw from accumulator pack into the inverter stage. High spikes indicate heavy acceleration.
           </p>
           <div className="chart-container">
-            <Line options={getChartOptions('Current (Amps)')} data={currentChartData} plugins={[inverterPlugin]} />
+            <ZoomableLine options={getChartOptions('Current (Amps)')} data={currentChartData} plugins={[inverterPlugin]} />
           </div>
         </div>
 
@@ -243,7 +243,7 @@ export default function Drivetrain({ data, boardDropouts, startTs }) {
             Coolant flow meters from the TSHMU and communication bus jitter.
           </p>
           <div className="chart-container">
-            <Line options={getChartOptions('Flow (L/min) / Jitter')} data={coolingChartData} plugins={[tshmuPlugin]} />
+            <ZoomableLine options={getChartOptions('Flow (L/min) / Jitter')} data={coolingChartData} plugins={[tshmuPlugin]} />
           </div>
         </div>
       </div>

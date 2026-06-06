@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { Line } from 'react-chartjs-2';
 import { Search, Square, CheckSquare, Trash2 } from 'lucide-react';
 import { createDropoutPlugin } from '../utils/dropoutPlugin';
+import ZoomableLine from './ZoomableLine';
 
 export default function CustomPlotter({ data, boardDropouts, startTs = 0 }) {
   const [selectedColumns, setSelectedColumns] = useState(['sdu[0].brake', 'gps.vel']);
@@ -10,16 +10,13 @@ export default function CustomPlotter({ data, boardDropouts, startTs = 0 }) {
   // Extract all columns from the CSV data
   const columns = useMemo(() => {
     if (!data || data.length === 0) return [];
-    // Filter out columns that are empty or have mostly non-numeric data, but keep key ones
     return Object.keys(data[0]).filter(col => col !== 'ts');
   }, [data]);
 
-  // Filter columns based on search query
   const filteredColumns = useMemo(() => {
     return columns.filter(col => col.toLowerCase().includes(searchQuery.toLowerCase()));
   }, [columns, searchQuery]);
 
-  // Build processed {x,y} data once for all selected columns
   const processedData = useMemo(() => {
     if (!data || data.length === 0) return [];
     const valid = data.filter(row => !isNaN(parseFloat(row.ts)));
@@ -29,18 +26,9 @@ export default function CustomPlotter({ data, boardDropouts, startTs = 0 }) {
     return valid.filter((_, idx) => idx % step === 0);
   }, [data]);
 
-  // Auto-generate colors for the dynamic datasets
   const colors = [
-    '#3b82f6', // blue
-    '#f97316', // orange
-    '#10b981', // green
-    '#8b5cf6', // purple
-    '#ec4899', // pink
-    '#eab308', // yellow
-    '#06b6d4', // cyan
-    '#f43f5e', // rose
-    '#14b8a6', // teal
-    '#6366f1'  // indigo
+    '#3b82f6', '#f97316', '#10b981', '#8b5cf6', '#ec4899',
+    '#eab308', '#06b6d4', '#f43f5e', '#14b8a6', '#6366f1'
   ];
 
   const chartData = useMemo(() => {
@@ -64,7 +52,7 @@ export default function CustomPlotter({ data, boardDropouts, startTs = 0 }) {
     };
   }, [selectedColumns, processedData, startTs]);
 
-  const chartOptions = {
+  const chartOptions = useMemo(() => ({
     responsive: true,
     maintainAspectRatio: false,
     animation: false,
@@ -77,11 +65,12 @@ export default function CustomPlotter({ data, boardDropouts, startTs = 0 }) {
         }
       },
       zoom: {
-        pan: { enabled: true, mode: 'x' },
+        pan: { enabled: false },
         zoom: {
-          wheel: { enabled: true },
+          wheel: { enabled: true, modifierKey: 'shift' },
           pinch: { enabled: true },
-          mode: 'x'
+          drag: { enabled: false },
+          mode: 'xy'
         }
       },
       tooltip: {
@@ -99,12 +88,7 @@ export default function CustomPlotter({ data, boardDropouts, startTs = 0 }) {
     scales: {
       x: {
         type: 'linear',
-        title: {
-          display: true,
-          text: 'Time (s)',
-          color: '#94a3b8',
-          font: { family: 'Inter', size: 12 }
-        },
+        title: { display: true, text: 'Time (s)', color: '#94a3b8', font: { family: 'Inter', size: 12 } },
         grid: { color: 'rgba(255, 255, 255, 0.05)' },
         ticks: { color: '#64748b', maxTicksLimit: 10 }
       },
@@ -119,7 +103,7 @@ export default function CustomPlotter({ data, boardDropouts, startTs = 0 }) {
         ticks: { color: '#64748b', maxTicksLimit: 8 }
       }
     }
-  };
+  }), [selectedColumns]);
 
   const getBoardFromColumnName = (colName) => {
     if (colName.startsWith('sdu[0]')) return 'sdu0';
@@ -136,22 +120,16 @@ export default function CustomPlotter({ data, boardDropouts, startTs = 0 }) {
     return null;
   };
 
-  // Merge dropouts for the selected columns
   const activeDropouts = useMemo(() => {
     if (!boardDropouts) return [];
-    
-    // Find unique boards represented in selected columns
     const activeBoards = new Set();
     selectedColumns.forEach(col => {
       const board = getBoardFromColumnName(col);
-      if (board) {
-        activeBoards.add(board);
-      }
+      if (board) activeBoards.add(board);
     });
 
     const merged = [];
     const seenGlobals = new Set();
-    
     activeBoards.forEach(board => {
       const list = boardDropouts[board];
       if (!list) return;
@@ -165,7 +143,6 @@ export default function CustomPlotter({ data, boardDropouts, startTs = 0 }) {
       });
     });
 
-    // Fallback to global gaps if no boards are active
     if (activeBoards.size === 0) {
       const firstBoardKey = Object.keys(boardDropouts)[0];
       if (firstBoardKey && boardDropouts[firstBoardKey]) {
@@ -173,25 +150,17 @@ export default function CustomPlotter({ data, boardDropouts, startTs = 0 }) {
       }
       return [];
     }
-
     return merged;
   }, [selectedColumns, boardDropouts]);
 
   const dropoutPlugin = useMemo(() => createDropoutPlugin(activeDropouts, startTs), [activeDropouts, startTs]);
+  const chartPlugins = useMemo(() => [dropoutPlugin], [dropoutPlugin]);
 
   const handleToggleColumn = (col) => {
-    setSelectedColumns(prev => {
-      if (prev.includes(col)) {
-        return prev.filter(c => c !== col);
-      } else {
-        return [...prev, col];
-      }
-    });
+    setSelectedColumns(prev => prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col]);
   };
 
-  const handleClearAll = () => {
-    setSelectedColumns([]);
-  };
+  const handleClearAll = () => setSelectedColumns([]);
 
   return (
     <div className="glass-panel animated-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -203,9 +172,7 @@ export default function CustomPlotter({ data, boardDropouts, startTs = 0 }) {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '2rem' }}>
-        {/* Left column: Selection panel */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {/* Search bar */}
           <div style={{ position: 'relative' }}>
             <input
               type="text"
@@ -222,7 +189,6 @@ export default function CustomPlotter({ data, boardDropouts, startTs = 0 }) {
             />
           </div>
 
-          {/* Action buttons */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
               {selectedColumns.length} parameter(s) plotted
@@ -236,7 +202,6 @@ export default function CustomPlotter({ data, boardDropouts, startTs = 0 }) {
             </button>
           </div>
 
-          {/* Parameters checkboxes list */}
           <div className="plotter-columns-grid">
             {filteredColumns.map(col => {
               const isChecked = selectedColumns.includes(col);
@@ -276,11 +241,14 @@ export default function CustomPlotter({ data, boardDropouts, startTs = 0 }) {
           </div>
         </div>
 
-        {/* Right column: Chart canvas */}
         <div style={{ display: 'flex', flexDirection: 'column', minHeight: '450px', justifyContent: 'center' }}>
           {selectedColumns.length > 0 ? (
-            <div style={{ height: '450px', width: '100%' }}>
-              <Line options={chartOptions} data={chartData} plugins={[dropoutPlugin]} />
+            <div style={{ height: '450px', width: '100%', position: 'relative' }}>
+              <ZoomableLine
+                options={chartOptions}
+                data={chartData}
+                plugins={chartPlugins}
+              />
             </div>
           ) : (
             <div className="text-center text-slate-500" style={{ padding: '4rem 0' }}>

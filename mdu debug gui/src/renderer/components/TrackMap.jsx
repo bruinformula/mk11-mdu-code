@@ -29,6 +29,7 @@ const SATELLITE_STYLE = {
 
 export default function TrackMap({ data, hoveredIndex, setHoveredIndex }) {
   const [metric, setMetric] = useState('gps.vel'); // default to velocity
+  const [hoverTooltip, setHoverTooltip] = useState(null);
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
 
@@ -59,6 +60,7 @@ export default function TrackMap({ data, hoveredIndex, setHoveredIndex }) {
   const gpsPointsRef = useRef(gpsPoints);
   const metricRef = useRef(metric);
   const metricRangeRef = useRef(metricRange);
+  const dataRef = useRef(data);
 
   useEffect(() => {
     gpsPointsRef.current = gpsPoints;
@@ -71,6 +73,10 @@ export default function TrackMap({ data, hoveredIndex, setHoveredIndex }) {
   useEffect(() => {
     metricRangeRef.current = metricRange;
   }, [metricRange]);
+
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
 
   // Update GeoJSON features (lines + start/end points) when data or metric changes
   const triggerSourceUpdate = useCallback(() => {
@@ -284,6 +290,24 @@ export default function TrackMap({ data, hoveredIndex, setHoveredIndex }) {
           const origIdx = e.features[0].properties.originalIndex;
           if (origIdx !== undefined) {
             setHoveredIndex(origIdx);
+            const currentData = dataRef.current;
+            const row = currentData && currentData[origIdx];
+            if (row) {
+              const speedMps = parseFloat(row['gps.vel']);
+              const fl = parseFloat(row['sdu[0].brake']);
+              const fr = parseFloat(row['sdu[1].brake']);
+              const rl = parseFloat(row['sdu[2].brake']);
+              const rr = parseFloat(row['sdu[3].brake']);
+              setHoverTooltip({
+                x: e.point.x,
+                y: e.point.y,
+                speedMph: isNaN(speedMps) ? null : speedMps * 2.23694,
+                fl: isNaN(fl) ? null : fl,
+                fr: isNaN(fr) ? null : fr,
+                rl: isNaN(rl) ? null : rl,
+                rr: isNaN(rr) ? null : rr
+              });
+            }
           }
         }
       });
@@ -291,6 +315,7 @@ export default function TrackMap({ data, hoveredIndex, setHoveredIndex }) {
       mapInstance.off('mouseleave', 'gps-line');
       mapInstance.on('mouseleave', 'gps-line', () => {
         setHoveredIndex(null);
+        setHoverTooltip(null);
       });
 
       mapInstance.on('mouseenter', 'gps-line', () => {
@@ -411,11 +436,49 @@ export default function TrackMap({ data, hoveredIndex, setHoveredIndex }) {
 
       <div className="track-map-container">
         {/* Render MapLibre Container */}
-        <div 
-          ref={mapContainerRef} 
-          className="track-canvas-wrapper" 
-          style={{ height: '500px', width: '100%', borderRadius: '8px', overflow: 'hidden' }}
-        />
+        <div style={{ position: 'relative', height: '500px', width: '100%' }}>
+          <div
+            ref={mapContainerRef}
+            className="track-canvas-wrapper"
+            style={{ height: '500px', width: '100%', borderRadius: '8px', overflow: 'hidden' }}
+          />
+          {hoverTooltip && (
+            <div
+              style={{
+                position: 'absolute',
+                left: Math.min(hoverTooltip.x + 14, 9999),
+                top: Math.max(hoverTooltip.y - 12, 0),
+                transform: 'translateY(-100%)',
+                pointerEvents: 'none',
+                background: 'rgba(15, 23, 42, 0.95)',
+                color: '#f8fafc',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
+                borderRadius: '6px',
+                padding: '0.5rem 0.65rem',
+                fontFamily: 'var(--font-mono)',
+                fontSize: '0.75rem',
+                lineHeight: 1.45,
+                whiteSpace: 'nowrap',
+                boxShadow: '0 6px 18px rgba(0,0,0,0.45)',
+                zIndex: 5
+              }}
+            >
+              <div style={{ color: '#60a5fa', fontWeight: 600, marginBottom: '0.2rem' }}>
+                Speed: {hoverTooltip.speedMph != null ? `${hoverTooltip.speedMph.toFixed(1)} mph` : '—'}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'auto auto', columnGap: '0.65rem', rowGap: '0.1rem' }}>
+                <span style={{ color: '#f97316' }}>FL brake:</span>
+                <span>{hoverTooltip.fl != null ? `${hoverTooltip.fl.toFixed(1)} °C` : '—'}</span>
+                <span style={{ color: '#06b6d4' }}>FR brake:</span>
+                <span>{hoverTooltip.fr != null ? `${hoverTooltip.fr.toFixed(1)} °C` : '—'}</span>
+                <span style={{ color: '#10b981' }}>RL brake:</span>
+                <span>{hoverTooltip.rl != null ? `${hoverTooltip.rl.toFixed(1)} °C` : '—'}</span>
+                <span style={{ color: '#8b5cf6' }}>RR brake:</span>
+                <span>{hoverTooltip.rr != null ? `${hoverTooltip.rr.toFixed(1)} °C` : '—'}</span>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Control side panel */}
         <div className="track-controls">

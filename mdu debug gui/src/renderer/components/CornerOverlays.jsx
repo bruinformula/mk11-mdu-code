@@ -10,10 +10,10 @@ import {
   Legend,
   Filler
 } from 'chart.js';
-import { Line } from 'react-chartjs-2';
 import zoomPlugin from 'chartjs-plugin-zoom';
 import { RefreshCw } from 'lucide-react';
 import { createDropoutPlugin } from '../utils/dropoutPlugin';
+import ZoomableLine from './ZoomableLine';
 
 ChartJS.register(
   CategoryScale,
@@ -543,7 +543,7 @@ export default function CornerOverlays({ data, boardDropouts, startTs = 0 }) {
             Comparison of brake temperatures from all four corners. Click labels to toggle, scroll to zoom, drag to pan.
           </p>
           <div className="chart-container">
-            <Line options={getChartOptions('Temperature (°C)')} data={brakesChartData} plugins={[comparisonPlugin]} />
+            <ZoomableLine options={getChartOptions('Temperature (°C)')} data={brakesChartData} plugins={[comparisonPlugin]} />
           </div>
         </div>
 
@@ -554,7 +554,7 @@ export default function CornerOverlays({ data, boardDropouts, startTs = 0 }) {
             Comparison of damper displacement from all four corners. Helpful for checking roll, pitch, and bump response.
           </p>
           <div className="chart-container">
-            <Line options={getChartOptions('Displacement (mm)')} data={shocksChartData} plugins={[comparisonPlugin]} />
+            <ZoomableLine options={getChartOptions('Displacement (mm)')} data={shocksChartData} plugins={[comparisonPlugin]} />
           </div>
         </div>
       </div>
@@ -568,7 +568,7 @@ export default function CornerOverlays({ data, boardDropouts, startTs = 0 }) {
             Rotational speeds of all four wheels. Overlay is critical for checking lock-ups and wheel spin profiles.
           </p>
           <div className="chart-container">
-            <Line options={getChartOptions('Rotations Per Minute (RPM)')} data={rpmChartData} plugins={[comparisonPlugin]} />
+            <ZoomableLine options={getChartOptions('Rotations Per Minute (RPM)')} data={rpmChartData} plugins={[comparisonPlugin]} />
           </div>
         </div>
 
@@ -595,7 +595,7 @@ export default function CornerOverlays({ data, boardDropouts, startTs = 0 }) {
             Plots the 4 infrared tire temp channels (inner edge to outer edge) of the selected tire to analyze heat spread.
           </p>
           <div className="chart-container">
-            <Line options={getChartOptions('Temperature (°C)')} data={tireChartData} plugins={[selectedCornerPlugin]} />
+            <ZoomableLine options={getChartOptions('Temperature (°C)')} data={tireChartData} plugins={[selectedCornerPlugin]} />
           </div>
         </div>
       </div>

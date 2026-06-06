@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { Line } from 'react-chartjs-2';
 import { Zap, ShieldAlert, Activity, Thermometer } from 'lucide-react';
 import { createDropoutPlugin } from '../utils/dropoutPlugin';
+import ZoomableLine from './ZoomableLine';
 
 export default function TractiveSystem({ data, boardDropouts, startTs }) {
   const [selectedTspmuBoard, setSelectedTspmuBoard] = useState('0'); // '0' or '1'
@@ -360,7 +360,7 @@ export default function TractiveSystem({ data, boardDropouts, startTs }) {
               HV system line pressure levels in Pascals (Pa). Monitored on Board 0 and Board 1.
             </p>
             <div className="chart-container">
-              <Line options={getChartOptions('Pressure (Pa)')} data={pressureChartData} plugins={[combinedTspmuPlugin]} />
+              <ZoomableLine options={getChartOptions('Pressure (Pa)')} data={pressureChartData} plugins={[combinedTspmuPlugin]} />
             </div>
           </div>
 
@@ -389,7 +389,7 @@ export default function TractiveSystem({ data, boardDropouts, startTs }) {
               Plots the 4 local board temperature sensors in degrees Celsius (°C) for Board {selectedTspmuBoard}.
             </p>
             <div className="chart-container">
-              <Line options={getChartOptions('Temperature (°C)')} data={tspmuTempChartData} plugins={[selectedTspmuPlugin]} />
+              <ZoomableLine options={getChartOptions('Temperature (°C)')} data={tspmuTempChartData} plugins={[selectedTspmuPlugin]} />
             </div>
           </div>
         </div>
@@ -414,7 +414,7 @@ export default function TractiveSystem({ data, boardDropouts, startTs }) {
                   Plots battery pack voltage (green, left) and current draw (red, right). High negative spikes are regenerative braking.
                 </p>
                 <div className="chart-container">
-                  <Line 
+                  <ZoomableLine 
                     options={getChartOptions('Voltage (V)', 'Time (s)', 'Current (A)')} 
                     data={bmsPackChartData} 
                     plugins={[bmsPlugin]} 
@@ -429,7 +429,7 @@ export default function TractiveSystem({ data, boardDropouts, startTs }) {
                   Capacity percentage remaining in the accumulator pack over the course of the test run.
                 </p>
                 <div className="chart-container">
-                  <Line options={getChartOptions('SoC (%)')} data={bmsSocChartData} plugins={[bmsPlugin]} />
+                  <ZoomableLine options={getChartOptions('SoC (%)')} data={bmsSocChartData} plugins={[bmsPlugin]} />
                 </div>
               </div>
             </div>
@@ -442,7 +442,7 @@ export default function TractiveSystem({ data, boardDropouts, startTs }) {
                   Compares high, low, and average cell voltages to identify weak cell series groups or imbalances.
                 </p>
                 <div className="chart-container">
-                  <Line options={getChartOptions('Cell Voltage (V)')} data={bmsCellSpreadChartData} plugins={[bmsPlugin]} />
+                  <ZoomableLine options={getChartOptions('Cell Voltage (V)')} data={bmsCellSpreadChartData} plugins={[bmsPlugin]} />
                 </div>
               </div>
 
@@ -453,7 +453,7 @@ export default function TractiveSystem({ data, boardDropouts, startTs }) {
                   High, low, and average cell temperatures. Keeps track of thermal safety limits.
                 </p>
                 <div className="chart-container">
-                  <Line options={getChartOptions('Temperature (°C)')} data={bmsTempSpreadChartData} plugins={[bmsPlugin]} />
+                  <ZoomableLine options={getChartOptions('Temperature (°C)')} data={bmsTempSpreadChartData} plugins={[bmsPlugin]} />
                 </div>
               </div>
             </div>
