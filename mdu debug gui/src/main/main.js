@@ -322,12 +322,8 @@ function registerIpcHandlers() {
     }
   }
 
-  function binFramesTo10Hz(frames) {
-    if (frames.length === 0) return [];
-    frames.sort((a, b) => a.timestampMs - b.timestampMs);
-    const startMs = frames[0].timestampMs;
-    
-    const latestState = {
+  function createInitialSignalState() {
+    return {
       'gps.lat': 0.0, 'gps.lon': 0.0, 'gps.alt': 0.0, 'gps.vel': 0.0, 'gps.hdg': 0.0,
       'gps.fix': 0, 'gps.fix_quality': 0, 'gps.rtk_state': 'no_fix', 'gps.sats': 0, 'gps.hdop': 99.99,
       'gps.heading_valid': 0, 'gps.heading_quality': 0, 'gps.heading_source': 'course_over_ground',
@@ -355,6 +351,57 @@ function registerIpcHandlers() {
       'inv.mot_t': 0.0, 'inv.cool_t': 0.0, 'inv.tq_cmd': 0.0, 'inv.tq_fb': 0.0, 'inv.idc': 0.0, 'inv.rpm': 0.0,
       'inv.vdc': 0.0,
     };
+  }
+
+  class StreamTelemetryParser {
+    constructor() {
+      this.startMs = null;
+      this.currentBinIdx = -1;
+      this.latestState = createInitialSignalState();
+      this.rows = [];
+    }
+
+    addFrame(tsMs, board, id, dataBytes) {
+      if (this.startMs === null) {
+        this.startMs = tsMs;
+      }
+
+      const binIdx = Math.floor((tsMs - this.startMs) / 100);
+
+      if (binIdx > this.currentBinIdx) {
+        if (this.currentBinIdx !== -1) {
+          for (let b = this.currentBinIdx; b < binIdx; b++) {
+            const tsSeconds = (this.startMs + b * 100) / 1000;
+            this.rows.push({
+              ts: tsSeconds.toFixed(3),
+              ...this.latestState
+            });
+          }
+        }
+        this.currentBinIdx = binIdx;
+      }
+
+      updateStateFromBoard(this.latestState, board, id, dataBytes);
+    }
+
+    finish() {
+      if (this.currentBinIdx !== -1) {
+        const tsSeconds = (this.startMs + this.currentBinIdx * 100) / 1000;
+        this.rows.push({
+          ts: tsSeconds.toFixed(3),
+          ...this.latestState
+        });
+      }
+      return this.rows;
+    }
+  }
+
+  function binFramesTo10Hz(frames) {
+    if (frames.length === 0) return [];
+    frames.sort((a, b) => a.timestampMs - b.timestampMs);
+    const startMs = frames[0].timestampMs;
+    
+    const latestState = createInitialSignalState();
     
     const bins = new Map();
     for (const frame of frames) {
@@ -386,40 +433,76 @@ function registerIpcHandlers() {
     return rows;
   }
 
+  function decimateRows(rows, maxRows = 20000) {
+    if (!rows || rows.length <= maxRows) return rows;
+    const step = Math.ceil(rows.length / maxRows);
+    console.log(`Decimating rows from ${rows.length} to ${Math.ceil(rows.length / step)} (step: ${step}) to prevent OOM/UI lag.`);
+    const decimated = [];
+    for (let i = 0; i < rows.length; i += step) {
+      decimated.push(rows[i]);
+    }
+    return decimated;
+  }
+
   async function parseTelemetryFile(filePath) {
     const ext = path.extname(filePath).toLowerCase();
     
     if (ext === '.csv') {
-      const content = await fs.promises.readFile(filePath, 'utf8');
-      const parsed = Papa.parse(content, { header: true, skipEmptyLines: true });
-      const headers = parsed.meta.fields || [];
+      const inStreamHeader = fs.createReadStream(filePath);
+      const rlHeader = readline.createInterface({ input: inStreamHeader });
+      let firstLine = '';
+      for await (const line of rlHeader) {
+        firstLine = line;
+        break;
+      }
+      rlHeader.close();
+      inStreamHeader.destroy();
       
-      if (headers.includes('id_hex') && headers.includes('data_hex')) {
-        const timeCol = headers.includes('ts') ? 'ts' : headers[0];
-        const idDecCol = headers.includes('id_dec') ? 'id_dec' : null;
-        const idHexCol = 'id_hex';
-        const dataHexCol = 'data_hex';
-        const dlcCol = headers.includes('dlc') ? 'dlc' : null;
+      if (!firstLine) return [];
+      
+      const headers = firstLine.split(',').map(h => h.trim().replace(/^["']|["']$/g, ''));
+      
+      const isRawCanCsv = headers.includes('id_hex') && headers.includes('data_hex');
+      const rawColName = headers.find(h => h === 'raw' || h === 'message');
+      
+      if (isRawCanCsv) {
+        const timeColIdx = headers.indexOf('ts');
+        const idDecColIdx = headers.indexOf('id_dec');
+        const idHexColIdx = headers.indexOf('id_hex');
+        const dataHexColIdx = headers.indexOf('data_hex');
+        const dlcColIdx = headers.indexOf('dlc');
         
-        const frames = [];
-        for (const row of parsed.data) {
-          const idHexStr = row[idHexCol];
-          const dataHexStr = row[dataHexCol];
+        const parser = new StreamTelemetryParser();
+        
+        const inStream = fs.createReadStream(filePath);
+        const rl = readline.createInterface({ input: inStream });
+        let isFirst = true;
+        
+        for await (const line of rl) {
+          if (isFirst) {
+            isFirst = false;
+            continue;
+          }
+          if (!line.trim()) continue;
+          
+          const parts = line.split(',');
+          const idHexStr = parts[idHexColIdx];
+          const dataHexStr = parts[dataHexColIdx];
           if (!idHexStr || !dataHexStr) continue;
           
-          let tsMs = parseFloat(row[timeCol]);
+          let tsMs = parseFloat(parts[timeColIdx]);
           if (isNaN(tsMs)) {
             tsMs = Date.now();
           } else {
             tsMs = tsMs * 1000;
           }
           
-          const identifier = idDecCol ? parseInt(row[idDecCol], 10) : parseInt(idHexStr, 16);
+          const identifier = idDecColIdx !== -1 ? parseInt(parts[idDecColIdx], 10) : parseInt(idHexStr, 16);
           const identifierHex = idHexStr.replace(/^0x/i, '').toUpperCase();
           const idText = '0x' + identifierHex;
           const idType = identifier > 0x7FF ? 'extended' : 'standard';
           
-          const dlcVal = dlcCol ? parseInt(row[dlcCol], 10) : dataHexStr.length / 2;
+          const dlcVal = dlcColIdx !== -1 ? parseInt(parts[dlcColIdx], 10) : dataHexStr.length / 2;
           
           const dataBytes = [];
           for (let i = 0; i < dataHexStr.length; i += 2) {
@@ -441,30 +524,34 @@ function registerIpcHandlers() {
           const parsedFrame = parseSlcanToBoard(slcan, rawLine);
           
           if (parsedFrame.ok) {
-            frames.push({
-              timestampMs: tsMs,
-              board: parsedFrame.board,
-              id: parsedFrame.identifier,
-              dataBytes: parsedFrame.dataBytes,
-            });
+            parser.addFrame(tsMs, parsedFrame.board, parsedFrame.identifier, parsedFrame.dataBytes);
           }
         }
-        return binFramesTo10Hz(frames);
-      }
-
-      if (headers.includes('sdu[0].shock') || headers.includes('ts') || headers.includes('gps.lat')) {
-        return parsed.data;
+        return decimateRows(parser.finish());
       }
       
-      const rawCol = headers.find(h => h === 'raw' || h === 'message');
-      if (rawCol) {
-        const timeCol = headers.find(h => h === 'ts' || h.toLowerCase().includes('time')) || headers[0];
-        const frames = [];
-        for (const row of parsed.data) {
-          const rawStr = row[rawCol];
+      if (rawColName) {
+        const rawColIdx = headers.indexOf(rawColName);
+        const timeColIdx = headers.findIndex(h => h === 'ts' || h.toLowerCase().includes('time'));
+        
+        const parser = new StreamTelemetryParser();
+        
+        const inStream = fs.createReadStream(filePath);
+        const rl = readline.createInterface({ input: inStream });
+        let isFirst = true;
+        
+        for await (const line of rl) {
+          if (isFirst) {
+            isFirst = false;
+            continue;
+          }
+          if (!line.trim()) continue;
+          
+          const parts = line.split(',');
+          const rawStr = parts[rawColIdx];
           if (!rawStr) continue;
           
-          let tsMs = parseFloat(row[timeCol]);
+          let tsMs = timeColIdx !== -1 ? parseFloat(parts[timeColIdx]) : NaN;
           if (isNaN(tsMs)) {
             tsMs = Date.now();
           } else if (tsMs < 1000000000) {
@@ -473,23 +560,58 @@ function registerIpcHandlers() {
           
           const parsedFrame = parseMduLine(rawStr);
           if (parsedFrame.ok) {
-            frames.push({
-              timestampMs: tsMs,
-              board: parsedFrame.board,
-              id: parsedFrame.identifier,
-              dataBytes: parsedFrame.dataBytes,
-            });
+            parser.addFrame(tsMs, parsedFrame.board, parsedFrame.identifier, parsedFrame.dataBytes);
           }
         }
-        return binFramesTo10Hz(frames);
+        return decimateRows(parser.finish());
       }
-      return parsed.data;
+      
+      // Pre-parsed telemetry CSV file - stream-based parsing with on-the-fly decimation
+      const stats = await fs.promises.stat(filePath);
+      const fileSize = stats.size;
+      
+      const inStream = fs.createReadStream(filePath);
+      const rl = readline.createInterface({ input: inStream });
+      let step = 1;
+      let lineIndex = 0;
+      let isFirst = true;
+      const rows = [];
+      
+      for await (const line of rl) {
+        if (isFirst) {
+          isFirst = false;
+          continue;
+        }
+        if (!line.trim()) continue;
+        
+        if (lineIndex === 0) {
+          const avgLineSize = line.length + 1;
+          const estimatedLines = Math.ceil(fileSize / avgLineSize);
+          step = Math.ceil(estimatedLines / 20000);
+          if (step < 1) step = 1;
+          if (step > 1) {
+            console.log(`Pre-parsed CSV: estimated lines: ${estimatedLines}, step: ${step} (maxRows: 20000)`);
+          }
+        }
+        
+        if (lineIndex % step === 0) {
+          const parts = line.split(',');
+          const rowObj = {};
+          for (let i = 0; i < headers.length; i++) {
+            rowObj[headers[i]] = parts[i];
+          }
+          rows.push(rowObj);
+        }
+        lineIndex++;
+      }
+      
+      return decimateRows(rows);
     }
     
     if (ext === '.jsonl') {
       const inStream = fs.createReadStream(filePath);
       const rl = readline.createInterface({ input: inStream });
-      const frames = [];
+      const parser = new StreamTelemetryParser();
       
       for await (const line of rl) {
         if (!line.trim()) continue;
@@ -501,28 +623,23 @@ function registerIpcHandlers() {
           }
           
           if (data.type === 'frame' && data.board) {
-            frames.push({
-              timestampMs: tsMs,
-              board: data.board,
-              id: data.frame?.identifier || data.board?.identifier,
-              dataBytes: data.frame?.dataBytes || data.board?.dataBytes,
-            });
+            parser.addFrame(
+              tsMs,
+              data.board,
+              data.frame?.identifier || data.board?.identifier,
+              data.frame?.dataBytes || data.board?.dataBytes
+            );
           } else if (data.raw) {
             const parsedFrame = parseMduLine(data.raw);
             if (parsedFrame.ok) {
-              frames.push({
-                timestampMs: tsMs,
-                board: parsedFrame.board,
-                id: parsedFrame.identifier,
-                dataBytes: parsedFrame.dataBytes,
-              });
+              parser.addFrame(tsMs, parsedFrame.board, parsedFrame.identifier, parsedFrame.dataBytes);
             }
           }
         } catch (e) {
           // ignore
         }
       }
-      return binFramesTo10Hz(frames);
+      return decimateRows(parser.finish());
     }
     return [];
   }
