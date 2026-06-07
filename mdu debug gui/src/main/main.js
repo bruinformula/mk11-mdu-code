@@ -7,6 +7,7 @@ const { spawn } = require('child_process');
 const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
 const Papa = require('papaparse');
 const readline = require('readline');
+const net = require('net');
 
 const { DeviceMonitor } = require('./device-monitor');
 const { parseMduLine, parseSlcanToBoard } = require('./mdu-frame');
@@ -78,6 +79,146 @@ function registerMonitorEvents() {
   monitor.on('log-status', (status) => broadcast('device:log-status', status));
 }
 
+const NETWORK_SCAN_PORT = 8000;
+const NETWORK_SCAN_TIMEOUT_MS = 250;
+const NETWORK_SCAN_CONCURRENCY = 32;
+const COMMON_PI_HOSTS = ['10.42.0.1', '192.168.4.1', '192.168.137.1'];
+
+function isIpv4Family(family) {
+  return family === 'IPv4' || family === 4;
+}
+
+function buildHostOrder(localOctet) {
+  const seen = new Set();
+  const ordered = [];
+  const preferred = [1, localOctet - 1, localOctet + 1, 100];
+
+  for (const octet of preferred) {
+    if (octet >= 1 && octet <= 254 && !seen.has(octet)) {
+      seen.add(octet);
+      ordered.push(octet);
+    }
+  }
+
+  for (let octet = 1; octet <= 254; octet++) {
+    if (!seen.has(octet)) {
+      seen.add(octet);
+      ordered.push(octet);
+    }
+  }
+
+  return ordered;
+}
+
+function getScanTargets() {
+  const interfaces = os.networkInterfaces();
+  const seenPrefixes = new Set();
+  const targets = [];
+
+  for (const ifaceList of Object.values(interfaces)) {
+    for (const iface of ifaceList || []) {
+      if (!isIpv4Family(iface.family) || iface.internal) {
+        continue;
+      }
+
+      const parts = iface.address.split('.');
+      if (parts.length !== 4) {
+        continue;
+      }
+
+      const prefix = `${parts[0]}.${parts[1]}.${parts[2]}.`;
+      if (seenPrefixes.has(prefix)) {
+        continue;
+      }
+
+      seenPrefixes.add(prefix);
+      targets.push({
+        prefix,
+        localOctet: Number(parts[3]),
+      });
+    }
+  }
+
+  return targets;
+}
+
+function probePort(ip, port, timeoutMs) {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    let settled = false;
+
+    const finish = (connected) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      socket.destroy();
+      resolve(connected);
+    };
+
+    socket.setTimeout(timeoutMs);
+    socket.once('connect', () => finish(true));
+    socket.once('timeout', () => finish(false));
+    socket.once('error', () => finish(false));
+    socket.connect(port, ip);
+  });
+}
+
+async function verifyTelemetryHub(ip) {
+  const portOpen = await probePort(ip, NETWORK_SCAN_PORT, NETWORK_SCAN_TIMEOUT_MS);
+  if (!portOpen) {
+    return false;
+  }
+
+  if (typeof fetch !== 'function') {
+    return true;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), NETWORK_SCAN_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`http://${ip}:${NETWORK_SCAN_PORT}/api/status`, {
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      return false;
+    }
+
+    const status = await response.json();
+    return Boolean(
+      status &&
+      typeof status === 'object' &&
+      'is_logging' in status &&
+      'frames_parsed' in status
+    );
+  } catch (err) {
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function scanSubnet(prefix, localOctet) {
+  const queue = buildHostOrder(localOctet).map((octet) => `${prefix}${octet}`);
+  let cursor = 0;
+  let foundIp = null;
+
+  const worker = async () => {
+    while (!foundIp && cursor < queue.length) {
+      const targetIp = queue[cursor++];
+      if (await verifyTelemetryHub(targetIp)) {
+        foundIp = targetIp;
+        return;
+      }
+    }
+  };
+
+  const workerCount = Math.min(NETWORK_SCAN_CONCURRENCY, queue.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return foundIp;
+}
+
 function registerIpcHandlers() {
   ipcMain.handle('dialog:select-data-folder', async () => {
     const result = await dialog.showOpenDialog({
@@ -145,6 +286,17 @@ function registerIpcHandlers() {
     } catch (e) {
       console.error('Error reading file:', e);
       throw e;
+    }
+  });
+
+  ipcMain.handle('file:write', async (_event, filePath, content) => {
+    try {
+      await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+      await fs.promises.writeFile(filePath, content, 'utf8');
+      return { success: true };
+    } catch (e) {
+      console.error('Error writing file:', e);
+      return { success: false, error: e.message };
     }
   });
 
@@ -651,6 +803,24 @@ function registerIpcHandlers() {
       console.error('Error parsing telemetry file:', e);
       throw e;
     }
+  });
+
+  ipcMain.handle('scan-network', async () => {
+    for (const ip of COMMON_PI_HOSTS) {
+      if (await verifyTelemetryHub(ip)) {
+        return ip;
+      }
+    }
+
+    const scanTargets = getScanTargets();
+    for (const target of scanTargets) {
+      const foundIp = await scanSubnet(target.prefix, target.localOctet);
+      if (foundIp) {
+        return foundIp;
+      }
+    }
+
+    return null;
   });
 
   ipcMain.handle('app:get-initial-state', async () => monitor.getInitialState());

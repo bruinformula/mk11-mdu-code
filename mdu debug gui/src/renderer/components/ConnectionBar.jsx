@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTelemetry } from '../context/TelemetryContext';
-import { Wifi, WifiOff, FolderOpen, Play, Square, RefreshCw, Trash2, ArrowLeftRight, Activity } from 'lucide-react';
+import { Wifi, WifiOff, FolderOpen, Play, Square, RefreshCw, Trash2, ArrowLeftRight, Activity, Download } from 'lucide-react';
 
 export default function ConnectionBar() {
   const {
@@ -20,11 +20,75 @@ export default function ConnectionBar() {
     startLogging,
     stopLogging,
     clearLiveSession,
-    toggleLiveMode
+    toggleLiveMode,
+
+    // WiFi States/Handlers
+    activeTransport,
+    targetIp,
+    wifiState,
+    wifiMessage,
+    isWifiLogging,
+    wifiLogs,
+    isScanningNetwork,
+    connectWifi,
+    disconnectWifi,
+    toggleWifiLogging,
+    fetchWifiLogs,
+    fetchWifiLogFile,
+    scanNetwork
   } = useTelemetry();
 
   const [selectedPort, setSelectedPort] = useState('');
   const [baudRate, setBaudRate] = useState('115200');
+  const [ipInput, setIpInput] = useState(targetIp || '');
+  const [remoteLogName, setRemoteLogName] = useState('');
+  const [selectedWifiLog, setSelectedWifiLog] = useState('');
+  const [isDownloadingWifiLog, setIsDownloadingWifiLog] = useState(false);
+
+  useEffect(() => {
+    if (targetIp) {
+      setIpInput(targetIp);
+    }
+  }, [targetIp]);
+
+  useEffect(() => {
+    if (wifiState === 'connected') {
+      fetchWifiLogs().catch(err => console.error('Error fetching logs list:', err));
+    }
+  }, [wifiState]);
+
+  const handleWifiConnect = () => {
+    if (ipInput.trim()) {
+      connectWifi(ipInput.trim());
+    }
+  };
+
+  const handleToggleWifiLogging = async () => {
+    try {
+      await toggleWifiLogging([], remoteLogName.trim());
+      if (!isWifiLogging) {
+        setRemoteLogName('');
+      }
+    } catch (e) {
+      alert(`Pi logging control failed: ${e.message}`);
+    }
+  };
+
+  const handleDownloadWifiLog = async () => {
+    if (!selectedWifiLog) return;
+    const logObj = wifiLogs.find(l => l.token === selectedWifiLog);
+    if (!logObj) return;
+    setIsDownloadingWifiLog(true);
+    try {
+      await fetchWifiLogFile(logObj.token, logObj.filename);
+      setSelectedWifiLog('');
+      alert(`Successfully downloaded ${logObj.filename} to your local data folder!`);
+    } catch (e) {
+      alert(`Download failed: ${e.message}`);
+    } finally {
+      setIsDownloadingWifiLog(false);
+    }
+  };
 
   const handleConnect = async () => {
     const port = selectedPort || (availablePorts[0] && availablePorts[0].path);
@@ -126,6 +190,113 @@ export default function ConnectionBar() {
           <Trash2 size={14} />
         </button>
       </div>
+
+      {/* Wireless Telemetry Link */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderLeft: '1px solid rgba(255, 255, 255, 0.1)', paddingLeft: '0.75rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+          {wifiState === 'connected' ? (
+            <Wifi className="text-cyan-400 animate-pulse" size={16} />
+          ) : wifiState === 'connecting' || wifiState === 'reconnecting' ? (
+            <Wifi className="text-amber-400 animate-pulse" size={16} />
+          ) : (
+            <WifiOff className="text-slate-500" size={16} />
+          )}
+          <span style={{ fontSize: '0.8rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
+            {wifiState === 'connected' ? 'WiFi Active' : wifiState === 'connecting' ? 'Connecting...' : wifiState === 'reconnecting' ? 'Reconnecting...' : 'WiFi Link'}
+          </span>
+        </div>
+
+        <input
+          type="text"
+          className="text-input"
+          placeholder="Pi IP Address"
+          value={ipInput}
+          onChange={(e) => setIpInput(e.target.value)}
+          disabled={wifiState === 'connected' || wifiState === 'connecting'}
+          style={{
+            padding: '0.2rem 0.4rem',
+            fontSize: '0.8rem',
+            width: '110px',
+            background: 'rgba(0,0,0,0.3)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '4px',
+            color: '#fff'
+          }}
+        />
+
+        {wifiState === 'connected' || wifiState === 'connecting' || wifiState === 'reconnecting' ? (
+          <button className="button button-danger" onClick={disconnectWifi} style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem' }}>
+            Disconnect
+          </button>
+        ) : (
+          <>
+            <button className="button button-success" onClick={handleWifiConnect} style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem' }}>
+              Connect
+            </button>
+            <button className="button" onClick={scanNetwork} disabled={isScanningNetwork} title="Autoscan Network for Pi" style={{ padding: '0.2rem 0.4rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center' }}>
+              <RefreshCw size={12} className={isScanningNetwork ? 'animate-spin' : ''} />
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* Pi Logging & Download Controls (Visible only when WiFi Connected) */}
+      {wifiState === 'connected' && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderLeft: '1px solid rgba(255, 255, 255, 0.1)', paddingLeft: '0.75rem' }}>
+          <input
+            type="text"
+            className="text-input"
+            placeholder="Next run name"
+            value={remoteLogName}
+            onChange={(e) => setRemoteLogName(e.target.value)}
+            style={{
+              padding: '0.2rem 0.4rem',
+              fontSize: '0.8rem',
+              width: '120px',
+              background: 'rgba(0,0,0,0.3)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '4px',
+              color: '#fff'
+            }}
+          />
+          <button
+            className={`button ${isWifiLogging ? 'button-danger' : 'button-success'}`}
+            onClick={handleToggleWifiLogging}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.2rem 0.5rem', fontSize: '0.8rem' }}
+          >
+            {isWifiLogging ? <Square size={10} fill="currentColor" /> : <Play size={10} fill="currentColor" />}
+            <span>{isWifiLogging ? 'Stop Pi Log' : 'Start Pi Log'}</span>
+          </button>
+
+          {/* Pi Remote Logs Selector */}
+          {wifiLogs.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <select
+                className="select-input"
+                value={selectedWifiLog}
+                onChange={(e) => setSelectedWifiLog(e.target.value)}
+                style={{ padding: '0.2rem 0.4rem', fontSize: '0.8rem', maxWidth: '140px' }}
+              >
+                <option value="">-- Download Pi Log --</option>
+                {wifiLogs.map((log) => (
+                  <option key={log.token} value={log.token}>
+                    {log.filename} ({formatBytes(log.size_bytes || log.size)})
+                  </option>
+                ))}
+              </select>
+              <button
+                className="button"
+                onClick={handleDownloadWifiLog}
+                disabled={!selectedWifiLog || isDownloadingWifiLog}
+                style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+              >
+                <Download size={12} />
+                <span>{isDownloadingWifiLog ? 'Downloading...' : 'Download'}</span>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Directory Scanner & Run Selector */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { flattenTelemetryData } from '../utils/signals';
 
 const TelemetryContext = createContext(null);
 
@@ -233,11 +234,30 @@ export function TelemetryProvider({ children }) {
   const [diagnostics, setDiagnostics] = useState({});
   const [logStatus, setLogStatus] = useState({ active: false, filePath: null, linesWritten: 0, bytesWritten: 0 });
 
+  // WiFi Telemetry State
+  const [activeTransport, setActiveTransport] = useState('serial'); // 'serial' or 'wifi'
+  const [targetIp, setTargetIp] = useState('');
+  const [wifiState, setWifiState] = useState('disconnected'); // 'disconnected', 'connecting', 'connected', 'reconnecting', 'degraded'
+  const [wifiMessage, setWifiMessage] = useState('Waiting for telemetry link.');
+  const [isWifiLogging, setIsWifiLogging] = useState(false);
+  const [wifiLogs, setWifiLogs] = useState([]);
+  const [isScanningNetwork, setIsScanningNetwork] = useState(false);
+
   // Refs for tracking live state
   const latestStateRef = useRef({ ...initialSignalState });
   const liveBufferRef = useRef([]);
   const liveStartMsRef = useRef(0);
   const liveIntervalRef = useRef(null);
+
+  // WiFi Telemetry Refs
+  const wsRef = useRef(null);
+  const reconnectTimerRef = useRef(null);
+  const healthTimerRef = useRef(null);
+  const connectGenerationRef = useRef(0);
+  const reconnectAttemptRef = useRef(0);
+  const manualDisconnectRef = useRef(false);
+  const lastMessageAtRef = useRef(0);
+  const targetIpRef = useRef('');
 
   // Load a file for playback
   const loadRunFile = async (filePath) => {
@@ -297,6 +317,261 @@ export function TelemetryProvider({ children }) {
     scanFolder(savedFolder);
   }, []);
 
+  const clearReconnectTimer = () => {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+  };
+
+  const stopHealthMonitor = () => {
+    if (healthTimerRef.current) {
+      clearInterval(healthTimerRef.current);
+      healthTimerRef.current = null;
+    }
+  };
+
+  const closeSocket = () => {
+    if (wsRef.current) {
+      wsRef.current.onopen = null;
+      wsRef.current.onmessage = null;
+      wsRef.current.onclose = null;
+      wsRef.current.onerror = null;
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+  };
+
+  const requestJson = async (path, options = {}, overrideIp) => {
+    const ip = overrideIp || targetIpRef.current;
+    if (!ip) {
+      throw new Error('No Raspberry Pi IP is selected.');
+    }
+
+    const response = await fetch(`http://${ip}:8000${path}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options.headers || {}),
+      },
+      ...options,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Request failed: ${response.status}`);
+    }
+
+    return response.json();
+  };
+
+  const refreshStatus = async (overrideIp) => {
+    const status = await requestJson('/api/status', {}, overrideIp);
+    setIsWifiLogging(Boolean(status.is_logging));
+    return status;
+  };
+
+  const fetchWifiLogs = async () => {
+    try {
+      const logs = await requestJson('/api/logs');
+      setWifiLogs(logs || []);
+      return logs;
+    } catch (err) {
+      console.error('Error fetching wifi logs:', err);
+      return [];
+    }
+  };
+
+  const fetchWifiLogFile = async (token, filename) => {
+    try {
+      const response = await fetch(`http://${targetIpRef.current}:8000/api/logs/${token}`);
+      if (!response.ok) {
+        throw new Error(`Failed to download log: ${response.status}`);
+      }
+      const csvContent = await response.text();
+      
+      // Automatically save to the active local folder
+      if (folderPath && filename) {
+        const localPath = `${folderPath}/${filename}`;
+        const writeResult = await window.mduDebug.writeFile(localPath, csvContent);
+        if (writeResult.success) {
+          await scanFolder(folderPath);
+        } else {
+          console.error('Failed to write downloaded CSV locally:', writeResult.error);
+        }
+      }
+      return csvContent;
+    } catch (err) {
+      console.error('Error fetching log file:', err);
+      throw err;
+    }
+  };
+
+  const toggleWifiLogging = async (selectedSignalIds = [], filename = '') => {
+    const shouldStart = !isWifiLogging;
+    if (!targetIpRef.current) {
+      throw new Error('Connect to the Pi before changing logging state.');
+    }
+
+    if (shouldStart) {
+      await requestJson('/api/logging/start', {
+        method: 'POST',
+        body: JSON.stringify({ signals: selectedSignalIds, filename }),
+      });
+    } else {
+      await requestJson('/api/logging/stop', { method: 'POST' });
+    }
+
+    await refreshStatus();
+    await fetchWifiLogs();
+  };
+
+  const scheduleReconnect = () => {
+    clearReconnectTimer();
+    if (manualDisconnectRef.current || !targetIpRef.current) {
+      setWifiState('disconnected');
+      setWifiMessage('Telemetry link idle.');
+      return;
+    }
+
+    reconnectAttemptRef.current += 1;
+    const attempt = reconnectAttemptRef.current;
+    const delayMs = Math.min(1500 * attempt, 5000);
+
+    setWifiState('reconnecting');
+    setWifiMessage(`Link dropped. Reconnecting in ${(delayMs / 1000).toFixed(1)}s...`);
+
+    reconnectTimerRef.current = setTimeout(async () => {
+      let nextIp = targetIpRef.current;
+      if (window.mduDebug && attempt % 3 === 0) {
+        try {
+          const scannedIp = await window.mduDebug.scanNetwork();
+          if (scannedIp) {
+            nextIp = scannedIp;
+            targetIpRef.current = scannedIp;
+            setTargetIp(scannedIp);
+          }
+        } catch (err) {
+          console.error('Autoscan during reconnect failed', err);
+        }
+      }
+
+      if (nextIp) {
+        connectWifi(nextIp);
+      }
+    }, delayMs);
+  };
+
+  const startHealthMonitor = () => {
+    stopHealthMonitor();
+    healthTimerRef.current = setInterval(() => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        return;
+      }
+      if (Date.now() - lastMessageAtRef.current > 15000) {
+        setWifiState('degraded');
+        setWifiMessage(`Streaming from ${targetIpRef.current} • waiting for fresh frames`);
+      }
+    }, 1000);
+  };
+
+  const connectWifi = (ip) => {
+    const nextIp = (ip || '').trim();
+    if (!nextIp) return;
+
+    manualDisconnectRef.current = false;
+    setActiveTransport('wifi');
+    clearReconnectTimer();
+    stopHealthMonitor();
+    closeSocket();
+
+    // Disconnect serial if it is active
+    window.mduDebug.disconnect();
+
+    targetIpRef.current = nextIp;
+    setTargetIp(nextIp);
+    localStorage.setItem('telemetry:lastIp', nextIp);
+
+    const generation = connectGenerationRef.current + 1;
+    connectGenerationRef.current = generation;
+    setWifiState('connecting');
+    setWifiMessage(`Connecting to ${nextIp}...`);
+
+    const socket = new WebSocket(`ws://${nextIp}:8000/ws`);
+    wsRef.current = socket;
+
+    socket.onopen = async () => {
+      if (generation !== connectGenerationRef.current) {
+        socket.close();
+        return;
+      }
+      reconnectAttemptRef.current = 0;
+      setWifiState('connected');
+      setWifiMessage(`Streaming from ${nextIp}.`);
+      lastMessageAtRef.current = Date.now();
+      startHealthMonitor();
+      try {
+        await refreshStatus(nextIp);
+        await fetchWifiLogs();
+      } catch (err) {
+        console.error('Status refresh failed', err);
+      }
+    };
+
+    socket.onmessage = (event) => {
+      if (generation !== connectGenerationRef.current) return;
+      try {
+        const json = JSON.parse(event.data);
+        const flat = flattenTelemetryData(json);
+        Object.assign(latestStateRef.current, flat);
+        lastMessageAtRef.current = Date.now();
+        setWifiState('connected');
+        setWifiMessage(`Streaming from ${nextIp}.`);
+        if (json.log !== undefined) {
+          setIsWifiLogging(Boolean(json.log));
+        }
+      } catch (err) {
+        console.error('Telemetry parsing error', err);
+      }
+    };
+
+    socket.onclose = () => {
+      if (generation !== connectGenerationRef.current) return;
+      stopHealthMonitor();
+      if (manualDisconnectRef.current) {
+        setWifiState('disconnected');
+        setWifiMessage('Telemetry link disconnected.');
+        return;
+      }
+      scheduleReconnect();
+    };
+
+    socket.onerror = () => socket.close();
+  };
+
+  const disconnectWifi = () => {
+    manualDisconnectRef.current = true;
+    clearReconnectTimer();
+    stopHealthMonitor();
+    closeSocket();
+    setWifiState('disconnected');
+    setWifiMessage('Telemetry link disconnected.');
+  };
+
+  const scanNetwork = async () => {
+    setIsScanningNetwork(true);
+    try {
+      const foundIp = await window.mduDebug.scanNetwork();
+      if (foundIp) {
+        connectWifi(foundIp);
+      } else {
+        alert('No Telemetry Hub found on local network.');
+      }
+    } catch (err) {
+      console.error('Network scan failed', err);
+    } finally {
+      setIsScanningNetwork(false);
+    }
+  };
+
   // Set up live listeners
   useEffect(() => {
     // Initial states
@@ -315,6 +590,9 @@ export function TelemetryProvider({ children }) {
       
       // If connected, start the live binning loop
       if (conn.connected) {
+        setActiveTransport('serial');
+        disconnectWifi(); // Disconnect wifi if serial connects
+        
         setIsLiveMode(true);
         liveStartMsRef.current = Date.now();
         liveBufferRef.current = [];
@@ -345,7 +623,7 @@ export function TelemetryProvider({ children }) {
           }
         }, 100);
       } else {
-        if (liveIntervalRef.current) {
+        if (liveIntervalRef.current && activeTransport === 'serial') {
           clearInterval(liveIntervalRef.current);
           liveIntervalRef.current = null;
         }
@@ -361,7 +639,7 @@ export function TelemetryProvider({ children }) {
     });
 
     const unsubFrame = window.mduDebug.onFrame((frame) => {
-      if (frame && frame.ok) {
+      if (frame && frame.ok && activeTransport === 'serial') {
         updateStateFromBoard(
           latestStateRef.current,
           frame.board,
@@ -382,9 +660,76 @@ export function TelemetryProvider({ children }) {
       unsubFrame();
       if (liveIntervalRef.current) clearInterval(liveIntervalRef.current);
     };
+  }, [activeTransport]);
+
+  // WiFi binning setup effect: when WiFi gets connected, we start a similar 10Hz binning loop!
+  useEffect(() => {
+    if (wifiState === 'connected') {
+      setIsLiveMode(true);
+      liveStartMsRef.current = Date.now();
+      liveBufferRef.current = [];
+      latestStateRef.current = { ...initialSignalState };
+
+      if (liveIntervalRef.current) clearInterval(liveIntervalRef.current);
+      let renderCounter = 0;
+      liveIntervalRef.current = setInterval(() => {
+        const nowMs = Date.now();
+        const tsSeconds = (nowMs - liveStartMsRef.current) / 1000;
+        
+        const row = {
+          ts: tsSeconds.toFixed(3),
+          ...latestStateRef.current
+        };
+        
+        liveBufferRef.current.push(row);
+        if (liveBufferRef.current.length > 2000) {
+          liveBufferRef.current.shift();
+        }
+        
+        renderCounter++;
+        if (renderCounter >= 5) {
+          renderCounter = 0;
+          setActiveDataset([...liveBufferRef.current]);
+        }
+      }, 100);
+    } else {
+      if (liveIntervalRef.current && activeTransport === 'wifi') {
+        clearInterval(liveIntervalRef.current);
+        liveIntervalRef.current = null;
+      }
+    }
+  }, [wifiState, activeTransport]);
+
+  // Try auto-connecting WiFi on mount
+  useEffect(() => {
+    const savedIp = localStorage.getItem('telemetry:lastIp');
+    if (savedIp) {
+      targetIpRef.current = savedIp;
+      setTargetIp(savedIp);
+      setTimeout(() => {
+        if (!manualDisconnectRef.current && !wsRef.current) {
+          connectWifi(savedIp);
+        }
+      }, 0);
+    } else if (window.mduDebug) {
+      window.mduDebug.scanNetwork().then((foundIp) => {
+        if (foundIp && !manualDisconnectRef.current && !wsRef.current) {
+          connectWifi(foundIp);
+        }
+      }).catch((err) => {
+        console.error('Initial auto-scan failed', err);
+      });
+    }
+
+    return () => {
+      clearReconnectTimer();
+      stopHealthMonitor();
+      closeSocket();
+    };
   }, []);
 
   const connectSerial = async (portPath, baudRate) => {
+    disconnectWifi(); // Disconnect wifi if connecting to serial
     return await window.mduDebug.connect({ path: portPath, baudRate: parseInt(baudRate, 10) });
   };
 
@@ -435,7 +780,22 @@ export function TelemetryProvider({ children }) {
         startLogging,
         stopLogging,
         clearLiveSession,
-        toggleLiveMode
+        toggleLiveMode,
+
+        // WiFi/Pi Integrations
+        activeTransport,
+        targetIp,
+        wifiState,
+        wifiMessage,
+        isWifiLogging,
+        wifiLogs,
+        isScanningNetwork,
+        connectWifi,
+        disconnectWifi,
+        toggleWifiLogging,
+        fetchWifiLogs,
+        fetchWifiLogFile,
+        scanNetwork,
       }}
     >
       {children}

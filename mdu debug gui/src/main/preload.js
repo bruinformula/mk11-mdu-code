@@ -13,6 +13,7 @@ function subscribe(channel, callback) {
 contextBridge.exposeInMainWorld('mduDebug', {
   getInitialState: () => ipcRenderer.invoke('app:get-initial-state'),
   listPorts: () => ipcRenderer.invoke('serial:list-ports'),
+  scanNetwork: () => ipcRenderer.invoke('scan-network'),
   connect: (options) => ipcRenderer.invoke('serial:connect', options),
   setPreferredPort: (path) => ipcRenderer.invoke('serial:set-preferred-port', path),
   disconnect: () => ipcRenderer.invoke('serial:disconnect'),
@@ -26,6 +27,7 @@ contextBridge.exposeInMainWorld('mduDebug', {
   selectDataFolder: () => ipcRenderer.invoke('dialog:select-data-folder'),
   scanFolder: (folderPath) => ipcRenderer.invoke('folder:scan', folderPath),
   readFile: (filePath) => ipcRenderer.invoke('file:read', filePath),
+  writeFile: (filePath, content) => ipcRenderer.invoke('file:write', filePath, content),
   parseTelemetryFile: (filePath) => ipcRenderer.invoke('file:parse-telemetry', filePath),
   onPorts: (callback) => subscribe('device:ports', callback),
   onConnection: (callback) => subscribe('device:connection', callback),

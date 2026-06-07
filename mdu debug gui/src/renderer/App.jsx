@@ -11,6 +11,8 @@ import TractiveSystem from './components/TractiveSystem';
 import CustomPlotter from './components/CustomPlotter';
 import TrackMap from './components/TrackMap';
 import DataTable from './components/DataTable';
+import GGDiagram from './components/GGDiagram';
+import GPSPlayback from './components/GPSPlayback';
 
 // Debug GUI Tabs
 import LiveConsole from './components/LiveConsole';
@@ -295,6 +297,14 @@ export default function App() {
         );
       case 'table':
         return <DataTable data={activeDataset} />;
+      case 'ggdiagram': {
+        const cols = activeDataset.length > 0 ? Object.keys(activeDataset[0]) : [];
+        return <GGDiagram samples={activeDataset} availableSignalIds={cols} />;
+      }
+      case 'gpsplayback': {
+        const cols = activeDataset.length > 0 ? Object.keys(activeDataset[0]) : [];
+        return <GPSPlayback samples={activeDataset} availableSignalIds={cols} />;
+      }
       case 'deploy':
         return <DeployFirmware />;
       default:
@@ -367,6 +377,18 @@ export default function App() {
           className={`nav-button ${activeTab === 'trackmap' ? 'active' : ''}`}
         >
           <Map size={14} /> Track Map
+        </button>
+        <button
+          onClick={() => setActiveTab('ggdiagram')}
+          className={`nav-button ${activeTab === 'ggdiagram' ? 'active' : ''}`}
+        >
+          <Compass size={14} /> G-G Replay
+        </button>
+        <button
+          onClick={() => setActiveTab('gpsplayback')}
+          className={`nav-button ${activeTab === 'gpsplayback' ? 'active' : ''}`}
+        >
+          <Map size={14} /> GPS Replay Studio
         </button>
         <button
           onClick={() => setActiveTab('table')}
