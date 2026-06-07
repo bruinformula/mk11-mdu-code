@@ -32,7 +32,7 @@ export default function ImuMotion({ data, boardDropouts, startTs }) {
         }
       },
       zoom: {
-        pan: { enabled: true, mode: 'x' },
+        pan: { enabled: false },
         zoom: {
           wheel: { enabled: false },
           pinch: { enabled: true },
@@ -228,7 +228,13 @@ export default function ImuMotion({ data, boardDropouts, startTs }) {
             Plots acceleration forces in Gs along the longitudinal (accel/braking), lateral (cornering), and vertical directions.
           </p>
           <div className="chart-container">
-            <ZoomableLine options={getChartOptions('Chassis Forces (G)')} data={gForceChartData} plugins={[imuPlugin]} />
+            <ZoomableLine 
+              title="Chassis G-Forces (Primary IMU)" 
+              description="Plots acceleration forces in Gs along the longitudinal (accel/braking), lateral (cornering), and vertical directions." 
+              options={getChartOptions('Chassis Forces (G)')} 
+              data={gForceChartData} 
+              plugins={[imuPlugin]} 
+            />
           </div>
         </div>
 
@@ -239,7 +245,13 @@ export default function ImuMotion({ data, boardDropouts, startTs }) {
             Roll, pitch, and yaw rates in degrees/sec. Helpful for monitoring body roll transition speed and turn-in response.
           </p>
           <div className="chart-container">
-            <ZoomableLine options={getChartOptions('Angular Speed (deg/s)')} data={gyroChartData} plugins={[imuPlugin]} />
+            <ZoomableLine 
+              title="Angular Rotational Rates" 
+              description="Roll, pitch, and yaw rates in degrees/sec. Helpful for monitoring body roll transition speed and turn-in response." 
+              options={getChartOptions('Angular Speed (deg/s)')} 
+              data={gyroChartData} 
+              plugins={[imuPlugin]} 
+            />
           </div>
         </div>
       </div>
@@ -252,7 +264,13 @@ export default function ImuMotion({ data, boardDropouts, startTs }) {
             Compares acceleration forces across the Front (GPS), Mid, and Rear IMUs to study chassis flex and pitching dynamics.
           </p>
           <div className="chart-container">
-            <ZoomableLine options={getChartOptions('Acceleration (G)')} data={axComparisonChartData} plugins={[imuPlugin]} />
+            <ZoomableLine 
+              title="Longitudinal Gs Comparison" 
+              description="Compares acceleration forces across the Front (GPS), Mid, and Rear IMUs to study chassis flex and pitching dynamics." 
+              options={getChartOptions('Acceleration (G)')} 
+              data={axComparisonChartData} 
+              plugins={[imuPlugin]} 
+            />
           </div>
         </div>
 
@@ -263,7 +281,13 @@ export default function ImuMotion({ data, boardDropouts, startTs }) {
             Compares cornering forces across Front, Mid, and Rear sensor locations. Deviations indicate vehicle yaw or frame twisting.
           </p>
           <div className="chart-container">
-            <ZoomableLine options={getChartOptions('Acceleration (G)')} data={ayComparisonChartData} plugins={[imuPlugin]} />
+            <ZoomableLine 
+              title="Lateral Gs Comparison" 
+              description="Compares cornering forces across Front, Mid, and Rear sensor locations. Deviations indicate vehicle yaw or frame twisting." 
+              options={getChartOptions('Acceleration (G)')} 
+              data={ayComparisonChartData} 
+              plugins={[imuPlugin]} 
+            />
           </div>
         </div>
       </div>

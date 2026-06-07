@@ -32,7 +32,7 @@ export default function Drivetrain({ data, boardDropouts, startTs }) {
         }
       },
       zoom: {
-        pan: { enabled: true, mode: 'x' },
+        pan: { enabled: false },
         zoom: {
           wheel: { enabled: false },
           pinch: { enabled: true },
@@ -208,7 +208,13 @@ export default function Drivetrain({ data, boardDropouts, startTs }) {
             Compares motor torque request (Command) vs actual motor torque (Feedback). Translucent red bands indicate data dropouts.
           </p>
           <div className="chart-container">
-            <ZoomableLine options={getChartOptions('Torque (Nm)')} data={torqueChartData} plugins={[inverterPlugin]} />
+            <ZoomableLine 
+              title="Inverter Torque Overlay" 
+              description="Compares motor torque request (Command) vs actual motor torque (Feedback)." 
+              options={getChartOptions('Torque (Nm)')} 
+              data={torqueChartData} 
+              plugins={[inverterPlugin]} 
+            />
           </div>
         </div>
 
@@ -219,7 +225,13 @@ export default function Drivetrain({ data, boardDropouts, startTs }) {
             Rotor windings (Motor) vs cooling circuit (Inverter Coolant) and gate driver temperatures.
           </p>
           <div className="chart-container">
-            <ZoomableLine options={getChartOptions('Temperature (°C)')} data={tempChartData} plugins={[inverterPlugin]} />
+            <ZoomableLine 
+              title="Motor & Inverter Cooling Temps" 
+              description="Rotor windings (Motor) vs cooling circuit (Inverter Coolant) and gate driver temperatures." 
+              options={getChartOptions('Temperature (°C)')} 
+              data={tempChartData} 
+              plugins={[inverterPlugin]} 
+            />
           </div>
         </div>
       </div>
@@ -232,7 +244,13 @@ export default function Drivetrain({ data, boardDropouts, startTs }) {
             Current draw from accumulator pack into the inverter stage. High spikes indicate heavy acceleration.
           </p>
           <div className="chart-container">
-            <ZoomableLine options={getChartOptions('Current (Amps)')} data={currentChartData} plugins={[inverterPlugin]} />
+            <ZoomableLine 
+              title="Battery DC Link Current" 
+              description="Current draw from accumulator pack into the inverter stage." 
+              options={getChartOptions('Current (Amps)')} 
+              data={currentChartData} 
+              plugins={[inverterPlugin]} 
+            />
           </div>
         </div>
 
@@ -243,7 +261,13 @@ export default function Drivetrain({ data, boardDropouts, startTs }) {
             Coolant flow meters from the TSHMU and communication bus jitter.
           </p>
           <div className="chart-container">
-            <ZoomableLine options={getChartOptions('Flow (L/min) / Jitter')} data={coolingChartData} plugins={[tshmuPlugin]} />
+            <ZoomableLine 
+              title="Flow Rate & Bus Jitter" 
+              description="Coolant flow meters from the TSHMU and communication bus jitter." 
+              options={getChartOptions('Flow (L/min) / Jitter')} 
+              data={coolingChartData} 
+              plugins={[tshmuPlugin]} 
+            />
           </div>
         </div>
       </div>

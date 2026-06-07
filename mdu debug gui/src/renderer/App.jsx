@@ -304,11 +304,13 @@ export default function App() {
 
   return (
     <div className="app-container" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-      {/* Global Connection Bar */}
-      <ConnectionBar />
+      <div className="sticky-header-container">
+        {/* Global Connection Bar */}
+        <ConnectionBar />
+      </div>
 
       {/* Navigation Tabs */}
-      <nav className="glass-panel" style={{
+      <nav className="glass-panel no-hover" style={{
         margin: '0 0 1rem 0',
         padding: '0.35rem',
         borderRadius: '10px',

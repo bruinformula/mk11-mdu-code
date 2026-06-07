@@ -240,8 +240,7 @@ export default function CornerOverlays({ data, boardDropouts, startTs = 0 }) {
       },
       zoom: {
         pan: {
-          enabled: true,
-          mode: 'x',
+          enabled: false,
         },
         zoom: {
           wheel: {
@@ -543,7 +542,13 @@ export default function CornerOverlays({ data, boardDropouts, startTs = 0 }) {
             Comparison of brake temperatures from all four corners. Click labels to toggle, drag to zoom, double-click to reset.
           </p>
           <div className="chart-container">
-            <ZoomableLine options={getChartOptions('Temperature (°C)')} data={brakesChartData} plugins={[comparisonPlugin]} />
+            <ZoomableLine 
+              title="Brake Temperatures Overlay" 
+              description="Comparison of brake temperatures from all four corners." 
+              options={getChartOptions('Temperature (°C)')} 
+              data={brakesChartData} 
+              plugins={[comparisonPlugin]} 
+            />
           </div>
         </div>
 
@@ -554,7 +559,13 @@ export default function CornerOverlays({ data, boardDropouts, startTs = 0 }) {
             Comparison of damper displacement from all four corners. Helpful for checking roll, pitch, and bump response.
           </p>
           <div className="chart-container">
-            <ZoomableLine options={getChartOptions('Displacement (mm)')} data={shocksChartData} plugins={[comparisonPlugin]} />
+            <ZoomableLine 
+              title="Suspension Shock Travel" 
+              description="Comparison of damper displacement from all four corners." 
+              options={getChartOptions('Displacement (mm)')} 
+              data={shocksChartData} 
+              plugins={[comparisonPlugin]} 
+            />
           </div>
         </div>
       </div>
@@ -568,7 +579,13 @@ export default function CornerOverlays({ data, boardDropouts, startTs = 0 }) {
             Rotational speeds of all four wheels. Overlay is critical for checking lock-ups and wheel spin profiles.
           </p>
           <div className="chart-container">
-            <ZoomableLine options={getChartOptions('Rotations Per Minute (RPM)')} data={rpmChartData} plugins={[comparisonPlugin]} />
+            <ZoomableLine 
+              title="Wheel Speeds (RPM)" 
+              description="Rotational speeds of all four wheels." 
+              options={getChartOptions('Rotations Per Minute (RPM)')} 
+              data={rpmChartData} 
+              plugins={[comparisonPlugin]} 
+            />
           </div>
         </div>
 
@@ -595,7 +612,13 @@ export default function CornerOverlays({ data, boardDropouts, startTs = 0 }) {
             Plots the 4 infrared tire temp channels (inner edge to outer edge) of the selected tire to analyze heat spread.
           </p>
           <div className="chart-container">
-            <ZoomableLine options={getChartOptions('Temperature (°C)')} data={tireChartData} plugins={[selectedCornerPlugin]} />
+            <ZoomableLine 
+              title="Tire Thermal Gradient" 
+              description="Plots the 4 infrared tire temp channels (inner edge to outer edge) of the selected tire to analyze heat spread." 
+              options={getChartOptions('Temperature (°C)')} 
+              data={tireChartData} 
+              plugins={[selectedCornerPlugin]} 
+            />
           </div>
         </div>
       </div>

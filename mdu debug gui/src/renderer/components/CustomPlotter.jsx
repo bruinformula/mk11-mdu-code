@@ -245,6 +245,8 @@ export default function CustomPlotter({ data, boardDropouts, startTs = 0 }) {
           {selectedColumns.length > 0 ? (
             <div style={{ height: '450px', width: '100%', position: 'relative' }}>
               <ZoomableLine
+                title="Custom Channel Plotter"
+                description="Analysis plot comparing selected custom telemetry data channels."
                 options={chartOptions}
                 data={chartData}
                 plugins={chartPlugins}

@@ -1,5 +1,7 @@
 import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Line } from 'react-chartjs-2';
+import { Maximize2, Minimize2 } from 'lucide-react';
 import { crosshairPlugin } from '../utils/chartInteractionPlugins';
 
 /**
@@ -8,6 +10,7 @@ import { crosshairPlugin } from '../utils/chartInteractionPlugins';
  *   - drag horizontally to zoom the X axis
  *   - drag vertically to zoom the Y axis
  *   - double-click to reset to fit
+ *   - fullscreen zoom-in toggle mode via portal
  *
  * Zoom ranges are held in React state and merged into the chart options on
  * every render, so they survive react-chartjs-2 replacing chart.options.
@@ -15,7 +18,9 @@ import { crosshairPlugin } from '../utils/chartInteractionPlugins';
 export default function ZoomableLine({
   options,
   data,
-  plugins = []
+  plugins = [],
+  title = '',
+  description = ''
 }) {
   const chartRef = useRef(null);
   const dragStateRef = useRef(null);
@@ -23,6 +28,18 @@ export default function ZoomableLine({
   const [dragRect, setDragRect] = useState(null);
   const [xRange, setXRange] = useState({ min: null, max: null });
   const [yRange, setYRange] = useState({ min: null, max: null });
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setIsFullscreen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFullscreen]);
 
   const scheduleRender = useCallback(() => {
     if (renderRafRef.current) return;
@@ -181,7 +198,7 @@ export default function ZoomableLine({
 
   const mergedPlugins = useMemo(() => [crosshairPlugin, ...plugins], [plugins]);
 
-  return (
+  const renderChartContent = () => (
     <div
       style={{
         position: 'absolute',
@@ -218,6 +235,48 @@ export default function ZoomableLine({
           }}
         />
       )}
+    </div>
+  );
+
+  if (isFullscreen) {
+    return createPortal(
+      <div className="fullscreen-chart-overlay">
+        <div className="fullscreen-chart-header">
+          <div className="fullscreen-chart-title-group">
+            <h2 className="fullscreen-chart-title">{title || options?.plugins?.title?.text || 'Telemetry Analysis'}</h2>
+            {description && <p className="fullscreen-chart-desc">{description}</p>}
+          </div>
+          <button 
+            type="button" 
+            className="fullscreen-close-btn"
+            onClick={() => setIsFullscreen(false)}
+          >
+            <Minimize2 size={14} /> Close
+          </button>
+        </div>
+        <div className="fullscreen-chart-body">
+          {renderChartContent()}
+        </div>
+        <div className="fullscreen-chart-footer">
+          <span>Click and drag horizontally or vertically to zoom. Double-click to reset.</span>
+          <span>Press <kbd style={{ background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px', fontFamily: 'monospace' }}>ESC</kbd> to exit fullscreen</span>
+        </div>
+      </div>,
+      document.body
+    );
+  }
+
+  return (
+    <div style={{ position: 'absolute', inset: 0 }}>
+      {renderChartContent()}
+      <button 
+        type="button" 
+        className="chart-fullscreen-btn" 
+        onClick={() => setIsFullscreen(true)}
+        title="Maximize Chart"
+      >
+        <Maximize2 size={14} />
+      </button>
     </div>
   );
 }

@@ -80,7 +80,7 @@ export default function TractiveSystem({ data, boardDropouts, startTs }) {
           }
         },
         zoom: {
-          pan: { enabled: true, mode: 'x' },
+          pan: { enabled: false },
           zoom: {
             wheel: { enabled: false },
             pinch: { enabled: true },
@@ -360,7 +360,13 @@ export default function TractiveSystem({ data, boardDropouts, startTs }) {
               HV system line pressure levels in Pascals (Pa). Monitored on Board 0 and Board 1.
             </p>
             <div className="chart-container">
-              <ZoomableLine options={getChartOptions('Pressure (Pa)')} data={pressureChartData} plugins={[combinedTspmuPlugin]} />
+              <ZoomableLine 
+                title="TSPMU Transducer Pressures" 
+                description="HV system line pressure levels in Pascals (Pa). Monitored on Board 0 and Board 1." 
+                options={getChartOptions('Pressure (Pa)')} 
+                data={pressureChartData} 
+                plugins={[combinedTspmuPlugin]} 
+              />
             </div>
           </div>
 
@@ -389,7 +395,13 @@ export default function TractiveSystem({ data, boardDropouts, startTs }) {
               Plots the 4 local board temperature sensors in degrees Celsius (°C) for Board {selectedTspmuBoard}.
             </p>
             <div className="chart-container">
-              <ZoomableLine options={getChartOptions('Temperature (°C)')} data={tspmuTempChartData} plugins={[selectedTspmuPlugin]} />
+              <ZoomableLine 
+                title="Board Thermistors" 
+                description={`Plots the 4 local board temperature sensors in degrees Celsius (°C) for Board ${selectedTspmuBoard}.`} 
+                options={getChartOptions('Temperature (°C)')} 
+                data={tspmuTempChartData} 
+                plugins={[selectedTspmuPlugin]} 
+              />
             </div>
           </div>
         </div>
@@ -415,6 +427,8 @@ export default function TractiveSystem({ data, boardDropouts, startTs }) {
                 </p>
                 <div className="chart-container">
                   <ZoomableLine 
+                    title="Pack Voltage vs Current" 
+                    description="Plots battery pack voltage (green, left) and current draw (red, right). High negative spikes are regenerative braking." 
                     options={getChartOptions('Voltage (V)', 'Time (s)', 'Current (A)')} 
                     data={bmsPackChartData} 
                     plugins={[bmsPlugin]} 
@@ -429,7 +443,13 @@ export default function TractiveSystem({ data, boardDropouts, startTs }) {
                   Capacity percentage remaining in the accumulator pack over the course of the test run.
                 </p>
                 <div className="chart-container">
-                  <ZoomableLine options={getChartOptions('SoC (%)')} data={bmsSocChartData} plugins={[bmsPlugin]} />
+                  <ZoomableLine 
+                    title="State of Charge (SoC)" 
+                    description="Capacity percentage remaining in the accumulator pack over the course of the test run." 
+                    options={getChartOptions('SoC (%)')} 
+                    data={bmsSocChartData} 
+                    plugins={[bmsPlugin]} 
+                  />
                 </div>
               </div>
             </div>
@@ -442,7 +462,13 @@ export default function TractiveSystem({ data, boardDropouts, startTs }) {
                   Compares high, low, and average cell voltages to identify weak cell series groups or imbalances.
                 </p>
                 <div className="chart-container">
-                  <ZoomableLine options={getChartOptions('Cell Voltage (V)')} data={bmsCellSpreadChartData} plugins={[bmsPlugin]} />
+                  <ZoomableLine 
+                    title="Cell Voltage Dispersion" 
+                    description="Compares high, low, and average cell voltages to identify weak cell series groups or imbalances." 
+                    options={getChartOptions('Cell Voltage (V)')} 
+                    data={bmsCellSpreadChartData} 
+                    plugins={[bmsPlugin]} 
+                  />
                 </div>
               </div>
 
@@ -453,7 +479,13 @@ export default function TractiveSystem({ data, boardDropouts, startTs }) {
                   High, low, and average cell temperatures. Keeps track of thermal safety limits.
                 </p>
                 <div className="chart-container">
-                  <ZoomableLine options={getChartOptions('Temperature (°C)')} data={bmsTempSpreadChartData} plugins={[bmsPlugin]} />
+                  <ZoomableLine 
+                    title="Cell Temperature Spread" 
+                    description="High, low, and average cell temperatures. Keeps track of thermal safety limits." 
+                    options={getChartOptions('Temperature (°C)')} 
+                    data={bmsTempSpreadChartData} 
+                    plugins={[bmsPlugin]} 
+                  />
                 </div>
               </div>
             </div>

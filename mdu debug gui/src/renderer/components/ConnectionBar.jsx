@@ -57,7 +57,7 @@ export default function ConnectionBar() {
   };
 
   return (
-    <header className="glass-panel" style={{
+    <header className="glass-panel no-hover" style={{
       margin: '0 0 1rem 0',
       padding: '0.75rem 1rem',
       borderRadius: '12px',
@@ -68,10 +68,7 @@ export default function ConnectionBar() {
       justifyContent: 'space-between',
       border: '1px solid var(--border-color)',
       backgroundColor: 'rgba(25, 30, 45, 0.85)',
-      backdropFilter: 'blur(10px)',
-      position: 'sticky',
-      top: 0,
-      zIndex: 100
+      backdropFilter: 'blur(10px)'
     }}>
       {/* Port connection & auto-connect */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
