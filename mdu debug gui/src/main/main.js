@@ -385,6 +385,10 @@ function registerIpcHandlers() {
 
   function updateStateFromBoard(state, board, id, dataBytes) {
     if (board) {
+      if (board.signals) {
+        Object.assign(state, board.signals);
+        return;
+      }
       const bt = board.boardType;
       const bid = board.boardId;
       
@@ -849,6 +853,12 @@ function registerIpcHandlers() {
   });
   ipcMain.handle('log:start', async (_event, filePath) => monitor.startLogging(filePath));
   ipcMain.handle('log:stop', async () => monitor.stopLogging());
+  ipcMain.handle('log:write-entry', async (_event, entry) => {
+    if (monitor.logWriter.getStatus().active) {
+      return monitor.logWriter.write(entry);
+    }
+    return false;
+  });
   ipcMain.handle('log:open-file', async () => {
     const result = await dialog.showOpenDialog({
       title: 'Open saved log file',

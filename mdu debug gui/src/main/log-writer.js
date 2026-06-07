@@ -11,6 +11,9 @@ class LogWriter {
     this.linesWritten = 0;
     this.bytesWritten = 0;
     this.lastError = null;
+    this.buffer = [];
+    this.flushInterval = null;
+    this.lastStatusTime = 0;
   }
 
   getStatus() {
@@ -38,18 +41,24 @@ class LogWriter {
     this.linesWritten = 0;
     this.bytesWritten = 0;
     this.lastError = null;
+    this.buffer = [];
     this.stream = fs.createWriteStream(filePath, { flags: 'a' });
     this.stream.on('error', (error) => {
       this.lastError = error.message;
-      this.onStatusChange(this.getStatus());
+      this.notifyStatusChange(true);
     });
+
+    this.flushInterval = setInterval(() => {
+      this.flush();
+      this.notifyStatusChange();
+    }, 100);
 
     this.write({
       type: 'session_start',
       timestamp: new Date().toISOString(),
     });
 
-    this.onStatusChange(this.getStatus());
+    this.notifyStatusChange(true);
     return this.getStatus();
   }
 
@@ -58,15 +67,22 @@ class LogWriter {
       return this.getStatus();
     }
 
+    if (this.flushInterval) {
+      clearInterval(this.flushInterval);
+      this.flushInterval = null;
+    }
+
     this.write({
       type: 'session_end',
       timestamp: new Date().toISOString(),
     });
 
+    this.flush();
+
     const stream = this.stream;
     this.stream = null;
     stream.end();
-    this.onStatusChange(this.getStatus());
+    this.notifyStatusChange(true);
     return this.getStatus();
   }
 
@@ -76,10 +92,33 @@ class LogWriter {
     }
 
     const line = `${JSON.stringify(entry)}\n`;
-    this.stream.write(line);
+    this.buffer.push(line);
     this.linesWritten += 1;
     this.bytesWritten += Buffer.byteLength(line);
+
+    if (this.buffer.length >= 100) {
+      this.flush();
+    }
+
+    this.notifyStatusChange();
     return true;
+  }
+
+  flush() {
+    if (this.buffer.length === 0 || !this.stream) {
+      return;
+    }
+    const chunk = this.buffer.join('');
+    this.buffer = [];
+    this.stream.write(chunk);
+  }
+
+  notifyStatusChange(force = false) {
+    const now = Date.now();
+    if (force || now - this.lastStatusTime >= 100) {
+      this.lastStatusTime = now;
+      this.onStatusChange(this.getStatus());
+    }
   }
 }
 

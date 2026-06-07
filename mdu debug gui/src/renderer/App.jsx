@@ -228,6 +228,15 @@ export default function App() {
   const handleDrag = useCallback((e) => {
     e.preventDefault();
     e.stopPropagation();
+
+    // Check if the dragged items are actual files (from the OS) and not internal UI elements
+    const isFileDrag = e.dataTransfer.types && (
+      typeof e.dataTransfer.types.contains === 'function'
+        ? e.dataTransfer.types.contains('Files')
+        : Array.from(e.dataTransfer.types).includes('Files')
+    );
+    if (!isFileDrag) return;
+
     if (e.type === "dragenter" || e.type === "dragover") {
       setDragActive(true);
     } else if (e.type === "dragleave") {
@@ -239,6 +248,13 @@ export default function App() {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
+
+    const isFileDrag = e.dataTransfer.types && (
+      typeof e.dataTransfer.types.contains === 'function'
+        ? e.dataTransfer.types.contains('Files')
+        : Array.from(e.dataTransfer.types).includes('Files')
+    );
+    if (!isFileDrag) return;
 
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const file = e.dataTransfer.files[0];

@@ -1013,7 +1013,7 @@ class DeviceMonitor extends EventEmitter {
           : null,
       };
 
-      this.emit('frame', event);
+      this.pendingFrames.push(event);
       this.logWriter.write({
         type: 'frame',
         ...event,

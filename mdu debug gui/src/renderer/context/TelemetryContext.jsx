@@ -128,6 +128,10 @@ function decodeStandardCan(id, dataBytes) {
 
 function updateStateFromBoard(state, board, id, dataBytes) {
   if (board) {
+    if (board.signals) {
+      Object.assign(state, board.signals);
+      return;
+    }
     const bt = board.boardType;
     const bid = board.boardId;
     
@@ -219,6 +223,7 @@ function updateStateFromBoard(state, board, id, dataBytes) {
 
 export function TelemetryProvider({ children }) {
   const [isLiveMode, setIsLiveMode] = useState(true);
+  const [latestValues, setLatestValues] = useState({ ...initialSignalState });
   const [activeDataset, setActiveDataset] = useState([]);
   const [currentFilePath, setCurrentFilePath] = useState('');
   
@@ -233,6 +238,11 @@ export function TelemetryProvider({ children }) {
   const [connectionState, setConnectionState] = useState({ connected: false, port: null, baudRate: 115200 });
   const [diagnostics, setDiagnostics] = useState({});
   const [logStatus, setLogStatus] = useState({ active: false, filePath: null, linesWritten: 0, bytesWritten: 0 });
+  
+  const logStatusRef = useRef(logStatus);
+  useEffect(() => {
+    logStatusRef.current = logStatus;
+  }, [logStatus]);
 
   // WiFi Telemetry State
   const [activeTransport, setActiveTransport] = useState('serial'); // 'serial' or 'wifi'
@@ -528,6 +538,13 @@ export function TelemetryProvider({ children }) {
         if (json.log !== undefined) {
           setIsWifiLogging(Boolean(json.log));
         }
+        if (logStatusRef.current.active) {
+          window.mduDebug.logWiFiFrame({
+            type: 'wifi_snapshot',
+            timestamp: new Date().toISOString(),
+            flat
+          });
+        }
       } catch (err) {
         console.error('Telemetry parsing error', err);
       }
@@ -599,7 +616,6 @@ export function TelemetryProvider({ children }) {
         latestStateRef.current = { ...initialSignalState };
         
         if (liveIntervalRef.current) clearInterval(liveIntervalRef.current);
-        let renderCounter = 0;
         liveIntervalRef.current = setInterval(() => {
           const nowMs = Date.now();
           const tsSeconds = (nowMs - liveStartMsRef.current) / 1000;
@@ -610,17 +626,12 @@ export function TelemetryProvider({ children }) {
           };
           
           liveBufferRef.current.push(row);
-          // Limit buffer size to 2000 points (200 seconds of history)
           if (liveBufferRef.current.length > 2000) {
             liveBufferRef.current.shift();
           }
           
-          // Only update React state every 5 ticks (500ms) to reduce render churn
-          renderCounter++;
-          if (renderCounter >= 5) {
-            renderCounter = 0;
-            setActiveDataset([...liveBufferRef.current]);
-          }
+          setLatestValues({ ...latestStateRef.current });
+          setActiveDataset([...liveBufferRef.current]);
         }, 100);
       } else {
         if (liveIntervalRef.current && activeTransport === 'serial') {
@@ -638,14 +649,24 @@ export function TelemetryProvider({ children }) {
       setLogStatus(status || { active: false, filePath: null, linesWritten: 0, bytesWritten: 0 });
     });
 
-    const unsubFrame = window.mduDebug.onFrame((frame) => {
-      if (frame && frame.ok && activeTransport === 'serial') {
-        updateStateFromBoard(
-          latestStateRef.current,
-          frame.board,
-          frame.identifier || frame.board?.identifier,
-          frame.dataBytes || frame.board?.dataBytes
-        );
+    const unsubFrames = window.mduDebug.onFrames((frames) => {
+      if (Array.isArray(frames) && activeTransport === 'serial') {
+        for (const frame of frames) {
+          if (frame && frame.ok) {
+            updateStateFromBoard(
+              latestStateRef.current,
+              frame.board,
+              frame.identifier || frame.board?.identifier,
+              frame.dataBytes || frame.board?.dataBytes
+            );
+          }
+        }
+      }
+    });
+
+    const unsubWifiSnapshot = window.mduDebug.onWifiSnapshot((snapshot) => {
+      if (snapshot && snapshot.flat && activeTransport === 'serial') {
+        Object.assign(latestStateRef.current, snapshot.flat);
       }
     });
 
@@ -657,7 +678,8 @@ export function TelemetryProvider({ children }) {
       unsubConnection();
       unsubDiagnostics();
       unsubLogStatus();
-      unsubFrame();
+      unsubFrames();
+      unsubWifiSnapshot();
       if (liveIntervalRef.current) clearInterval(liveIntervalRef.current);
     };
   }, [activeTransport]);
@@ -671,7 +693,6 @@ export function TelemetryProvider({ children }) {
       latestStateRef.current = { ...initialSignalState };
 
       if (liveIntervalRef.current) clearInterval(liveIntervalRef.current);
-      let renderCounter = 0;
       liveIntervalRef.current = setInterval(() => {
         const nowMs = Date.now();
         const tsSeconds = (nowMs - liveStartMsRef.current) / 1000;
@@ -686,11 +707,8 @@ export function TelemetryProvider({ children }) {
           liveBufferRef.current.shift();
         }
         
-        renderCounter++;
-        if (renderCounter >= 5) {
-          renderCounter = 0;
-          setActiveDataset([...liveBufferRef.current]);
-        }
+        setLatestValues({ ...latestStateRef.current });
+        setActiveDataset([...liveBufferRef.current]);
       }, 100);
     } else {
       if (liveIntervalRef.current && activeTransport === 'wifi') {
@@ -762,6 +780,7 @@ export function TelemetryProvider({ children }) {
     <TelemetryContext.Provider
       value={{
         isLiveMode,
+        latestValues,
         activeDataset,
         currentFilePath,
         folderPath,

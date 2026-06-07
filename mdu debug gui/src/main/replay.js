@@ -88,6 +88,8 @@ function registerReplayIpcHandlers(ipcMain, monitor, broadcast) {
             // The graphs use Date.now() internally when the frame arrives in app.js!
             // So we don't need to rewrite it, but we can if we want the log to show original time.
             broadcast('device:frame', data);
+          } else if (data.type === 'wifi_snapshot') {
+            broadcast('device:wifi_snapshot', data);
           } else if (data.type === 'runtime') {
             broadcast('device:runtime', data);
           }

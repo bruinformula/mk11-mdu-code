@@ -142,7 +142,6 @@ function updateTrackSource(map, replayPoints) {
       ),
     );
     gridSource.setData(buildReplayGridFeature(bounds));
-    map.fitBounds(bounds, { padding: 60, duration: 0, maxZoom: 17 });
   } else {
     gridSource.setData({ type: 'FeatureCollection', features: [] });
   }
@@ -155,6 +154,7 @@ export default function GPSPlayback({ samples = [], availableSignalIds = [] }) {
   const markerRef = useRef(null);
   const resizeObserverRef = useRef(null);
   const pointsRef = useRef([]);
+  const lastFittedRef = useRef(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [playbackIndex, setPlaybackIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -403,6 +403,37 @@ export default function GPSPlayback({ samples = [], availableSignalIds = [] }) {
 
   useEffect(() => {
     updateTrackSource(mapRef.current, points);
+  }, [points]);
+
+  // Fit bounds ONLY when a new track/run is loaded (i.e. start point changes)
+  // to prevent jittering during active playback or live streaming.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !points.length) return;
+
+    const startPoint = points[0];
+    const trackId = `${startPoint.lat},${startPoint.lon},${startPoint.timestamp}`;
+
+    if (lastFittedRef.current !== trackId) {
+      const bounds = points.reduce(
+        (acc, point) => acc.extend([point.lon, point.lat]),
+        new maplibregl.LngLatBounds(
+          [points[0].lon, points[0].lat],
+          [points[0].lon, points[0].lat],
+        ),
+      );
+      
+      const fit = () => {
+        map.fitBounds(bounds, { padding: 60, duration: 1000, maxZoom: 17 });
+      };
+
+      if (map.isStyleLoaded()) {
+        fit();
+      } else {
+        map.once('load', fit);
+      }
+      lastFittedRef.current = trackId;
+    }
   }, [points]);
 
   useEffect(() => {

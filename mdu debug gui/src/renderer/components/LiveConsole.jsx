@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useTelemetry } from '../context/TelemetryContext';
-import { Search, Play, Pause, Trash2, Filter, ShieldAlert, Activity } from 'lucide-react';
+import { Search, Play, Pause, Trash2, Filter, ShieldAlert, Activity, Sliders } from 'lucide-react';
+import LiveDashboard from './LiveDashboard';
 
 export default function LiveConsole() {
   const { connectionState, diagnostics } = useTelemetry();
@@ -11,14 +12,35 @@ export default function LiveConsole() {
   const [isPaused, setIsPaused] = useState(false);
   const logEndRef = useRef(null);
 
-  // Monitor incoming frames in real-time
+  const [activeView, setActiveView] = useState('dashboard'); // 'console' or 'dashboard'
+
+  // Monitor incoming frames in real-time (batched)
   useEffect(() => {
-    const unsubFrame = window.mduDebug.onFrame((frame) => {
+    const unsubFrames = window.mduDebug.onFrames((newFrames) => {
       if (isPaused) return;
-      if (!frame) return;
+      if (!newFrames || newFrames.length === 0) return;
       
       setLogs((prev) => {
-        const next = [...prev, frame];
+        const next = [...prev, ...newFrames];
+        if (next.length > 500) {
+          return next.slice(next.length - 500);
+        }
+        return next;
+      });
+    });
+
+    const unsubWifiSnapshot = window.mduDebug.onWifiSnapshot((snapshot) => {
+      if (isPaused) return;
+      if (!snapshot) return;
+      
+      setLogs((prev) => {
+        const timeStr = new Date(snapshot.timestamp || Date.now()).toLocaleTimeString();
+        const displayFrame = {
+          raw: `[${timeStr}] WiFi Snapshot: SoC=${(snapshot.flat?.['bms.soc'] || 0).toFixed(1)}%, RPM=${(snapshot.flat?.['inv.rpm'] || 0).toFixed(0)}, Speed=${(snapshot.flat?.['vcu.spd'] || 0).toFixed(0)} MPH`,
+          ok: true,
+          source: 'wifi'
+        };
+        const next = [...prev, displayFrame];
         if (next.length > 500) {
           next.shift();
         }
@@ -27,7 +49,8 @@ export default function LiveConsole() {
     });
 
     return () => {
-      unsubFrame();
+      unsubFrames();
+      unsubWifiSnapshot();
     };
   }, [isPaused]);
 
@@ -68,7 +91,31 @@ export default function LiveConsole() {
   });
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 350px', gap: '1rem', height: 'calc(100vh - 180px)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: 'calc(100vh - 180px)' }}>
+      {/* View Switcher Tabs */}
+      <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+        <button
+          onClick={() => setActiveView('dashboard')}
+          className={`nav-button ${activeView === 'dashboard' ? 'active' : ''}`}
+          style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}
+        >
+          <Activity size={14} />
+          <span>Live Dashboard</span>
+        </button>
+        <button
+          onClick={() => setActiveView('console')}
+          className={`nav-button ${activeView === 'console' ? 'active' : ''}`}
+          style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}
+        >
+          <Sliders size={14} />
+          <span>Raw Console Logs</span>
+        </button>
+      </div>
+
+      {activeView === 'dashboard' ? (
+        <LiveDashboard />
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 350px', gap: '1rem', height: '100%', minHeight: 0 }}>
       {/* Console panel */}
       <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '1rem', borderRadius: '12px' }}>
         {/* Toolbar */}
@@ -219,6 +266,8 @@ export default function LiveConsole() {
           </table>
         </div>
       </div>
+      </div>
+      )}
     </div>
   );
 }
