@@ -34,7 +34,7 @@ export default function Drivetrain({ data, boardDropouts, startTs }) {
       zoom: {
         pan: { enabled: true, mode: 'x' },
         zoom: {
-          wheel: { enabled: true },
+          wheel: { enabled: false },
           pinch: { enabled: true },
           mode: 'x',
         }

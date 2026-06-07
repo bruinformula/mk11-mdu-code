@@ -67,7 +67,7 @@ export default function CustomPlotter({ data, boardDropouts, startTs = 0 }) {
       zoom: {
         pan: { enabled: false },
         zoom: {
-          wheel: { enabled: true, modifierKey: 'shift' },
+          wheel: { enabled: false },
           pinch: { enabled: true },
           drag: { enabled: false },
           mode: 'xy'

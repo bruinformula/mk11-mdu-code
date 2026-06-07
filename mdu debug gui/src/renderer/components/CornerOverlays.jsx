@@ -245,7 +245,7 @@ export default function CornerOverlays({ data, boardDropouts, startTs = 0 }) {
         },
         zoom: {
           wheel: {
-            enabled: true,
+            enabled: false,
           },
           pinch: {
             enabled: true
@@ -540,7 +540,7 @@ export default function CornerOverlays({ data, boardDropouts, startTs = 0 }) {
         <div className="glass-panel">
           <h2 className="section-title">Brake Temperatures Overlay</h2>
           <p className="text-slate-400" style={{ fontSize: '0.85rem', marginBottom: '1rem' }}>
-            Comparison of brake temperatures from all four corners. Click labels to toggle, scroll to zoom, drag to pan.
+            Comparison of brake temperatures from all four corners. Click labels to toggle, drag to zoom, double-click to reset.
           </p>
           <div className="chart-container">
             <ZoomableLine options={getChartOptions('Temperature (°C)')} data={brakesChartData} plugins={[comparisonPlugin]} />
