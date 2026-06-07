@@ -9,7 +9,7 @@ const Papa = require('papaparse');
 const readline = require('readline');
 
 const { DeviceMonitor } = require('./device-monitor');
-const { parseMduLine } = require('./mdu-frame');
+const { parseMduLine, parseSlcanToBoard } = require('./mdu-frame');
 
 let mainWindow = null;
 let monitor = null;
@@ -394,6 +394,64 @@ function registerIpcHandlers() {
       const parsed = Papa.parse(content, { header: true, skipEmptyLines: true });
       const headers = parsed.meta.fields || [];
       
+      if (headers.includes('id_hex') && headers.includes('data_hex')) {
+        const timeCol = headers.includes('ts') ? 'ts' : headers[0];
+        const idDecCol = headers.includes('id_dec') ? 'id_dec' : null;
+        const idHexCol = 'id_hex';
+        const dataHexCol = 'data_hex';
+        const dlcCol = headers.includes('dlc') ? 'dlc' : null;
+        
+        const frames = [];
+        for (const row of parsed.data) {
+          const idHexStr = row[idHexCol];
+          const dataHexStr = row[dataHexCol];
+          if (!idHexStr || !dataHexStr) continue;
+          
+          let tsMs = parseFloat(row[timeCol]);
+          if (isNaN(tsMs)) {
+            tsMs = Date.now();
+          } else {
+            tsMs = tsMs * 1000;
+          }
+          
+          const identifier = idDecCol ? parseInt(row[idDecCol], 10) : parseInt(idHexStr, 16);
+          const identifierHex = idHexStr.replace(/^0x/i, '').toUpperCase();
+          const idText = '0x' + identifierHex;
+          const idType = identifier > 0x7FF ? 'extended' : 'standard';
+          
+          const dlcVal = dlcCol ? parseInt(row[dlcCol], 10) : dataHexStr.length / 2;
+          
+          const dataBytes = [];
+          for (let i = 0; i < dataHexStr.length; i += 2) {
+            dataBytes.push(parseInt(dataHexStr.substring(i, i + 2), 16));
+          }
+          
+          const slcan = {
+            ok: true,
+            identifier,
+            identifierHex,
+            idText,
+            idType,
+            dataLength: dlcVal,
+            dataHex: dataHexStr,
+            dataBytes,
+          };
+          
+          const rawLine = `t${identifierHex.padStart(3, '0')}${dlcVal}${dataHexStr}`;
+          const parsedFrame = parseSlcanToBoard(slcan, rawLine);
+          
+          if (parsedFrame.ok) {
+            frames.push({
+              timestampMs: tsMs,
+              board: parsedFrame.board,
+              id: parsedFrame.identifier,
+              dataBytes: parsedFrame.dataBytes,
+            });
+          }
+        }
+        return binFramesTo10Hz(frames);
+      }
+
       if (headers.includes('sdu[0].shock') || headers.includes('ts') || headers.includes('gps.lat')) {
         return parsed.data;
       }
