@@ -15,6 +15,9 @@ const { parseMduLine, parseSlcanToBoard } = require('./mdu-frame');
 let mainWindow = null;
 let monitor = null;
 let activeDeployProcess = null;
+let baseStationSocket = null;
+let baseStationIp = null;
+const baseStationPort = 5005;
 
 function broadcast(channel, payload) {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -1454,6 +1457,98 @@ function registerIpcHandlers() {
     }
     return false;
   });
+
+  // Base Station TCP socket handlers
+  ipcMain.handle('basestation:connect', async (_event, ip) => {
+    if (baseStationSocket) {
+      baseStationSocket.destroy();
+      baseStationSocket = null;
+    }
+
+    baseStationIp = ip;
+    console.log(`[BaseStation] Connecting to ${ip}:${baseStationPort}...`);
+    broadcast('device:basestation-connection', { state: 'connecting', ip });
+
+    baseStationSocket = new net.Socket();
+    baseStationSocket.setTimeout(5000);
+
+    let buffer = '';
+
+    baseStationSocket.connect(baseStationPort, ip, () => {
+      console.log(`[BaseStation] Connected to ${ip}:${baseStationPort}`);
+      broadcast('device:basestation-connection', { state: 'connected', ip });
+    });
+
+    baseStationSocket.on('data', (chunk) => {
+      buffer += chunk.toString('utf8');
+      let boundary = buffer.indexOf('\n');
+      while (boundary !== -1) {
+        const line = buffer.substring(0, boundary).trim();
+        buffer = buffer.substring(boundary + 1);
+
+        if (line) {
+          try {
+            const payload = JSON.parse(line);
+            if (payload.base_station_status) {
+              broadcast('device:basestation-status', payload.base_station_status);
+            } else {
+              broadcast('device:wifi_snapshot', { flat: payload });
+            }
+          } catch (err) {
+            console.error('[BaseStation] Error parsing JSON line:', err);
+          }
+        }
+        boundary = buffer.indexOf('\n');
+      }
+    });
+
+    baseStationSocket.on('timeout', () => {
+      console.log('[BaseStation] Socket timeout');
+      broadcast('device:basestation-connection', { state: 'timeout', ip });
+      if (baseStationSocket) {
+        baseStationSocket.destroy();
+        baseStationSocket = null;
+      }
+    });
+
+    baseStationSocket.on('error', (err) => {
+      console.error('[BaseStation] Socket error:', err.message);
+      broadcast('device:basestation-connection', { state: 'error', ip, message: err.message });
+      if (baseStationSocket) {
+        baseStationSocket.destroy();
+        baseStationSocket = null;
+      }
+    });
+
+    baseStationSocket.on('close', () => {
+      console.log('[BaseStation] Connection closed');
+      broadcast('device:basestation-connection', { state: 'disconnected', ip });
+      baseStationSocket = null;
+    });
+
+    return true;
+  });
+
+  ipcMain.handle('basestation:disconnect', async () => {
+    if (baseStationSocket) {
+      console.log('[BaseStation] Manually disconnecting from base station...');
+      baseStationSocket.destroy();
+      baseStationSocket = null;
+      broadcast('device:basestation-connection', { state: 'disconnected' });
+    }
+    return true;
+  });
+
+  ipcMain.handle('basestation:send-command', async (_event, cmd) => {
+    if (baseStationSocket && !baseStationSocket.destroyed) {
+      const payload = JSON.stringify({ cmd }) + '\n';
+      baseStationSocket.write(payload, 'utf8');
+      console.log(`[BaseStation] Sent command: ${cmd}`);
+      return true;
+    }
+    console.warn('[BaseStation] Cannot send command: socket not connected');
+    return false;
+  });
 }
 
 app.whenReady().then(async () => {
@@ -1477,6 +1572,10 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', async () => {
+  if (baseStationSocket) {
+    baseStationSocket.destroy();
+    baseStationSocket = null;
+  }
   if (monitor) {
     await monitor.dispose();
   }

@@ -35,12 +35,20 @@ export default function ConnectionBar() {
     toggleWifiLogging,
     fetchWifiLogs,
     fetchWifiLogFile,
-    scanNetwork
+    scanNetwork,
+ 
+    // Base Station States/Handlers
+    baseStationStatus,
+    baseStationConnState,
+    connectBaseStation,
+    disconnectBaseStation,
+    sendBaseStationCommand
   } = useTelemetry();
-
+ 
   const [selectedPort, setSelectedPort] = useState('');
   const [baudRate, setBaudRate] = useState('115200');
   const [ipInput, setIpInput] = useState(targetIp || '');
+  const [baseStationIpInput, setBaseStationIpInput] = useState(baseStationConnState?.ip || targetIp || '');
   const [remoteLogName, setRemoteLogName] = useState('');
   const [selectedWifiLog, setSelectedWifiLog] = useState('');
   const [isDownloadingWifiLog, setIsDownloadingWifiLog] = useState(false);
@@ -57,8 +65,21 @@ export default function ConnectionBar() {
   useEffect(() => {
     if (targetIp) {
       setIpInput(targetIp);
+      setBaseStationIpInput(targetIp);
     }
   }, [targetIp]);
+ 
+  useEffect(() => {
+    if (baseStationConnState?.ip) {
+      setBaseStationIpInput(baseStationConnState.ip);
+    }
+  }, [baseStationConnState?.ip]);
+ 
+  const handleBaseStationConnect = () => {
+    if (baseStationIpInput.trim()) {
+      connectBaseStation(baseStationIpInput.trim());
+    }
+  };
 
   useEffect(() => {
     if (wifiState === 'connected') {
@@ -258,6 +279,73 @@ export default function ConnectionBar() {
           </>
         )}
       </div>
+ 
+      {/* Base Station TCP Link */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderLeft: '1px solid rgba(255, 255, 255, 0.1)', paddingLeft: '0.75rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+          {baseStationConnState.state === 'connected' ? (
+            <Activity className="text-emerald-400 animate-pulse" size={16} />
+          ) : baseStationConnState.state === 'connecting' ? (
+            <Activity className="text-amber-400 animate-pulse" size={16} />
+          ) : (
+            <WifiOff className="text-slate-500" size={16} />
+          )}
+          <span style={{ fontSize: '0.8rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
+            {baseStationConnState.state === 'connected' 
+              ? 'Base Active' 
+              : baseStationConnState.state === 'connecting' 
+                ? 'Connecting...' 
+                : 'Base Link'}
+          </span>
+        </div>
+ 
+        <input
+          type="text"
+          className="text-input"
+          placeholder="Base Station IP"
+          value={baseStationIpInput}
+          onChange={(e) => setBaseStationIpInput(e.target.value)}
+          disabled={baseStationConnState.state === 'connected' || baseStationConnState.state === 'connecting'}
+          style={{
+            padding: '0.2rem 0.4rem',
+            fontSize: '0.8rem',
+            width: '110px',
+            background: 'rgba(0,0,0,0.3)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '4px',
+            color: '#fff'
+          }}
+        />
+ 
+        {baseStationConnState.state === 'connected' || baseStationConnState.state === 'connecting' ? (
+          <button className="button button-danger" onClick={disconnectBaseStation} style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem' }}>
+            Disconnect
+          </button>
+        ) : (
+          <button className="button button-success" onClick={handleBaseStationConnect} style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem' }}>
+            Connect
+          </button>
+        )}
+      </div>
+ 
+      {/* Base Station Status Metrics */}
+      {baseStationConnState.state === 'connected' && baseStationStatus && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', borderLeft: '1px solid rgba(255, 255, 255, 0.1)', paddingLeft: '0.75rem', fontSize: '0.75rem', color: '#86dbff' }}>
+          <div>
+            Survey: <span style={{ fontWeight: 'bold', color: baseStationStatus.state === 'LOCKED' ? '#10b981' : '#f59e0b' }}>{baseStationStatus.state}</span>
+          </div>
+          {baseStationStatus.state !== 'LOCKED' && (
+            <div>
+              Acc: <span style={{ fontWeight: 'bold', color: '#fff' }}>{baseStationStatus.accuracy === null || baseStationStatus.accuracy === Infinity ? '---' : `${baseStationStatus.accuracy.toFixed(2)}m`}</span>
+            </div>
+          )}
+          {baseStationStatus.radio && (
+            <div style={{ color: 'var(--text-secondary)' }}>
+              TX/RX: <span style={{ color: '#fff' }}>{baseStationStatus.radio.tx_cycles || 0}/{baseStationStatus.radio.rx_success || 0}</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Pi Logging & Download Controls (Visible only when WiFi Connected) */}
       {wifiState === 'connected' && (

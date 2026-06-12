@@ -51,4 +51,11 @@ contextBridge.exposeInMainWorld('mduDebug', {
   deployBoard: (action, boardKey, boardId) => ipcRenderer.invoke('board:deploy', action, boardKey, boardId),
   stopDeploy: () => ipcRenderer.invoke('board:deploy-kill'),
   onDeployLog: (callback) => subscribe('board:deploy-log', callback),
+  
+  // Base Station TCP socket triggers
+  basestationConnect: (ip) => ipcRenderer.invoke('basestation:connect', ip),
+  basestationDisconnect: () => ipcRenderer.invoke('basestation:disconnect'),
+  basestationSendCommand: (cmd) => ipcRenderer.invoke('basestation:send-command', cmd),
+  onBaseStationStatus: (callback) => subscribe('device:basestation-status', callback),
+  onBaseStationConnection: (callback) => subscribe('device:basestation-connection', callback),
 });

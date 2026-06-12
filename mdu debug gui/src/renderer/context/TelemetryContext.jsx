@@ -440,8 +440,12 @@ export function TelemetryProvider({ children }) {
   }, [logStatus]);
 
   // WiFi Telemetry State
-  const [activeTransport, setActiveTransport] = useState('serial'); // 'serial' or 'wifi'
+  const [activeTransport, setActiveTransport] = useState('serial'); // 'serial', 'wifi', or 'basestation'
   const [targetIp, setTargetIp] = useState('');
+ 
+  // Base Station State
+  const [baseStationStatus, setBaseStationStatus] = useState(null);
+  const [baseStationConnState, setBaseStationConnState] = useState({ state: 'disconnected', ip: '' });
   const [wifiState, setWifiState] = useState('disconnected'); // 'disconnected', 'connecting', 'connected', 'reconnecting', 'degraded'
   const [wifiMessage, setWifiMessage] = useState('Waiting for telemetry link.');
   const [isWifiLogging, setIsWifiLogging] = useState(false);
@@ -936,10 +940,42 @@ export function TelemetryProvider({ children }) {
         Object.assign(latestStateRef.current, snapshot.flat);
       }
     });
-
+ 
+    const unsubBaseStationStatus = window.mduDebug.onBaseStationStatus((status) => {
+      setBaseStationStatus(status);
+    });
+ 
+    const unsubBaseStationConnection = window.mduDebug.onBaseStationConnection((conn) => {
+      setBaseStationConnState(conn || { state: 'disconnected', ip: '' });
+      if (conn && conn.state === 'connected') {
+        setActiveTransport('basestation');
+        setIsLiveMode(true);
+        if (!liveIntervalRef.current) {
+          liveStartMsRef.current = Date.now();
+          liveBufferRef.current = [];
+          latestStateRef.current = { ...initialSignalState };
+ 
+          liveIntervalRef.current = setInterval(() => {
+            const nowMs = Date.now();
+            const tsSeconds = (nowMs - liveStartMsRef.current) / 1000;
+            liveBufferRef.current.push({ ts: tsSeconds.toFixed(3), ...latestStateRef.current });
+            if (liveBufferRef.current.length > 2000) liveBufferRef.current.shift();
+            setLatestValues({ ...latestStateRef.current });
+            setActiveDataset([...liveBufferRef.current]);
+          }, 100);
+        }
+      } else if (conn && conn.state === 'disconnected') {
+        // Only stop if WiFi and Serial are also inactive
+        if (liveIntervalRef.current && !wsRef.current && !serialConnectedRef.current) {
+          clearInterval(liveIntervalRef.current);
+          liveIntervalRef.current = null;
+        }
+      }
+    });
+ 
     // Check for standard listing refresh
     window.mduDebug.listPorts();
-
+ 
     return () => {
       unsubPorts();
       unsubConnection();
@@ -947,6 +983,8 @@ export function TelemetryProvider({ children }) {
       unsubLogStatus();
       unsubFrames();
       unsubWifiSnapshot();
+      unsubBaseStationStatus();
+      unsubBaseStationConnection();
       if (liveIntervalRef.current) clearInterval(liveIntervalRef.current);
     };
   }, []);
@@ -1244,6 +1282,20 @@ export function TelemetryProvider({ children }) {
         fetchWifiLogs,
         fetchWifiLogFile,
         scanNetwork,
+ 
+        // Base Station TCP Client Integrations
+        baseStationStatus,
+        baseStationConnState,
+        connectBaseStation: (ip) => {
+          setActiveTransport('basestation');
+          window.mduDebug.basestationConnect(ip);
+        },
+        disconnectBaseStation: () => {
+          window.mduDebug.basestationDisconnect();
+        },
+        sendBaseStationCommand: (cmd) => {
+          window.mduDebug.basestationSendCommand(cmd);
+        },
       }}
     >
       {children}
