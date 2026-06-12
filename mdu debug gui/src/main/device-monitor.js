@@ -668,11 +668,11 @@ class DeviceMonitor extends EventEmitter {
     }
 
     const pathsToConnect = requestedPath === 'all'
-      ? this.availablePorts.filter(p => p.matchesTarget).map(p => p.path)
+      ? this.availablePorts.map(p => p.path)
       : [requestedPath];
 
     if (pathsToConnect.length === 0) {
-      throw new Error('No STM32 USB CDC ports available to connect to.');
+      throw new Error('No USB CDC ports available to connect to.');
     }
 
     if (this.port && this.port.isOpen && this.connectedPortInfo?.path === requestedPath) {
@@ -695,10 +695,9 @@ class DeviceMonitor extends EventEmitter {
     }
 
     if (requestedPath === 'all') {
-      const targetPorts = this.availablePorts.filter(p => p.matchesTarget);
       this.connectedPortInfo = {
         path: 'all',
-        displayName: `All STM32 USB CDC Ports (${targetPorts.length} connected)`,
+        displayName: `All USB CDC Ports (${this.availablePorts.length} connected)`,
         matchesTarget: true,
         mirrorEligible: true,
       };

@@ -56,6 +56,9 @@ export const signalGroups = [
       makeSignal('bms.i', 'Pack Current', 'A', '#ff2a4d'),
       makeSignal('bms.soc', 'State of Charge', '%', '#00e5ff'),
       makeSignal('bms.dcl', 'Discharge Current Limit', 'A', '#ffd670'),
+      makeSignal('bms.max_discharge', 'Max Discharge', 'A', '#ffb800'),
+      makeSignal('bms.max_charge', 'Max Charge', 'A', '#ff70a6'),
+      makeSignal('bms.precharge_complete', 'Precharge Complete', 'state', '#9bf6ff', { precision: 0 }),
     ],
   },
   {
@@ -299,6 +302,11 @@ export const signalGroups = [
       makeSignal('vcu.all.crosscheck_state', 'CAN Crosscheck', 'state', '#8cffc1', { precision: 0 }),
       makeSignal('vcu.all.apps_plausible', 'CAN APPS Plausible', 'state', '#caffbf', { precision: 0 }),
       makeSignal('vcu.all.looking_for_rtd', 'CAN Looking For RTD', 'state', '#ffd6a5', { precision: 0 }),
+      makeSignal('vcu.all.cooling_enable', 'CAN Cooling Enable', 'state', '#00ff7f', { precision: 0 }),
+      makeSignal('vcu.all.tractive_fan_pwm', 'CAN Tractive Fan PWM', '%', '#70d6ff'),
+      makeSignal('vcu.all.tractive_pump_pwm', 'CAN Tractive Pump PWM', '%', '#ffb800'),
+      makeSignal('vcu.all.accy_fan_pwm', 'CAN Accy Fan PWM', '%', '#ff2a4d'),
+      makeSignal('vcu.all.precharge_cmd', 'CAN Precharge CMD', 'state', '#00e5ff', { precision: 0 }),
     ],
   },
   {
@@ -402,15 +410,17 @@ export const signalGroups = [
   });
 });
 
-signalGroups.push({
-  id: 'tshmu',
-  name: 'TSHMU Flow',
-  signals: [
-    makeSignal('tshmu.flow1', 'Flow 1', 'L/min', '#00e5ff'),
-    makeSignal('tshmu.flow2', 'Flow 2', 'L/min', '#00ff7f'),
-    makeSignal('tshmu.jitter_us', 'Flow Jitter', 'us', '#ffb800', { precision: 0 }),
-    makeSignal('tshmu.error_flags', 'Flow Error Flags', 'bits', '#ff70a6', { precision: 0 }),
-  ],
+['0', '1'].forEach((boardId, idx) => {
+  signalGroups.push({
+    id: `tshmu_${idx}`,
+    name: `TSHMU Board ${boardId} Flow`,
+    signals: [
+      makeSignal(`tshmu[${idx}].flow1`, `Board ${boardId} Flow 1`, 'L/min', '#00e5ff'),
+      makeSignal(`tshmu[${idx}].flow2`, `Board ${boardId} Flow 2`, 'L/min', '#00ff7f'),
+      makeSignal(`tshmu[${idx}].jitter_us`, `Board ${boardId} Flow Jitter`, 'us', '#ffb800', { precision: 0 }),
+      makeSignal(`tshmu[${idx}].error_flags`, `Board ${boardId} Flow Error Flags`, 'bits', '#ff70a6', { precision: 0 }),
+    ],
+  });
 });
 
 export const ALL_SIGNALS = signalGroups.flatMap(group => group.signals);

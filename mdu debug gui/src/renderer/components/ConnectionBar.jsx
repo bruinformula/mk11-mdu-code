@@ -44,6 +44,15 @@ export default function ConnectionBar() {
   const [remoteLogName, setRemoteLogName] = useState('');
   const [selectedWifiLog, setSelectedWifiLog] = useState('');
   const [isDownloadingWifiLog, setIsDownloadingWifiLog] = useState(false);
+  const [parseProgress, setParseProgress] = useState(null);
+
+  useEffect(() => {
+    if (window.mduDebug?.onParseProgress) {
+      return window.mduDebug.onParseProgress((percent) => {
+        setParseProgress(percent);
+      });
+    }
+  }, []);
 
   useEffect(() => {
     if (targetIp) {
@@ -91,7 +100,10 @@ export default function ConnectionBar() {
   };
 
   const handleConnect = async () => {
-    const port = selectedPort || (availablePorts[0] && availablePorts[0].path);
+    let port = selectedPort;
+    if (!port) {
+      port = availablePorts.length > 1 ? 'all' : (availablePorts[0] && availablePorts[0].path);
+    }
     if (!port) return;
     try {
       await connectSerial(port, baudRate);
@@ -143,18 +155,25 @@ export default function ConnectionBar() {
             <WifiOff className="text-slate-500" size={18} />
           )}
           <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>
-            {connectionState.connected ? 'Connected' : 'Offline'}
+            {connectionState.connected
+              ? connectionState.port?.path === 'all'
+                ? `All Ports (${connectionState.port?.displayName?.match(/\d+/)?.[0] ?? '?'})`
+                : 'Connected'
+              : 'Offline'}
           </span>
         </div>
 
         <select
           className="select-input"
-          value={selectedPort || (connectionState.port || '')}
+          value={selectedPort || (connectionState.connected ? (connectionState.port?.path || '') : (availablePorts.length > 1 ? 'all' : (availablePorts[0]?.path || '')))}
           onChange={(e) => setSelectedPort(e.target.value)}
           disabled={connectionState.connected}
           style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }}
         >
           {availablePorts.length === 0 && <option value="">No Ports Detected</option>}
+          {availablePorts.length > 1 && (
+            <option value="all">All USB CDC Ports ({availablePorts.length})</option>
+          )}
           {availablePorts.map((p) => (
             <option key={p.path} value={p.path}>
               {p.displayName || p.path} {p.matchesTarget ? '★' : ''}
@@ -327,6 +346,42 @@ export default function ConnectionBar() {
             <button className="button" onClick={scanFolder} title="Rescan Folder" style={{ padding: '0.25rem', display: 'flex', alignItems: 'center' }}>
               <RefreshCw size={14} />
             </button>
+            <button 
+              className="button" 
+              title="Parse Raw CAN Log into Timeline CSV"
+              onClick={async () => {
+                try {
+                  const filePath = await window.mduDebug.openFile();
+                  if (filePath) {
+                    if (!filePath.toLowerCase().includes('_can')) {
+                      if (!confirm('This file does not appear to be a raw _CAN.csv log. Parse anyway?')) return;
+                    }
+                    const btn = document.getElementById('parse-can-btn-icon');
+                    if(btn) btn.classList.add('animate-spin');
+                    setParseProgress(0);
+                    const outPath = await window.mduDebug.parseCanLogPython(filePath);
+                    setParseProgress(null);
+                    if(btn) btn.classList.remove('animate-spin');
+                    alert(`Successfully parsed and saved to:\n${outPath}`);
+                    scanFolder();
+                  }
+                } catch (e) {
+                  const btn = document.getElementById('parse-can-btn-icon');
+                  if(btn) btn.classList.remove('animate-spin');
+                  setParseProgress(null);
+                  alert(`Parse failed: ${e.message}`);
+                }
+              }} 
+              style={{ padding: '0.25rem 0.5rem', display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.8rem' }}
+            >
+              <RefreshCw size={14} id="parse-can-btn-icon" />
+              <span>Parse Raw CAN</span>
+            </button>
+            {parseProgress !== null && (
+              <span style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: 'bold' }}>
+                {parseProgress.toFixed(0)}%
+              </span>
+            )}
           </div>
         )}
 

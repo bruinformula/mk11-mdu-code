@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { flattenTelemetryData } from '../utils/signals';
 
 const TelemetryContext = createContext(null);
 
@@ -34,17 +33,38 @@ const initialSignalState = {
   'tspmu[1].temps[0]': 0.0, 'tspmu[1].temps[1]': 0.0, 'tspmu[1].temps[2]': 0.0, 'tspmu[1].temps[3]': 0.0,
 
   // TSHMU
-  'tshmu.flow1': 0.0, 'tshmu.flow2': 0.0, 'tshmu.jitter_us': 0, 'tshmu.error_flags': 0,
+  'tshmu[0].flow1': 0.0, 'tshmu[0].flow2': 0.0, 'tshmu[0].jitter_us': 0, 'tshmu[0].error_flags': 0,
+  'tshmu[1].flow1': 0.0, 'tshmu[1].flow2': 0.0, 'tshmu[1].jitter_us': 0, 'tshmu[1].error_flags': 0,
 
-  // BMS & Inverter
-  'bms.v': 0.0, 'bms.i': 0.0, 'bms.soc': 0.0, 'bms.avg_t': 0.0, 'bms.hi_t': 0.0, 'bms.lo_t': 0.0,
-  'bms.avg_cv': 0.0, 'bms.hi_cv': 0.0, 'bms.lo_cv': 0.0,
-  'inv.mot_t': 0.0, 'inv.cool_t': 0.0, 'inv.tq_cmd': 0.0, 'inv.tq_fb': 0.0, 'inv.idc': 0.0, 'inv.rpm': 0.0,
-  'inv.vdc': 0.0,
+  // Inverter New Signals
+  'inv.all.control_board_temp': 0.0, 'inv.all.rtd1_temp': 0.0, 'inv.all.rtd2_temp': 0.0, 'inv.all.stall_burst_model_temp': 0.0,
+  'inv.all.analog1': 0.0, 'inv.all.analog2': 0.0, 'inv.all.analog3': 0.0, 'inv.all.analog4': 0.0, 'inv.all.analog5': 0.0, 'inv.all.analog6': 0.0,
+  'inv.all.dig1': 0, 'inv.all.dig2': 0, 'inv.all.dig3': 0, 'inv.all.dig4': 0, 'inv.all.dig5': 0, 'inv.all.dig6': 0, 'inv.all.dig7': 0, 'inv.all.dig8': 0,
+  'inv.all.vd_ff': 0.0, 'inv.all.vq_ff': 0.0, 'inv.all.id': 0.0, 'inv.all.iq': 0.0,
+  'inv.all.ref_voltage_1_5': 0.0, 'inv.all.ref_voltage_2_5': 0.0, 'inv.all.ref_voltage_5_0': 0.0, 'inv.all.ref_voltage_12_0': 0.0,
+  'inv.all.post_fault_lo': 0, 'inv.all.post_fault_hi': 0, 'inv.all.run_fault_lo': 0, 'inv.all.run_fault_hi': 0,
+  'inv.all.modulation_index': 0.0, 'inv.all.flux_weakening_output': 0.0, 'inv.all.id_command': 0.0, 'inv.all.iq_command': 0.0,
+  'inv.all.eeprom_ver': 0, 'inv.all.sw_ver': 0, 'inv.all.date_mmdd': 0, 'inv.all.date_yyyy': 0,
+  'inv.all.diag_record': 0,
+  'inv.all.torque_cap_motor': 0.0, 'inv.all.torque_cap_regen': 0.0,
+  'inv.cmd.torque_command': 0.0, 'inv.cmd.speed_command': 0.0, 'inv.cmd.direction_command': 0, 'inv.cmd.inverter_enable': 0, 'inv.cmd.inverter_discharge': 0, 'inv.cmd.speed_mode': 0, 'inv.cmd.torque_limit_command': 0.0,
+
+  // BMS New
+  'bms.max_discharge': 0.0, 'bms.max_charge': 0.0, 'bms.precharge_complete': 0,
+
+  // VCU New
+  'vcu.all.calc_vehicle_speed': 0, 'vcu.all.requested_torque': 0, 'vcu.all.apps1_as_percent': 0, 'vcu.all.apps2_as_percent': 0, 'vcu.all.bse_as_percent': 0,
+  'vcu.all.imd_fault': 0, 'vcu.all.rtd_state': 0, 'vcu.all.precharge_relay_state': 0, 'vcu.all.air_pos_relay_state': 0, 'vcu.all.air_neg_relay_state': 0,
+  'vcu.all.cooling_enable': 0, 'vcu.all.tractive_fan_pwm': 0, 'vcu.all.tractive_pump_pwm': 0, 'vcu.all.accy_fan_pwm': 0, 'vcu.all.precharge_cmd': 0,
+
+  // Fusebox New
+  'fusebox.all.fusebox_state': 0, 'fusebox.all.dcdc_voltage': 0.0, 'fusebox.all.battery_voltage': 0.0, 'fusebox.all.lvb_soc': 0, 'fusebox.all.dcdc_temp': 0.0,
+  'fusebox.all.accy_fan_power': 0.0, 'fusebox.all.tractive_fan_power': 0.0, 'fusebox.all.tractive_pumps_power': 0.0, 'fusebox.all.charging_power': 0.0,
+  'fusebox.all.ambient_temp': 0.0,
 };
 
 function decodeStandardCan(id, dataBytes) {
-  if (!dataBytes || dataBytes.length < 8) return null;
+  if (!dataBytes || dataBytes.length === 0) return null;
   
   function toSigned16(value) {
     return value > 32767 ? value - 65536 : value;
@@ -123,6 +143,172 @@ function decodeStandardCan(id, dataBytes) {
       'inv.tq_fb': toSigned16(dataBytes[6] | (dataBytes[7] << 8)) / 10,
     };
   }
+  // IMU simple frames — accel (0x4F5, 0x4F7, 0x4F9) and attitude (0x4F6, 0x4F8, 0x4FA)
+  if (id >= 0x4F5 && id <= 0x4FA && dataBytes.length >= 6) {
+    const boardIdx = (id - 0x4F5) >> 1;
+    const isAccel  = ((id - 0x4F5) & 1) === 0;
+    const key = `imu[${boardIdx}]`;
+    if (isAccel) {
+      const ax = toSigned16(dataBytes[0] | (dataBytes[1] << 8)) / 1000.0;
+      const ay = toSigned16(dataBytes[2] | (dataBytes[3] << 8)) / 1000.0;
+      const az = toSigned16(dataBytes[4] | (dataBytes[5] << 8)) / 1000.0;
+      const out = { [`${key}.ax`]: ax, [`${key}.ay`]: ay, [`${key}.az`]: az };
+      if (boardIdx === 0) { out['imu.ax'] = ax; out['imu.ay'] = ay; out['imu.az'] = az; }
+      return out;
+    } else {
+      const pitch = toSigned16(dataBytes[0] | (dataBytes[1] << 8)) / 100.0;
+      const roll  = toSigned16(dataBytes[2] | (dataBytes[3] << 8)) / 100.0;
+      const yaw   = toSigned16(dataBytes[4] | (dataBytes[5] << 8)) / 100.0;
+      const out = { [`${key}.pitch`]: pitch, [`${key}.roll`]: roll, [`${key}.yaw`]: yaw };
+      if (boardIdx === 0) { out['imu.pitch'] = pitch; out['imu.roll'] = roll; out['imu.yaw'] = yaw; }
+      return out;
+    }
+  }
+
+  // --- NEW SIGNALS FROM BFR_DRIVE_BUS ---
+
+  if (id === 161) {
+    return {
+      'inv.all.control_board_temp': toSigned16(dataBytes[0] | (dataBytes[1] << 8)) / 10,
+      'inv.all.rtd1_temperature': toSigned16(dataBytes[2] | (dataBytes[3] << 8)) / 10,
+      'inv.all.rtd2_temperature': toSigned16(dataBytes[4] | (dataBytes[5] << 8)) / 10,
+      'inv.all.stall_burst_model_temp': toSigned16(dataBytes[6] | (dataBytes[7] << 8)) / 10,
+    };
+  }
+  if (id === 163) {
+    const a1 = ((dataBytes[0] | (dataBytes[1] << 8)) & 0x3FF) / 100;
+    const a2 = (((dataBytes[1] >> 2) | (dataBytes[2] << 6)) & 0x3FF) / 100;
+    const a3 = (((dataBytes[2] >> 4) | (dataBytes[3] << 4)) & 0x3FF) / 100;
+    const a4 = ((dataBytes[4] | (dataBytes[5] << 8)) & 0x3FF) / 100;
+    const a5 = (((dataBytes[5] >> 2) | (dataBytes[6] << 6)) & 0x3FF) / 100;
+    const a6 = (((dataBytes[6] >> 4) | (dataBytes[7] << 4)) & 0x3FF) / 100;
+    return {
+      'inv.all.analog_input_1': a1, 'inv.all.analog_input_2': a2, 'inv.all.analog_input_3': a3,
+      'inv.all.analog_input_4': a4, 'inv.all.analog_input_5': a5, 'inv.all.analog_input_6': a6,
+    };
+  }
+  if (id === 164) {
+    return {
+      'inv.all.digital_input_1': dataBytes[0] & 1, 'inv.all.digital_input_2': dataBytes[1] & 1,
+      'inv.all.digital_input_3': dataBytes[2] & 1, 'inv.all.digital_input_4': dataBytes[3] & 1,
+      'inv.all.digital_input_5': dataBytes[4] & 1, 'inv.all.digital_input_6': dataBytes[5] & 1,
+      'inv.all.digital_input_7': dataBytes[6] & 1, 'inv.all.digital_input_8': dataBytes[7] & 1,
+    };
+  }
+  if (id === 168) {
+    return {
+      'inv.all.vd_ff': toSigned16(dataBytes[0] | (dataBytes[1] << 8)) / 10,
+      'inv.all.vq_ff': toSigned16(dataBytes[2] | (dataBytes[3] << 8)) / 10,
+      'inv.all.id': toSigned16(dataBytes[4] | (dataBytes[5] << 8)) / 10,
+      'inv.all.iq': toSigned16(dataBytes[6] | (dataBytes[7] << 8)) / 10,
+    };
+  }
+  if (id === 169) {
+    return {
+      'inv.all.ref_voltage_1_5': toSigned16(dataBytes[0] | (dataBytes[1] << 8)) / 100,
+      'inv.all.ref_voltage_2_5': toSigned16(dataBytes[2] | (dataBytes[3] << 8)) / 100,
+      'inv.all.ref_voltage_5_0': toSigned16(dataBytes[4] | (dataBytes[5] << 8)) / 100,
+      'inv.all.ref_voltage_12_0': toSigned16(dataBytes[6] | (dataBytes[7] << 8)) / 100,
+    };
+  }
+  if (id === 171) {
+    return {
+      'inv.all.post_fault_lo': dataBytes[0] | (dataBytes[1] << 8),
+      'inv.all.post_fault_hi': dataBytes[2] | (dataBytes[3] << 8),
+      'inv.all.run_fault_lo': dataBytes[4] | (dataBytes[5] << 8),
+      'inv.all.run_fault_hi': dataBytes[6] | (dataBytes[7] << 8),
+    };
+  }
+  if (id === 173) {
+    return {
+      'inv.all.modulation_index': toSigned16(dataBytes[0] | (dataBytes[1] << 8)) / 10000,
+      'inv.all.flux_weakening_output': toSigned16(dataBytes[2] | (dataBytes[3] << 8)) / 10,
+      'inv.all.id_command': toSigned16(dataBytes[4] | (dataBytes[5] << 8)) / 10,
+      'inv.all.iq_command': toSigned16(dataBytes[6] | (dataBytes[7] << 8)) / 10,
+    };
+  }
+  if (id === 174) {
+    return {
+      'inv.all.eeprom_ver': dataBytes[0] | (dataBytes[1] << 8),
+      'inv.all.sw_ver': dataBytes[2] | (dataBytes[3] << 8),
+      'inv.all.date_mmdd': dataBytes[4] | (dataBytes[5] << 8),
+      'inv.all.date_yyyy': dataBytes[6] | (dataBytes[7] << 8),
+    };
+  }
+  if (id === 175) {
+    return { 'inv.all.diag_record': dataBytes[0] };
+  }
+  if (id === 177) {
+    return {
+      'inv.all.torque_cap_motor': toSigned16(dataBytes[0] | (dataBytes[1] << 8)) / 10,
+      'inv.all.torque_cap_regen': toSigned16(dataBytes[2] | (dataBytes[3] << 8)) / 10,
+    };
+  }
+  if (id === 192) {
+    return {
+      'inv.cmd.torque_command': toSigned16(dataBytes[0] | (dataBytes[1] << 8)) / 10,
+      'inv.cmd.speed_command': toSigned16(dataBytes[2] | (dataBytes[3] << 8)),
+      'inv.cmd.direction_command': dataBytes[4] & 1,
+      'inv.cmd.inverter_enable': (dataBytes[5] & 1),
+      'inv.cmd.inverter_discharge': (dataBytes[5] >> 1) & 1,
+      'inv.cmd.speed_mode': (dataBytes[5] >> 2) & 1,
+      'inv.cmd.torque_limit_command': toSigned16(dataBytes[6] | (dataBytes[7] << 8)) / 10,
+    };
+  }
+  if (id === 514) {
+    return {
+      'bms.max_discharge': (dataBytes[0] | (dataBytes[1] << 8)),
+      'bms.max_charge': (dataBytes[2] | (dataBytes[3] << 8)),
+    };
+  }
+  if (id === 1715) {
+    return { 'bms.precharge_complete': dataBytes[0] & 1 };
+  }
+  if (id === 1280) {
+    return {
+      'vcu.all.calc_vehicle_speed': toSigned16(dataBytes[0] | (dataBytes[1] << 8)),
+      'vcu.all.requested_torque': toSigned16(dataBytes[2] | (dataBytes[3] << 8)),
+      'vcu.all.apps1_as_percent': (dataBytes[4] > 127 ? dataBytes[4] - 256 : dataBytes[4]),
+      'vcu.all.apps2_as_percent': (dataBytes[5] > 127 ? dataBytes[5] - 256 : dataBytes[5]),
+      'vcu.all.bse_as_percent': (dataBytes[6] > 127 ? dataBytes[6] - 256 : dataBytes[6]),
+      'vcu.all.imd_fault': dataBytes[7] & 1,
+      'vcu.all.rtd_state': (dataBytes[7] >> 1) & 1,
+      'vcu.all.precharge_relay_state': (dataBytes[7] >> 2) & 1,
+      'vcu.all.air_pos_relay_state': (dataBytes[7] >> 3) & 1,
+      'vcu.all.air_neg_relay_state': (dataBytes[7] >> 4) & 1,
+    };
+  }
+  if (id === 1281) {
+    return {
+      'vcu.all.cooling_enable': dataBytes[0],
+      'vcu.all.tractive_fan_pwm': dataBytes[1],
+      'vcu.all.tractive_pump_pwm': dataBytes[2],
+      'vcu.all.accy_fan_pwm': dataBytes[3],
+    };
+  }
+  if (id === 1282) {
+    return { 'vcu.all.precharge_cmd': dataBytes[0] };
+  }
+  if (id === 1264) {
+    return {
+      'fusebox.all.fusebox_state': dataBytes[0],
+      'fusebox.all.dcdc_voltage': (dataBytes[1] | (dataBytes[2] << 8)),
+      'fusebox.all.battery_voltage': (dataBytes[3] | (dataBytes[4] << 8)),
+      'fusebox.all.lvb_soc': dataBytes[5],
+      'fusebox.all.dcdc_temp': dataBytes[6] * 10,
+    };
+  }
+  if (id === 1265) {
+    return {
+      'fusebox.all.accy_fan_power': (dataBytes[0] | (dataBytes[1] << 8)) * 100,
+      'fusebox.all.tractive_fan_power': (dataBytes[2] | (dataBytes[3] << 8)) * 100,
+      'fusebox.all.tractive_pumps_power': (dataBytes[4] | (dataBytes[5] << 8)) * 100,
+      'fusebox.all.charging_power': (dataBytes[6] | (dataBytes[7] << 8)) * 100,
+    };
+  }
+  if (id === 1266) {
+    return { 'fusebox.all.ambient_temp': dataBytes[0] };
+  }
   return null;
 }
 
@@ -146,10 +332,10 @@ function updateStateFromBoard(state, board, id, dataBytes) {
         state[`sdu[${bid}].tire[3]`] = board.tireC.ambient;
       }
     } else if (bt === 4) { // TSHMU
-      if (board.flow1 !== undefined) state['tshmu.flow1'] = board.flow1;
-      if (board.flow2 !== undefined) state['tshmu.flow2'] = board.flow2;
-      if (board.jitter !== undefined) state['tshmu.jitter_us'] = board.jitter;
-      if (board.errorFlags !== undefined) state['tshmu.error_flags'] = board.errorFlags;
+      if (board.flow1 !== undefined) state[`tshmu[${bid}].flow1`] = board.flow1;
+      if (board.flow2 !== undefined) state[`tshmu[${bid}].flow2`] = board.flow2;
+      if (board.jitter !== undefined) state[`tshmu[${bid}].jitter_us`] = board.jitter;
+      if (board.errorFlags !== undefined) state[`tshmu[${bid}].error_flags`] = board.errorFlags;
     } else if (bt === 6) { // TSPMU
       if (board.pressure1 !== undefined) state[`tspmu[${bid}].p1`] = board.pressure1;
       if (board.pressure2 !== undefined) state[`tspmu[${bid}].p2`] = board.pressure2;
@@ -233,6 +419,15 @@ export function TelemetryProvider({ children }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // Playback engine state
+  const [isReplaying, setIsReplaying] = useState(false);
+  const [playbackTime, setPlaybackTime] = useState(0);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [playbackDuration, setPlaybackDuration] = useState(0);
+  const [isRawCanDataset, setIsRawCanDataset] = useState(false);
+  const [playbackDataset, setPlaybackDataset] = useState([]);
+  const playbackRef = useRef({ lastRealTime: 0, lastIndexSent: 0, lastBinTime: 0 });
+
   // Live monitor statistics
   const [availablePorts, setAvailablePorts] = useState([]);
   const [connectionState, setConnectionState] = useState({ connected: false, port: null, baudRate: 115200 });
@@ -259,6 +454,10 @@ export function TelemetryProvider({ children }) {
   const liveStartMsRef = useRef(0);
   const liveIntervalRef = useRef(null);
 
+  // Tracks whether the USB/serial transport is currently connected.
+  // Used by WiFi-side stop logic to avoid killing the binning loop while USB is still streaming.
+  const serialConnectedRef = useRef(false);
+
   // WiFi Telemetry Refs
   const wsRef = useRef(null);
   const reconnectTimerRef = useRef(null);
@@ -269,6 +468,30 @@ export function TelemetryProvider({ children }) {
   const lastMessageAtRef = useRef(0);
   const targetIpRef = useRef('');
 
+  const reverseRenameKey = (key) => {
+    if (key === 'ts' || key === 'id_dec' || key === 'data_hex') return key;
+    
+    // Reverse physical locations back to array indices
+    const boardPositions = { 'FL': 0, 'FR': 1, 'RL': 2, 'RR': 3 };
+    const m = key.match(/^([A-Z0-9]+)_(SDU|TSPMU|TSHMU)_(.*)$/);
+    if (m) {
+      const pos = m[1];
+      const prefix = m[2].toLowerCase();
+      const rest = m[3].toLowerCase();
+      
+      let idx = boardPositions[pos];
+      if (idx === undefined && pos.startsWith('B')) {
+        idx = parseInt(pos.substring(1));
+      }
+      
+      if (idx !== undefined) {
+        return `${prefix}[${idx}].${rest}`;
+      }
+    }
+    
+    return key.toLowerCase();
+  };
+
   // Load a file for playback
   const loadRunFile = async (filePath) => {
     setLoading(true);
@@ -276,14 +499,47 @@ export function TelemetryProvider({ children }) {
     try {
       const data = await window.mduDebug.parseTelemetryFile(filePath);
       if (data && data.length > 0) {
-        // Filter out dummy/initialization rows with zero or very low timestamps
-        const cleanedData = data.filter(row => {
-          const ts = parseFloat(row.ts);
-          return !isNaN(ts) && ts > 1000000.0;
+        // Reverse map keys back to internal UI format
+        const mappedData = data.map(row => {
+          const newRow = {};
+          for (const [k, v] of Object.entries(row)) {
+            newRow[reverseRenameKey(k)] = v;
+          }
+          return newRow;
         });
-        setActiveDataset(cleanedData.length > 0 ? cleanedData : data);
+
+        // Filter out dummy/initialization rows with zero or very low timestamps
+        const cleanedData = mappedData.filter(row => {
+          const ts = parseFloat(row.ts);
+          return !isNaN(ts) && ts > 1000000.0; // Filter timestamps (e.g. posix timestamp or large uptime)
+        });
+        
+        // If no valid timestamps found with the 1 million filter, just use the raw data (might be seconds from 0)
+        let finalData = cleanedData.length > 0 ? cleanedData : mappedData;
+        
+        // Ensure sorted by time
+        finalData.sort((a, b) => parseFloat(a.ts || 0) - parseFloat(b.ts || 0));
+
+        // Robustly detect raw CAN datasets by checking headers, rather than relying on filename
+        const isRaw = (finalData.length > 0 && finalData[0].id_dec !== undefined && finalData[0].data_hex !== undefined) || filePath.toUpperCase().includes('_CAN.CSV');
+        setIsRawCanDataset(isRaw);
+        setActiveDataset(finalData);
         setCurrentFilePath(filePath);
         setIsLiveMode(false);
+        setIsReplaying(false);
+        setPlaybackTime(0);
+        setPlaybackDataset([]);
+        liveBufferRef.current = [];
+        playbackRef.current = { lastRealTime: 0, lastIndexSent: 0, lastBinTime: 0, time: 0 };
+        
+        if (finalData.length > 1) {
+          const start = parseFloat(finalData[0].ts || 0);
+          const end = parseFloat(finalData[finalData.length - 1].ts || 0);
+          setPlaybackDuration(end - start);
+        } else {
+          setPlaybackDuration(0);
+        }
+        
       } else {
         setError('Parsed file was empty.');
       }
@@ -493,8 +749,9 @@ export function TelemetryProvider({ children }) {
     stopHealthMonitor();
     closeSocket();
 
-    // Disconnect serial if it is active
-    window.mduDebug.disconnect();
+    // NOTE: We intentionally do NOT disconnect the USB serial port here.
+    // Both the USB (MDU binary frames) and WiFi (CAN bus frames) transports
+    // run simultaneously and merge into the same latestStateRef.
 
     targetIpRef.current = nextIp;
     setTargetIp(nextIp);
@@ -526,23 +783,33 @@ export function TelemetryProvider({ children }) {
       }
     };
 
-    socket.onmessage = (event) => {
+    socket.onmessage = async (event) => {
       if (generation !== connectGenerationRef.current) return;
       try {
-        const json = JSON.parse(event.data);
-        const flat = flattenTelemetryData(json);
-        Object.assign(latestStateRef.current, flat);
+        const rawPayload = JSON.parse(event.data);
+        const frames = Array.isArray(rawPayload) ? rawPayload : [rawPayload];
+        
+        // Use the batched IPC call for much higher throughput
+        const parsedFrames = await window.mduDebug.parseWifiFrames(frames);
+        for (const parsedFrame of parsedFrames) {
+          if (parsedFrame && parsedFrame.ok) {
+            updateStateFromBoard(
+              latestStateRef.current,
+              parsedFrame.board,
+              parsedFrame.identifier,
+              parsedFrame.dataBytes,
+            );
+          }
+        }
+        
         lastMessageAtRef.current = Date.now();
         setWifiState('connected');
         setWifiMessage(`Streaming from ${nextIp}.`);
-        if (json.log !== undefined) {
-          setIsWifiLogging(Boolean(json.log));
-        }
         if (logStatusRef.current.active) {
           window.mduDebug.logWiFiFrame({
-            type: 'wifi_snapshot',
+            type: 'wifi_raw_frame',
             timestamp: new Date().toISOString(),
-            flat
+            frame: rawPayload,
           });
         }
       } catch (err) {
@@ -605,36 +872,34 @@ export function TelemetryProvider({ children }) {
     const unsubConnection = window.mduDebug.onConnection((conn) => {
       setConnectionState(conn || { connected: false, port: null, baudRate: 115200 });
       
-      // If connected, start the live binning loop
       if (conn.connected) {
+        // USB/serial just connected (or re-connected).
+        // Mark as primary transport for the UI label, but do NOT kill WiFi —
+        // both streams run simultaneously and merge into latestStateRef.
+        serialConnectedRef.current = true;
         setActiveTransport('serial');
-        disconnectWifi(); // Disconnect wifi if serial connects
-        
         setIsLiveMode(true);
-        liveStartMsRef.current = Date.now();
-        liveBufferRef.current = [];
-        latestStateRef.current = { ...initialSignalState };
-        
-        if (liveIntervalRef.current) clearInterval(liveIntervalRef.current);
-        liveIntervalRef.current = setInterval(() => {
-          const nowMs = Date.now();
-          const tsSeconds = (nowMs - liveStartMsRef.current) / 1000;
-          
-          const row = {
-            ts: tsSeconds.toFixed(3),
-            ...latestStateRef.current
-          };
-          
-          liveBufferRef.current.push(row);
-          if (liveBufferRef.current.length > 2000) {
-            liveBufferRef.current.shift();
-          }
-          
-          setLatestValues({ ...latestStateRef.current });
-          setActiveDataset([...liveBufferRef.current]);
-        }, 100);
+
+        // Only reset the buffer/state when the binning loop isn't already running
+        // (e.g. WiFi was already streaming — just let USB data merge in).
+        if (!liveIntervalRef.current) {
+          liveStartMsRef.current = Date.now();
+          liveBufferRef.current = [];
+          latestStateRef.current = { ...initialSignalState };
+
+          liveIntervalRef.current = setInterval(() => {
+            const nowMs = Date.now();
+            const tsSeconds = (nowMs - liveStartMsRef.current) / 1000;
+            liveBufferRef.current.push({ ts: tsSeconds.toFixed(3), ...latestStateRef.current });
+            if (liveBufferRef.current.length > 2000) liveBufferRef.current.shift();
+            setLatestValues({ ...latestStateRef.current });
+            setActiveDataset([...liveBufferRef.current]);
+          }, 100);
+        }
       } else {
-        if (liveIntervalRef.current && activeTransport === 'serial') {
+        // USB/serial disconnected — only stop the binning loop if WiFi is also down.
+        serialConnectedRef.current = false;
+        if (liveIntervalRef.current && !wsRef.current) {
           clearInterval(liveIntervalRef.current);
           liveIntervalRef.current = null;
         }
@@ -649,8 +914,10 @@ export function TelemetryProvider({ children }) {
       setLogStatus(status || { active: false, filePath: null, linesWritten: 0, bytesWritten: 0 });
     });
 
+    // Always process USB frames regardless of which transport is "active".
+    // Both USB and WiFi streams write into the same latestStateRef concurrently.
     const unsubFrames = window.mduDebug.onFrames((frames) => {
-      if (Array.isArray(frames) && activeTransport === 'serial') {
+      if (Array.isArray(frames)) {
         for (const frame of frames) {
           if (frame && frame.ok) {
             updateStateFromBoard(
@@ -665,7 +932,7 @@ export function TelemetryProvider({ children }) {
     });
 
     const unsubWifiSnapshot = window.mduDebug.onWifiSnapshot((snapshot) => {
-      if (snapshot && snapshot.flat && activeTransport === 'serial') {
+      if (snapshot && snapshot.flat) {
         Object.assign(latestStateRef.current, snapshot.flat);
       }
     });
@@ -682,41 +949,38 @@ export function TelemetryProvider({ children }) {
       unsubWifiSnapshot();
       if (liveIntervalRef.current) clearInterval(liveIntervalRef.current);
     };
-  }, [activeTransport]);
+  }, []);
 
-  // WiFi binning setup effect: when WiFi gets connected, we start a similar 10Hz binning loop!
+  // WiFi binning setup effect: when WiFi connects, start (or keep) the 10 Hz binning loop.
+  // When WiFi disconnects, only stop the loop if USB/serial is also down.
   useEffect(() => {
     if (wifiState === 'connected') {
       setIsLiveMode(true);
-      liveStartMsRef.current = Date.now();
-      liveBufferRef.current = [];
-      latestStateRef.current = { ...initialSignalState };
 
-      if (liveIntervalRef.current) clearInterval(liveIntervalRef.current);
-      liveIntervalRef.current = setInterval(() => {
-        const nowMs = Date.now();
-        const tsSeconds = (nowMs - liveStartMsRef.current) / 1000;
-        
-        const row = {
-          ts: tsSeconds.toFixed(3),
-          ...latestStateRef.current
-        };
-        
-        liveBufferRef.current.push(row);
-        if (liveBufferRef.current.length > 2000) {
-          liveBufferRef.current.shift();
-        }
-        
-        setLatestValues({ ...latestStateRef.current });
-        setActiveDataset([...liveBufferRef.current]);
-      }, 100);
+      // Only reset the buffer/state when the binning loop isn't already running
+      // (e.g. USB was already streaming — just let WiFi CAN data merge in).
+      if (!liveIntervalRef.current) {
+        liveStartMsRef.current = Date.now();
+        liveBufferRef.current = [];
+        latestStateRef.current = { ...initialSignalState };
+
+        liveIntervalRef.current = setInterval(() => {
+          const nowMs = Date.now();
+          const tsSeconds = (nowMs - liveStartMsRef.current) / 1000;
+          liveBufferRef.current.push({ ts: tsSeconds.toFixed(3), ...latestStateRef.current });
+          if (liveBufferRef.current.length > 2000) liveBufferRef.current.shift();
+          setLatestValues({ ...latestStateRef.current });
+          setActiveDataset([...liveBufferRef.current]);
+        }, 100);
+      }
     } else {
-      if (liveIntervalRef.current && activeTransport === 'wifi') {
+      // WiFi dropped — only stop the binning loop if USB is also disconnected.
+      if (liveIntervalRef.current && !serialConnectedRef.current) {
         clearInterval(liveIntervalRef.current);
         liveIntervalRef.current = null;
       }
     }
-  }, [wifiState, activeTransport]);
+  }, [wifiState]);
 
   // Try auto-connecting WiFi on mount
   useEffect(() => {
@@ -747,7 +1011,8 @@ export function TelemetryProvider({ children }) {
   }, []);
 
   const connectSerial = async (portPath, baudRate) => {
-    disconnectWifi(); // Disconnect wifi if connecting to serial
+    // NOTE: We intentionally do NOT disconnect WiFi here.
+    // USB (MDU binary frames) and WiFi (CAN frames) run concurrently.
     return await window.mduDebug.connect({ path: portPath, baudRate: parseInt(baudRate, 10) });
   };
 
@@ -776,6 +1041,161 @@ export function TelemetryProvider({ children }) {
     setCurrentFilePath('');
   };
 
+  const seekTime = (t) => {
+    playbackRef.current.time = t;
+    playbackRef.current.lastBinTime = t;
+    setPlaybackTime(t);
+
+    if (!activeDataset || activeDataset.length === 0) return;
+
+    const startTs = parseFloat(activeDataset[0].ts || 0);
+    const targetTs = startTs + t;
+
+    let bestIndex = 0;
+    for (let i = 0; i < activeDataset.length; i++) {
+      if (parseFloat(activeDataset[i].ts) >= targetTs) {
+        bestIndex = i;
+        break;
+      }
+      bestIndex = i;
+    }
+
+    playbackRef.current.lastIndexSent = bestIndex > 0 ? bestIndex - 1 : 0;
+
+    if (bestIndex >= 0 && bestIndex < activeDataset.length) {
+      Object.assign(latestStateRef.current, activeDataset[bestIndex]);
+      setLatestValues({ ...latestStateRef.current });
+      
+      const bufferStartIdx = Math.max(0, bestIndex - 2000);
+      liveBufferRef.current = activeDataset.slice(bufferStartIdx, bestIndex + 1);
+      setPlaybackDataset([...liveBufferRef.current]);
+    }
+  };
+
+  // Replay Engine Loop
+  useEffect(() => {
+    if (!isReplaying || isLiveMode || !activeDataset || activeDataset.length === 0) return;
+
+    const startRealTime = performance.now();
+    const startLogTime = playbackRef.current.time;
+    let animationFrameId;
+    let isCancelled = false;
+
+    const tick = async () => {
+      if (isCancelled) return;
+      
+      const now = performance.now();
+      const elapsedRealSeconds = (now - startRealTime) / 1000.0;
+      
+      let newTime = startLogTime + (elapsedRealSeconds * playbackSpeed);
+      
+      if (newTime >= playbackDuration) {
+        newTime = playbackDuration;
+        setIsReplaying(false);
+      }
+
+      const startTs = parseFloat(activeDataset[0].ts || 0);
+      const endTsTarget = startTs + newTime;
+      const startTsTarget = startTs + playbackRef.current.time;
+
+      if (isRawCanDataset) {
+        let startIndex = playbackRef.current.lastIndexSent;
+        if (startIndex > 0 && parseFloat(activeDataset[startIndex].ts) > startTsTarget) {
+          startIndex = 0; // handle backwards scrubbing
+        }
+
+        const framesToParse = [];
+        let i = startIndex;
+        for (; i < activeDataset.length; i++) {
+          const row = activeDataset[i];
+          const rowTs = parseFloat(row.ts);
+          if (rowTs > endTsTarget) break;
+          if (rowTs >= startTsTarget) {
+            framesToParse.push({ id: parseInt(row.id_dec), d: row.data_hex });
+          }
+        }
+        playbackRef.current.lastIndexSent = i;
+
+        if (framesToParse.length > 0) {
+          try {
+            const parsedFrames = await window.mduDebug.parseWifiFrames(framesToParse);
+            if (isCancelled) return;
+            for (const parsedFrame of parsedFrames) {
+              if (parsedFrame && parsedFrame.ok) {
+                updateStateFromBoard(
+                  latestStateRef.current,
+                  parsedFrame.board,
+                  parsedFrame.identifier,
+                  parsedFrame.dataBytes
+                );
+              }
+            }
+            setLatestValues({ ...latestStateRef.current });
+          } catch (err) {
+            console.error('Replay parsing error', err);
+          }
+        }
+      } else {
+        // Fallback for pre-parsed DECODED.csv datasets
+        let closestRow = null;
+        let minDiff = Infinity;
+        let startIndex = playbackRef.current.lastIndexSent;
+        if (startIndex > 0 && parseFloat(activeDataset[startIndex].ts) > startTsTarget) {
+          startIndex = 0;
+        }
+        
+        let i = startIndex;
+        let bestIndex = startIndex;
+        for (; i < activeDataset.length; i++) {
+          const diff = Math.abs(parseFloat(activeDataset[i].ts) - endTsTarget);
+          if (diff < minDiff) {
+            minDiff = diff;
+            closestRow = activeDataset[i];
+            bestIndex = i;
+          }
+          if (parseFloat(activeDataset[i].ts) > endTsTarget) {
+             break;
+          }
+        }
+        // Save bestIndex so we don't accidentally skip ahead by breaking early
+        playbackRef.current.lastIndexSent = bestIndex > 0 ? bestIndex - 1 : 0;
+        
+        if (closestRow) {
+          Object.assign(latestStateRef.current, closestRow);
+          setLatestValues({ ...latestStateRef.current });
+        }
+      }
+
+      if (!isCancelled) {
+        playbackRef.current.time = newTime;
+        setPlaybackTime(newTime);
+        
+        // Bin into the playback dataset for sliding-window charts
+        if (newTime - playbackRef.current.lastBinTime >= 0.1 || newTime < playbackRef.current.lastBinTime) {
+          if (newTime < playbackRef.current.lastBinTime) {
+             // User scrubbed backwards; clear the buffer
+             liveBufferRef.current = [];
+          }
+          playbackRef.current.lastBinTime = newTime;
+          liveBufferRef.current.push({ ts: endTsTarget.toFixed(3), ...latestStateRef.current });
+          if (liveBufferRef.current.length > 2000) liveBufferRef.current.shift();
+          setPlaybackDataset([...liveBufferRef.current]);
+        }
+      }
+      
+      if (newTime < playbackDuration && !isCancelled) {
+        animationFrameId = requestAnimationFrame(tick);
+      }
+    };
+
+    animationFrameId = requestAnimationFrame(tick);
+
+    return () => {
+      isCancelled = true;
+      cancelAnimationFrame(animationFrameId);
+    };
+  }, [isReplaying, playbackSpeed, isLiveMode, activeDataset, playbackDuration, isRawCanDataset]);
+
   return (
     <TelemetryContext.Provider
       value={{
@@ -791,6 +1211,15 @@ export function TelemetryProvider({ children }) {
         connectionState,
         diagnostics,
         logStatus,
+        isRawCanDataset,
+        isReplaying,
+        playbackTime,
+        playbackSpeed,
+        playbackDuration,
+        playbackDataset,
+        setIsReplaying,
+        setPlaybackTime: seekTime,
+        setPlaybackSpeed,
         loadRunFile,
         selectDataFolder,
         scanFolder: () => scanFolder(folderPath),

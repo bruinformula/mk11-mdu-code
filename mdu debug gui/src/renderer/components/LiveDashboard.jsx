@@ -30,6 +30,7 @@ export default function LiveDashboard() {
         const parsed = JSON.parse(saved);
         if (parsed.liveMap === undefined) parsed.liveMap = true;
         if (parsed.boardsHealth === undefined) parsed.boardsHealth = true;
+        if (parsed.powerStats === undefined) parsed.powerStats = true;
         return parsed;
       } catch (e) {}
     }
@@ -38,6 +39,7 @@ export default function LiveDashboard() {
       liveMap: true,
       boardsHealth: true,
       bms: true,
+      powerStats: true,
       inverter: true,
       vcu: true,
       flowPressures: true,
@@ -72,6 +74,7 @@ export default function LiveDashboard() {
   const DEFAULT_CARD_ORDER = [
     'chassis',
     'liveMap',
+    'powerStats',
     'bms',
     'inverter',
     'vcu',
@@ -144,9 +147,11 @@ export default function LiveDashboard() {
   // Pre-calculations for visual widgets
   const soc = Number(latestValues['bms.soc'] || 0);
   const rpm = Number(latestValues['inv.rpm'] || 0);
-  const flow1 = Number(latestValues['tshmu.flow1'] || 0);
-  const flow2 = Number(latestValues['tshmu.flow2'] || 0);
-  const flowAvg = (flow1 + flow2) / 2;
+  const flow1 = Number(latestValues['tshmu[0].flow1'] || 0);
+  const flow2 = Number(latestValues['tshmu[0].flow2'] || 0);
+  const flow3 = Number(latestValues['tshmu[1].flow1'] || 0);
+  const flow4 = Number(latestValues['tshmu[1].flow2'] || 0);
+  const flowAvg = (flow1 + flow2 + flow3 + flow4) / 4;
 
   // Session peak calculations
   const currentHiTemp = Number(latestValues['bms.hi_t'] || 0);
@@ -396,7 +401,8 @@ export default function LiveDashboard() {
     { key: '2-1', name: 'SDU FR', type: 2, id: 1 },
     { key: '2-2', name: 'SDU RL', type: 2, id: 2 },
     { key: '2-3', name: 'SDU RR', type: 2, id: 3 },
-    { key: '4-0', name: 'TSHMU Flow', type: 4, id: 0 },
+    { key: '4-0', name: 'TSHMU Flow 0', type: 4, id: 0 },
+    { key: '4-1', name: 'TSHMU Flow 1', type: 4, id: 1 },
     { key: '6-0', name: 'TSPMU FL', type: 6, id: 0 },
     { key: '6-1', name: 'TSPMU FR', type: 6, id: 1 },
     { key: '7-0', name: 'GPS / SMU', type: 7, id: 0 }
@@ -792,6 +798,29 @@ export default function LiveDashboard() {
                         <strong>{status.drops}</strong>
                       </div>
                     )}
+
+                    {(() => {
+                      if (status.state === 'offline' || status.rate <= 0) return null;
+                      let rates = [];
+                      if (eb.type === 2) { // SDU
+                        const baseFast = status.rate / 2;
+                        rates.push(`Shock: ~${Math.round(baseFast * 19)}Hz`);
+                        rates.push(`Strain: ~${Math.round(baseFast * 5)}Hz`);
+                        rates.push(`Brake: ~${Math.round((baseFast/10) * 19)}Hz`);
+                      } else if (eb.type === 4) { // TSHMU
+                        rates.push(`Flow: ~${Math.round(status.rate * 19)}Hz`);
+                      } else if (eb.type === 6) { // TSPMU
+                        // If TSPMU only has slow frames, rate might be 0, but if we track it:
+                        rates.push(`Tire: ~${Math.round(status.rate * 5)}Hz`);
+                      }
+                      
+                      if (rates.length === 0) return null;
+                      return (
+                        <div style={{ fontSize: '0.5rem', color: '#94a3b8', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '0.2rem', marginTop: '0.2rem', display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                          {rates.map(r => <span key={r} style={{background: 'rgba(0,0,0,0.2)', padding: '0.1rem 0.25rem', borderRadius: '3px', border: '1px solid rgba(255,255,255,0.05)'}}>{r}</span>)}
+                        </div>
+                      );
+                    })()}
                   </div>
                 );
               })}
@@ -869,6 +898,95 @@ export default function LiveDashboard() {
                   Fix: <strong style={{ color: '#00ff7f' }}>{getRtkStatus()}</strong>
                 </span>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* NEW: POWER SYSTEMS PANE */}
+        {visibilities.powerStats && (
+          <div className="glass-panel no-hover"
+            draggable={dragEnabledCard === 'powerStats'}
+            onDragStart={(e) => handleDragStart(e, 'powerStats')}
+            onDragEnd={handleDragEnd}
+            onDragOver={(e) => handleDragOver(e, 'powerStats')}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1rem',
+              border: '1px solid var(--border-color)',
+              order: cardOrder.indexOf('powerStats'),
+              opacity: draggedCardId === 'powerStats' ? 0.4 : 1,
+              transition: 'opacity 0.2s ease'
+            }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                <div 
+                  onMouseDown={() => setDragEnabledCard('powerStats')}
+                  onMouseUp={() => setDragEnabledCard(null)}
+                  style={{ cursor: 'grab', display: 'flex', alignItems: 'center', padding: '0.1rem', color: 'var(--text-secondary)', opacity: 0.6 }}
+                  title="Drag to reorder"
+                >
+                  <GripVertical size={14} />
+                </div>
+                <Activity size={16} className="text-yellow-400" style={{ marginLeft: '0.25rem' }} />
+                <h3 style={{ margin: 0, fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Power Systems</h3>
+              </div>
+              <span style={{ fontSize: '0.7rem', color: 'rgba(255, 255, 255, 0.7)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>HV & LV Overview</span>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              {/* HV Column */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', background: 'rgba(0,0,0,0.2)', padding: '0.75rem', borderRadius: '8px' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#ffb800', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.25rem' }}>HV SYSTEM</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>SOC</span>
+                  <span style={{ fontWeight: 'bold' }}>{val('bms.soc', 0)}%</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>Voltage</span>
+                  <span style={{ fontWeight: 'bold' }}>{val('bms.v', 1)} V</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>Current</span>
+                  <span style={{ fontWeight: 'bold' }}>{val('bms.i', 0)} A</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>Power</span>
+                  <span style={{ fontWeight: 'bold', color: currentPowerKw > 20 ? '#ef4444' : '#10b981' }}>{currentPowerKw.toFixed(1)} kW</span>
+                </div>
+              </div>
+
+              {/* LV Column */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', background: 'rgba(0,0,0,0.2)', padding: '0.75rem', borderRadius: '8px' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#00e5ff', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.25rem' }}>LV SYSTEM</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>SOC</span>
+                  <span style={{ fontWeight: 'bold' }}>{val('fusebox.all.lvb_soc', 0)}%</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>Battery</span>
+                  <span style={{ fontWeight: 'bold' }}>{(Number(latestValues['fusebox.all.battery_voltage'] || 0) / 1000).toFixed(1)} V</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>DCDC</span>
+                  <span style={{ fontWeight: 'bold' }}>{(Number(latestValues['fusebox.all.dcdc_voltage'] || 0) / 1000).toFixed(1)} V</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>DCDC Temp</span>
+                  <span style={{ fontWeight: 'bold' }}>{val('fusebox.all.dcdc_temp', 0)} °C</span>
+                </div>
+              </div>
+            </div>
+            
+            <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
+                <div style={{ flex: 1, display: 'flex', justifyContent: 'space-between', padding: '0.5rem', background: 'rgba(255, 255, 255, 0.03)', borderRadius: '6px' }}>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Tractive Power</span>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>{val('fusebox.all.tractive_pumps_power', 0)} W</span>
+                </div>
+                <div style={{ flex: 1, display: 'flex', justifyContent: 'space-between', padding: '0.5rem', background: 'rgba(255, 255, 255, 0.03)', borderRadius: '6px' }}>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Accy Fan</span>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>{val('fusebox.all.accy_fan_power', 0)} W</span>
+                </div>
             </div>
           </div>
         )}
@@ -1236,14 +1354,16 @@ export default function LiveDashboard() {
             )}
 
             {/* Flow values */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', background: 'rgba(0,0,0,0.15)', padding: '0.5rem', borderRadius: '6px' }}>
               <div>
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Coolant Flow 1</span>
-                <strong style={{ fontSize: '1rem', display: 'block' }}>{val('tshmu.flow1', 1)} L/min</strong>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 600 }}>TSHMU BOARD 0</span>
+                <div style={{ marginTop: '0.2rem' }}>Flow 1: <strong style={{ fontSize: '0.9rem' }}>{val('tshmu[0].flow1', 1)} L/min</strong></div>
+                <div>Flow 2: <strong style={{ fontSize: '0.9rem' }}>{val('tshmu[0].flow2', 1)} L/min</strong></div>
               </div>
               <div>
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Coolant Flow 2</span>
-                <strong style={{ fontSize: '1rem', display: 'block' }}>{val('tshmu.flow2', 1)} L/min</strong>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 600 }}>TSHMU BOARD 1</span>
+                <div style={{ marginTop: '0.2rem' }}>Flow 1: <strong style={{ fontSize: '0.9rem' }}>{val('tshmu[1].flow1', 1)} L/min</strong></div>
+                <div>Flow 2: <strong style={{ fontSize: '0.9rem' }}>{val('tshmu[1].flow2', 1)} L/min</strong></div>
               </div>
             </div>
 

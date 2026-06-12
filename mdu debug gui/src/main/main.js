@@ -301,7 +301,7 @@ function registerIpcHandlers() {
   });
 
   function decodeStandardCan(id, dataBytes) {
-    if (!dataBytes || dataBytes.length < 8) return null;
+    if (!dataBytes || dataBytes.length === 0) return null;
     
     function toSigned16(value) {
       return value > 32767 ? value - 65536 : value;
@@ -380,7 +380,151 @@ function registerIpcHandlers() {
         'inv.tq_fb': toSigned16(dataBytes[6] | (dataBytes[7] << 8)) / 10,
       };
     }
-    return null;
+
+    // --- NEW SIGNALS FROM BFR_DRIVE_BUS ---
+
+    if (id === 161) {
+      return {
+        'inv.all.control_board_temp': toSigned16(dataBytes[0] | (dataBytes[1] << 8)) / 10,
+        'inv.all.rtd1_temperature': toSigned16(dataBytes[2] | (dataBytes[3] << 8)) / 10,
+        'inv.all.rtd2_temperature': toSigned16(dataBytes[4] | (dataBytes[5] << 8)) / 10,
+        'inv.all.stall_burst_model_temp': toSigned16(dataBytes[6] | (dataBytes[7] << 8)) / 10,
+      };
+    }
+    if (id === 163) {
+      const a1 = ((dataBytes[0] | (dataBytes[1] << 8)) & 0x3FF) / 100;
+      const a2 = (((dataBytes[1] >> 2) | (dataBytes[2] << 6)) & 0x3FF) / 100;
+      const a3 = (((dataBytes[2] >> 4) | (dataBytes[3] << 4)) & 0x3FF) / 100;
+      const a4 = ((dataBytes[4] | (dataBytes[5] << 8)) & 0x3FF) / 100;
+      const a5 = (((dataBytes[5] >> 2) | (dataBytes[6] << 6)) & 0x3FF) / 100;
+      const a6 = (((dataBytes[6] >> 4) | (dataBytes[7] << 4)) & 0x3FF) / 100;
+      return {
+        'inv.all.analog_input_1': a1, 'inv.all.analog_input_2': a2, 'inv.all.analog_input_3': a3,
+        'inv.all.analog_input_4': a4, 'inv.all.analog_input_5': a5, 'inv.all.analog_input_6': a6,
+      };
+    }
+    if (id === 164) {
+      return {
+        'inv.all.digital_input_1': dataBytes[0] & 1, 'inv.all.digital_input_2': dataBytes[1] & 1,
+        'inv.all.digital_input_3': dataBytes[2] & 1, 'inv.all.digital_input_4': dataBytes[3] & 1,
+        'inv.all.digital_input_5': dataBytes[4] & 1, 'inv.all.digital_input_6': dataBytes[5] & 1,
+        'inv.all.digital_input_7': dataBytes[6] & 1, 'inv.all.digital_input_8': dataBytes[7] & 1,
+      };
+    }
+    if (id === 168) {
+      return {
+        'inv.all.vd_ff': toSigned16(dataBytes[0] | (dataBytes[1] << 8)) / 10,
+        'inv.all.vq_ff': toSigned16(dataBytes[2] | (dataBytes[3] << 8)) / 10,
+        'inv.all.id': toSigned16(dataBytes[4] | (dataBytes[5] << 8)) / 10,
+        'inv.all.iq': toSigned16(dataBytes[6] | (dataBytes[7] << 8)) / 10,
+      };
+    }
+    if (id === 169) {
+      return {
+        'inv.all.ref_voltage_1_5': toSigned16(dataBytes[0] | (dataBytes[1] << 8)) / 100,
+        'inv.all.ref_voltage_2_5': toSigned16(dataBytes[2] | (dataBytes[3] << 8)) / 100,
+        'inv.all.ref_voltage_5_0': toSigned16(dataBytes[4] | (dataBytes[5] << 8)) / 100,
+        'inv.all.ref_voltage_12_0': toSigned16(dataBytes[6] | (dataBytes[7] << 8)) / 100,
+      };
+    }
+    if (id === 171) {
+      return {
+        'inv.all.post_fault_lo': dataBytes[0] | (dataBytes[1] << 8),
+        'inv.all.post_fault_hi': dataBytes[2] | (dataBytes[3] << 8),
+        'inv.all.run_fault_lo': dataBytes[4] | (dataBytes[5] << 8),
+        'inv.all.run_fault_hi': dataBytes[6] | (dataBytes[7] << 8),
+      };
+    }
+    if (id === 173) {
+      return {
+        'inv.all.modulation_index': toSigned16(dataBytes[0] | (dataBytes[1] << 8)) / 10000,
+        'inv.all.flux_weakening_output': toSigned16(dataBytes[2] | (dataBytes[3] << 8)) / 10,
+        'inv.all.id_command': toSigned16(dataBytes[4] | (dataBytes[5] << 8)) / 10,
+        'inv.all.iq_command': toSigned16(dataBytes[6] | (dataBytes[7] << 8)) / 10,
+      };
+    }
+    if (id === 174) {
+      return {
+        'inv.all.eeprom_ver': dataBytes[0] | (dataBytes[1] << 8),
+        'inv.all.sw_ver': dataBytes[2] | (dataBytes[3] << 8),
+        'inv.all.date_mmdd': dataBytes[4] | (dataBytes[5] << 8),
+        'inv.all.date_yyyy': dataBytes[6] | (dataBytes[7] << 8),
+      };
+    }
+    if (id === 175) {
+      return { 'inv.all.diag_record': dataBytes[0] };
+    }
+    if (id === 177) {
+      return {
+        'inv.all.torque_cap_motor': toSigned16(dataBytes[0] | (dataBytes[1] << 8)) / 10,
+        'inv.all.torque_cap_regen': toSigned16(dataBytes[2] | (dataBytes[3] << 8)) / 10,
+      };
+    }
+    if (id === 192) {
+      return {
+        'inv.cmd.torque_command': toSigned16(dataBytes[0] | (dataBytes[1] << 8)) / 10,
+        'inv.cmd.speed_command': toSigned16(dataBytes[2] | (dataBytes[3] << 8)),
+        'inv.cmd.direction_command': dataBytes[4] & 1,
+        'inv.cmd.inverter_enable': (dataBytes[5] & 1),
+        'inv.cmd.inverter_discharge': (dataBytes[5] >> 1) & 1,
+        'inv.cmd.speed_mode': (dataBytes[5] >> 2) & 1,
+        'inv.cmd.torque_limit_command': toSigned16(dataBytes[6] | (dataBytes[7] << 8)) / 10,
+      };
+    }
+    if (id === 514) {
+      return {
+        'bms.max_discharge': (dataBytes[0] | (dataBytes[1] << 8)),
+        'bms.max_charge': (dataBytes[2] | (dataBytes[3] << 8)),
+      };
+    }
+    if (id === 1715) {
+      return { 'bms.precharge_complete': dataBytes[0] & 1 };
+    }
+    if (id === 1280) {
+      return {
+        'vcu.all.calc_vehicle_speed': toSigned16(dataBytes[0] | (dataBytes[1] << 8)),
+        'vcu.all.requested_torque': toSigned16(dataBytes[2] | (dataBytes[3] << 8)),
+        'vcu.all.apps1_as_percent': (dataBytes[4] > 127 ? dataBytes[4] - 256 : dataBytes[4]),
+        'vcu.all.apps2_as_percent': (dataBytes[5] > 127 ? dataBytes[5] - 256 : dataBytes[5]),
+        'vcu.all.bse_as_percent': (dataBytes[6] > 127 ? dataBytes[6] - 256 : dataBytes[6]),
+        'vcu.all.imd_fault': dataBytes[7] & 1,
+        'vcu.all.rtd_state': (dataBytes[7] >> 1) & 1,
+        'vcu.all.precharge_relay_state': (dataBytes[7] >> 2) & 1,
+        'vcu.all.air_pos_relay_state': (dataBytes[7] >> 3) & 1,
+        'vcu.all.air_neg_relay_state': (dataBytes[7] >> 4) & 1,
+      };
+    }
+    if (id === 1281) {
+      return {
+        'vcu.all.cooling_enable': dataBytes[0],
+        'vcu.all.tractive_fan_pwm': dataBytes[1],
+        'vcu.all.tractive_pump_pwm': dataBytes[2],
+        'vcu.all.accy_fan_pwm': dataBytes[3],
+      };
+    }
+    if (id === 1282) {
+      return { 'vcu.all.precharge_cmd': dataBytes[0] };
+    }
+    if (id === 1264) {
+      return {
+        'fusebox.all.fusebox_state': dataBytes[0],
+        'fusebox.all.dcdc_voltage': (dataBytes[1] | (dataBytes[2] << 8)),
+        'fusebox.all.battery_voltage': (dataBytes[3] | (dataBytes[4] << 8)),
+        'fusebox.all.lvb_soc': dataBytes[5],
+        'fusebox.all.dcdc_temp': dataBytes[6] * 10,
+      };
+    }
+    if (id === 1265) {
+      return {
+        'fusebox.all.accy_fan_power': (dataBytes[0] | (dataBytes[1] << 8)) * 100,
+        'fusebox.all.tractive_fan_power': (dataBytes[2] | (dataBytes[3] << 8)) * 100,
+        'fusebox.all.tractive_pumps_power': (dataBytes[4] | (dataBytes[5] << 8)) * 100,
+        'fusebox.all.charging_power': (dataBytes[6] | (dataBytes[7] << 8)) * 100,
+      };
+    }
+    if (id === 1266) {
+      return { 'fusebox.all.ambient_temp': dataBytes[0] };
+    }
   }
 
   function updateStateFromBoard(state, board, id, dataBytes) {
@@ -506,6 +650,32 @@ function registerIpcHandlers() {
       'bms.avg_cv': 0.0, 'bms.hi_cv': 0.0, 'bms.lo_cv': 0.0,
       'inv.mot_t': 0.0, 'inv.cool_t': 0.0, 'inv.tq_cmd': 0.0, 'inv.tq_fb': 0.0, 'inv.idc': 0.0, 'inv.rpm': 0.0,
       'inv.vdc': 0.0,
+
+      // Inverter New Signals
+      'inv.all.control_board_temp': 0.0, 'inv.all.rtd1_temp': 0.0, 'inv.all.rtd2_temp': 0.0, 'inv.all.stall_burst_model_temp': 0.0,
+      'inv.all.analog1': 0.0, 'inv.all.analog2': 0.0, 'inv.all.analog3': 0.0, 'inv.all.analog4': 0.0, 'inv.all.analog5': 0.0, 'inv.all.analog6': 0.0,
+      'inv.all.dig1': 0, 'inv.all.dig2': 0, 'inv.all.dig3': 0, 'inv.all.dig4': 0, 'inv.all.dig5': 0, 'inv.all.dig6': 0, 'inv.all.dig7': 0, 'inv.all.dig8': 0,
+      'inv.all.vd_ff': 0.0, 'inv.all.vq_ff': 0.0, 'inv.all.id': 0.0, 'inv.all.iq': 0.0,
+      'inv.all.ref_voltage_1_5': 0.0, 'inv.all.ref_voltage_2_5': 0.0, 'inv.all.ref_voltage_5_0': 0.0, 'inv.all.ref_voltage_12_0': 0.0,
+      'inv.all.post_fault_lo': 0, 'inv.all.post_fault_hi': 0, 'inv.all.run_fault_lo': 0, 'inv.all.run_fault_hi': 0,
+      'inv.all.modulation_index': 0.0, 'inv.all.flux_weakening_output': 0.0, 'inv.all.id_command': 0.0, 'inv.all.iq_command': 0.0,
+      'inv.all.eeprom_ver': 0, 'inv.all.sw_ver': 0, 'inv.all.date_mmdd': 0, 'inv.all.date_yyyy': 0,
+      'inv.all.diag_record': 0,
+      'inv.all.torque_cap_motor': 0.0, 'inv.all.torque_cap_regen': 0.0,
+      'inv.cmd.torque': 0.0, 'inv.cmd.speed': 0.0, 'inv.cmd.direction': 0, 'inv.cmd.enable': 0, 'inv.cmd.discharge': 0, 'inv.cmd.speed_mode': 0, 'inv.cmd.torque_limit': 0.0,
+
+      // BMS New
+      'bms.max_discharge': 0.0, 'bms.max_charge': 0.0, 'bms.precharge_complete': 0,
+
+      // VCU New
+      'vcu.calc_vehicle_speed': 0, 'vcu.requested_torque': 0, 'vcu.apps1': 0, 'vcu.apps2': 0, 'vcu.bse': 0,
+      'vcu.imd_fault': 0, 'vcu.rtd_state': 0, 'vcu.precharge_relay_state': 0, 'vcu.air_pos_relay_state': 0, 'vcu.air_neg_relay_state': 0,
+      'vcu.cooling_enable': 0, 'vcu.tractive_fan_pwm': 0, 'vcu.tractive_pump_pwm': 0, 'vcu.accy_fan_pwm': 0, 'vcu.precharge_cmd': 0,
+
+      // Fusebox New
+      'fusebox.state': 0, 'fusebox.dcdc_v': 0.0, 'fusebox.batt_v': 0.0, 'fusebox.lvb_soc': 0, 'fusebox.dcdc_temp': 0.0,
+      'fusebox.accy_fan_power': 0.0, 'fusebox.tractive_fan_power': 0.0, 'fusebox.tractive_pumps_power': 0.0, 'fusebox.charging_power': 0.0,
+      'fusebox.ambient_temp': 0.0,
     };
   }
 
@@ -727,6 +897,7 @@ function registerIpcHandlers() {
       const fileSize = stats.size;
       
       const inStream = fs.createReadStream(filePath);
+      const isRawCan = filePath.toUpperCase().includes('_CAN.CSV') || (headers.includes('id_dec') && headers.includes('data_hex'));
       const rl = readline.createInterface({ input: inStream });
       let step = 1;
       let lineIndex = 0;
@@ -740,7 +911,7 @@ function registerIpcHandlers() {
         }
         if (!line.trim()) continue;
         
-        if (lineIndex === 0) {
+        if (lineIndex === 0 && !isRawCan) {
           const avgLineSize = line.length + 1;
           const estimatedLines = Math.ceil(fileSize / avgLineSize);
           step = Math.ceil(estimatedLines / 20000);
@@ -750,7 +921,7 @@ function registerIpcHandlers() {
           }
         }
         
-        if (lineIndex % step === 0) {
+        if (isRawCan || lineIndex % step === 0) {
           const parts = line.split(',');
           const rowObj = {};
           for (let i = 0; i < headers.length; i++) {
@@ -761,7 +932,7 @@ function registerIpcHandlers() {
         lineIndex++;
       }
       
-      return decimateRows(rows);
+      return isRawCan ? rows : decimateRows(rows);
     }
     
     if (ext === '.jsonl') {
@@ -809,6 +980,47 @@ function registerIpcHandlers() {
     }
   });
 
+  ipcMain.handle('file:parse-can-log-python', async (_event, inputPath) => {
+    try {
+      const suiteDir = app.isPackaged 
+        ? path.dirname(app.getAppPath()) 
+        : path.resolve(__dirname, '../../..');
+      
+      const parsedLogsDir = path.join(suiteDir, 'parsed_logs');
+      await fs.promises.mkdir(parsedLogsDir, { recursive: true });
+      
+      const baseName = path.basename(inputPath, path.extname(inputPath));
+      const outputPath = path.join(parsedLogsDir, `${baseName}_DECODED.csv`);
+      
+      const scriptPath = path.join(suiteDir, 'backend', 'parse_can_log.py');
+      
+      return new Promise((resolve, reject) => {
+        const { spawn } = require('child_process');
+        const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+        const child = spawn(pythonCmd, [scriptPath, inputPath, outputPath]);
+        let stderr = '';
+        
+        child.stdout.on('data', data => {
+          const str = data.toString();
+          const match = str.match(/PROGRESS:\s*([0-9.]+)/);
+          if (match) {
+            _event.sender.send('parse-progress', parseFloat(match[1]));
+          }
+        });
+        
+        child.stderr.on('data', data => stderr += data.toString());
+        child.on('close', code => {
+          if (code === 0) resolve(outputPath);
+          else reject(new Error(`Parser failed (code ${code}): ${stderr}`));
+        });
+        child.on('error', reject);
+      });
+    } catch (e) {
+      console.error('Error invoking python parser:', e);
+      throw e;
+    }
+  });
+
   ipcMain.handle('scan-network', async () => {
     for (const ip of COMMON_PI_HOSTS) {
       if (await verifyTelemetryHub(ip)) {
@@ -825,6 +1037,90 @@ function registerIpcHandlers() {
     }
 
     return null;
+  });
+
+  ipcMain.handle('wifi:parse-frame', (_event, { id, dataHex }) => {
+    // Build a minimal slcan-compatible object from the WiFi JSON frame fields,
+    // then run it through the same parseSlcanToBoard used by the USB binary path.
+    if (!Number.isFinite(id) || typeof dataHex !== 'string') {
+      return { ok: false, reason: 'invalid-wifi-frame' };
+    }
+    const upperHex = dataHex.toUpperCase();
+    const dataBytes = [];
+    for (let i = 0; i < upperHex.length; i += 2) {
+      dataBytes.push(parseInt(upperHex.substring(i, i + 2), 16));
+    }
+    const identifierHex = id.toString(16).toUpperCase().padStart(3, '0');
+    const idType = id > 0x7FF ? 'extended' : 'standard';
+    const slcan = {
+      ok: true,
+      raw: `t${identifierHex}${(dataBytes.length).toString(16).padStart(2, '0')}${upperHex}`,
+      frameType: idType === 'standard' ? 't' : 'T',
+      idType,
+      identifier: id,
+      identifierHex,
+      idText: `0x${identifierHex}`,
+      dataLength: dataBytes.length,
+      dataHex: upperHex,
+      dataBytes,
+    };
+    return parseSlcanToBoard(slcan, slcan.raw);
+  });
+
+  ipcMain.handle('wifi:parse-frames', (_event, frames) => {
+    const results = [];
+    for (const frame of frames) {
+      if (!Number.isFinite(frame.id) || typeof frame.d !== 'string') {
+        continue;
+      }
+      const upperHex = frame.d.trim().toUpperCase();
+      const dataBytes = [];
+      for (let i = 0; i < upperHex.length; i += 2) {
+        const byteStr = upperHex.substring(i, i + 2);
+        if (byteStr.length === 2) {
+          const byteVal = parseInt(byteStr, 16);
+          if (!isNaN(byteVal)) dataBytes.push(byteVal);
+        }
+      }
+      const identifierHex = frame.id.toString(16).toUpperCase().padStart(3, '0');
+      const idType = frame.id > 0x7FF ? 'extended' : 'standard';
+      const slcan = {
+        ok: true,
+        raw: `t${identifierHex}${(dataBytes.length).toString(16).padStart(2, '0')}${upperHex}`,
+        frameType: idType === 'standard' ? 't' : 'T',
+        idType,
+        identifier: frame.id,
+        identifierHex,
+        idText: `0x${identifierHex}`,
+        dataLength: dataBytes.length,
+        dataHex: upperHex,
+        dataBytes,
+      };
+      
+      const parsed = parseSlcanToBoard(slcan, slcan.raw);
+      if (parsed && parsed.ok) {
+        if (monitor) {
+          monitor.stats.recordLine(parsed);
+          monitor.boardStates.record(parsed.board);
+        }
+        results.push({
+          ok: true,
+          board: parsed.board,
+          identifier: frame.id,
+          dataBytes: slcan.dataBytes,
+          raw: parsed.raw,
+          source: 'wifi',
+          idText: parsed.idText,
+          idType: parsed.idType,
+          dataLength: parsed.dataLength,
+          dataHex: parsed.dataHex
+        });
+      }
+    }
+    if (results.length > 0) {
+      broadcast('device:frames', results);
+    }
+    return results;
   });
 
   ipcMain.handle('app:get-initial-state', async () => monitor.getInitialState());
@@ -859,6 +1155,17 @@ function registerIpcHandlers() {
     }
     return false;
   });
+  ipcMain.handle('dialog:open-file', async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Select File',
+      properties: ['openFile']
+    });
+    if (result.canceled || !result.filePaths?.length) {
+      return null;
+    }
+    return result.filePaths[0];
+  });
+
   ipcMain.handle('log:open-file', async () => {
     const result = await dialog.showOpenDialog({
       title: 'Open saved log file',
