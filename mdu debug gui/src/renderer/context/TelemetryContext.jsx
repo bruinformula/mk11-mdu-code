@@ -452,6 +452,11 @@ export function TelemetryProvider({ children }) {
   const [wifiLogs, setWifiLogs] = useState([]);
   const [isScanningNetwork, setIsScanningNetwork] = useState(false);
 
+  // Raw CAN frame log for the CAN Bus console
+  const [rawCanLog, setRawCanLog] = useState([]);
+  const rawCanLogRef = useRef([]);
+  const flushTimeoutRef = useRef(null);
+
   // Refs for tracking live state
   const latestStateRef = useRef({ ...initialSignalState });
   const liveBufferRef = useRef([]);
@@ -792,6 +797,21 @@ export function TelemetryProvider({ children }) {
       try {
         const rawPayload = JSON.parse(event.data);
         const frames = Array.isArray(rawPayload) ? rawPayload : [rawPayload];
+
+        // Append raw CAN frames to the console log buffer
+        const newEntries = frames.map(f => ({
+          ts: f.ts,
+          id: f.id,
+          dlc: f.dlc,
+          d: f.d || '',
+        }));
+        const buf = rawCanLogRef.current;
+        buf.push(...newEntries);
+        // Keep last 2000 entries
+        if (buf.length > 2000) {
+          rawCanLogRef.current = buf.slice(buf.length - 2000);
+        }
+        setRawCanLog([...rawCanLogRef.current]);
         
         // Use the batched IPC call for much higher throughput
         const parsedFrames = await window.mduDebug.parseWifiFrames(frames);
@@ -1296,6 +1316,23 @@ export function TelemetryProvider({ children }) {
         sendBaseStationCommand: (cmd) => {
           window.mduDebug.basestationSendCommand(cmd);
         },
+
+        // Raw CAN console
+        rawCanLog,
+        appendRawCanLog: (newEntries) => {
+          const buf = rawCanLogRef.current;
+          buf.push(...newEntries);
+          if (buf.length > 50000) {
+            buf.splice(0, buf.length - 25000);
+          }
+          if (!flushTimeoutRef.current) {
+            flushTimeoutRef.current = setTimeout(() => {
+              setRawCanLog([...rawCanLogRef.current]);
+              flushTimeoutRef.current = null;
+            }, 250);
+          }
+        },
+        clearRawCanLog: () => { rawCanLogRef.current = []; setRawCanLog([]); },
       }}
     >
       {children}
