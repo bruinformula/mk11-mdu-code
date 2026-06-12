@@ -20,6 +20,11 @@
     "directories": {
       "output": "dist"
     },
+    "files": [
+      "package.json",
+      "src/main/**/*",
+      "dist/renderer/**/*"
+    ],
     "mac": {
       "category": "public.app-category.developer-tools",
       "target": [
