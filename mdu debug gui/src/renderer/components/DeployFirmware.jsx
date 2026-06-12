@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Play, Square, Settings, RefreshCw, Trash2, FolderOpen } from 'lucide-react';
 
-export default function DeployFirmware() {
+export default function DeployFirmware({ isFullscreen }) {
   const [bfrPath, setBfrPath] = useState('');
   const [bfrDetected, setBfrDetected] = useState(false);
   const [boards, setBoards] = useState({});
@@ -131,7 +131,7 @@ export default function DeployFirmware() {
   };
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '1rem', height: 'calc(100vh - 180px)' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '1rem', height: isFullscreen ? 'calc(100vh - 4.5rem)' : 'calc(100vh - 180px)' }}>
       {/* Control Panel */}
       <div className="glass-panel" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem', borderRadius: '12px' }}>
         <h3 style={{ margin: 0, fontSize: '0.95rem' }}>Deploy Settings</h3>

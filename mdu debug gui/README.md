@@ -1,59 +1,80 @@
 # MDU Debug GUI
 
-Electron app for the USB CDC stream emitted by the STM32 firmware in this repository.
+The **MDU Debug GUI** is a comprehensive desktop Electron application designed for real-time telemetry visualization, log analysis, and firmware deployment for Bruin Formula Racing's Mk11 electric race car.
 
-## What it does
+---
 
-- Auto-detects the STM32 Virtual ComPort device (`VID:PID = 0483:5740`)
-- Treats the USB2514 side as a USB hub and mirrors the STM32's USB CDC child endpoint, not Bluetooth pseudo ports
-- Reads the USB CDC stream from the MCU's native USB connection
-- On macOS, also scans System Information so the app can show when the USB2514 hub itself is present even if no CDC child endpoint has enumerated yet
-- Decodes the per-board SDU telemetry the MDU prints to USB:
-  - Fast frames `[B<board> ID <hex> Fast] dT:<ms>ms | SG[mV]: ... | Shock: ... mm` for CAN IDs `0x080 + 8*boardId` (SG) and `0x081 + 8*boardId` (Shock)
-  - Slow frames `[B<board> ID <hex> Slow] dT:<ms>ms | RPM: ... | Tire[...] Brk:... Amb:...` for CAN IDs `0x082 + 8*boardId` (Brake), `0x083 + 8*boardId` (Tire), and `0x084 + 8*boardId` (Wheel Speed)
-- Falls back to the firmware's SLCAN-style frames (`t...` / `T...` terminated by `\r`) for everything else
-- Shows live diagnostics such as bytes/sec, frames/sec, parse errors, per-board readings, active CAN IDs, and last activity
-- Keeps a rolling on-screen log of raw USB lines and decoded frames
-- Writes structured session logs to JSONL files for later analysis
+## Key Features & Capabilities
 
-## Important protocol details
+### 1. Multi-Transport Telemetry Streams
+The GUI supports three distinct transport channels for pulling live vehicle telemetry:
+* **Serial USB Link**: Auto-detects connected STM32 Virtual ComPort devices (USB CDC, `VID:PID = 0483:5740`) with selectable baud rates (up to 921600). Scans system hardware profile to alert when the USB2514 hub is present, even prior to STM32 enumeration.
+* **WiFi Telemetry Link**: Connects directly to the car's Raspberry Pi over TCP. Enables starting/stopping remote logs directly on the Pi and downloading recorded runs directly to the local machine's data directory.
+* **Base Station TCP Link**: Establishes a raw TCP socket connection (port 5005) to the `mk11-base-station` laptop server. In addition to streaming live CAN packets, it parses and displays real-time base station stats (GPS survey-in lock state, mean accuracy in meters, coordinates, and radio TX/RX metrics).
 
-The MDU prints SDU board lines with ANSI cursor positioning (`\033[<line>;1H\033[K...`) so terminals can pin each board to its own row. The GUI strips those escapes before parsing and stores ANSI-free strings in the log.
+### 2. Live Telemetry Dashboard & Views
+The **Live Console** tab serves as the primary workspace during active testing, featuring:
+* **View Switcher**: Toggle between the high-fidelity **Live Dashboard** grid and the **Raw Console Logs**.
+* **Live Dashboard Grid**: Reorderable, drag-and-drop dashboard cards featuring:
+  * **Chassis Atlas**: Displays rotor temperatures, wheel speeds, shock travel, and live HSL tire surface heatmaps.
+  * **Live GPS Map**: Real-time vehicle location tracking on ESRI high-resolution satellite imagery with automatic follow-mode and a trailing path breadcrumb.
+  * **Power Systems & BMS**: Visualizes HV/LV battery states, cell voltages, temperatures, currents, and pack state of charge.
+  * **Inverter, Motor & VCU**: Monitors motor speeds, temperatures, torque commands, APPS/BSE inputs, and active relays (RTD, IMD, AIRs).
+  * **Dashboard Settings Drawer**: Slide-out panel to configure custom warning triggers (e.g. max brake temp, min cell voltage, low SoC) and toggle card visibilities.
+* **Raw Console Logs**: Rolling monospace terminal output with sub-device source filtering (SDUs, TSHMU, TSPMU, GPS/SMU) and string search.
+* **Active CAN IDs**: Real-time frequency (Hz) and message count tracker for all enumerated CAN frames.
 
-The SLCAN fallback is close to SLCAN but not strict — the firmware emits the CAN length field as decimal with `%u`, so lengths above 9 appear as two digits, e.g.:
+### 3. Fullscreen Display Mode
+Maximize visual real estate during live pitlane monitoring:
+* Click the **Fullscreen** button on the far right of the navigation tab bar to instantly hide the top connection parameters header and tab selections.
+* Exit fullscreen mode at any time by pressing the `Escape` key, or clicking the floating glassmorphic **Exit Fullscreen** button in the top-right corner.
+* Automatically adjusts container height calculations and shifts layout controls to prevent overlay collisions.
 
-```text
-t077120102030405060708090A0B0C\r
-```
+### 4. Telemetry Post-Run Analyzers
+Load saved `.csv` or `.jsonl` run logs via a manual file selector or by **dragging and dropping** a run file directly into the application workspace.
+* **Overview**: Provides full-run summary timelines, peak telemetry readings, and detects sensor dropouts (e.g., GPS drops, flow sensor gaps).
+* **Corner Overlays & Drivetrain**: Side-by-side suspension, brake, and motor speed comparison graphs.
+* **IMU & Motion**: Shows acceleration, gyroscope rotation rates, and drift tracking.
+* **Custom Plotter**: Interactive multi-signal chart builder. Drag, zoom, and select combinations of signals.
+* **Track Map**: Renders full-session paths with variable color-mapping (e.g., speed, lateral G, shock displacement).
+* **G-G Replay & GPS Studio**: Visualizes vehicle handling limits (lateral vs. longitudinal Gs) and replays GPS coordinate sequences step-by-step.
+* **Spreadsheet**: Tabular explorer for reviewing telemetry row by row.
 
-The parser handles both 1-digit and 2-digit decimal lengths.
+### 5. Firmware Deploy Studio
+An integrated flashing and compilation interface:
+* Detects local `bfr-cli` tool chains and configurations.
+* Compile and deploy STM32 firmware target packages (`clean`, `build`, `flash`, `deploy`) with live ANSI terminal output decoding.
 
-## Transport note
+---
 
-The MCU is still accessed through the host's USB CDC device node even when it is plugged through the USB2514 hub. This app therefore mirrors the STM32 CDC endpoint exposed by macOS and filters out non-USB entries such as Bluetooth pseudo ports.
+## Getting Started
 
-If System Information shows only the USB2514 hub and no STM32 child device, the app now reports that state explicitly. In that condition there is no mirrorable USB CDC endpoint yet, so live traffic capture cannot start until the MCU enumerates a child interface that macOS exposes.
+### Prerequisites
+Ensure you have [Node.js](https://nodejs.org/) (v16+) and `npm` installed.
 
-## Usage
-
+### Setup and Launch
+Clone this repository, navigate to the `mdu debug gui` directory, and run:
 ```bash
 npm install
 npm start
 ```
 
-## Package A macOS App
-
+### Packaging for macOS
+To compile a standalone, executable application for local deployment:
 ```bash
-npm install
 npm run dist
 ```
+Unsigned `.dmg` and `.zip` installer files will be generated in the output `dist/` directory.
 
-Build artifacts are written to the `dist/` folder. The package script currently creates unsigned macOS `dmg` and `zip` outputs for local use.
+---
 
-## Log format
+## Log Formats
 
-Logging writes newline-delimited JSON (`.jsonl`). Each line is either:
+### 1. Local Structured Session Logs (`.jsonl`)
+Local logging records newline-delimited JSON entries containing:
+* `session_start` / `session_end` descriptors.
+* `runtime` connections, serial handshakes, and transport state transitions.
+* `frame` elements capturing raw ASCII packets, timestamps, and decoded signal objects.
 
-- `session_start` / `session_end`
-- `runtime` for connect/disconnect/errors
-- `frame` for each received USB line, including the raw string and parsed frame fields when decoding succeeds
+### 2. Python CAN Parser
+The GUI features a built-in parser option. Click **Parse Raw CAN** in the Select Run section to automatically execute the Python parser on raw log files (e.g. `_CAN.csv`), converting raw hexadecimal frames into structured timeline spreadsheets.

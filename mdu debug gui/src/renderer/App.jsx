@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useTelemetry } from './context/TelemetryContext';
 import ConnectionBar from './components/ConnectionBar';
 
@@ -19,7 +19,7 @@ import LiveConsole from './components/LiveConsole';
 import DeployFirmware from './components/DeployFirmware';
 
 import PlaybackBar from './components/PlaybackBar';
-import { LayoutDashboard, Layers, BarChart3, Map, Table, Upload, AlertCircle, Activity, Compass, Zap, Terminal, Cpu } from 'lucide-react';
+import { LayoutDashboard, Layers, BarChart3, Map, Table, Upload, AlertCircle, Activity, Compass, Zap, Terminal, Cpu, Maximize2, Minimize2 } from 'lucide-react';
 
 // Helper to detect stale runs for a specific board or device
 function detectBoardDropouts(data, boardType, globalGaps, startTs) {
@@ -203,8 +203,20 @@ export default function App() {
     setPlaybackTime, playbackSpeed, setPlaybackSpeed, playbackDataset
   } = useTelemetry();
   const [activeTab, setActiveTab] = useState('liveconsole');
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [hoveredIndex, setHoveredIndex] = useState(null);
+
+  // Listen for Escape key to exit fullscreen mode
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setIsFullscreen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Compute stats on current active dataset
   const startTs = useMemo(() => {
@@ -320,7 +332,7 @@ export default function App() {
 
     switch (activeTab) {
       case 'liveconsole':
-        return <LiveConsole />;
+        return <LiveConsole isFullscreen={isFullscreen} />;
       case 'overview':
         return <Overview data={displayDataset} dropouts={dropouts} startTs={startTs} />;
       case 'overlays':
@@ -356,30 +368,33 @@ export default function App() {
         return <GPSPlayback samples={activeDataset} availableSignalIds={cols} />;
       }
       case 'deploy':
-        return <DeployFirmware />;
+        return <DeployFirmware isFullscreen={isFullscreen} />;
       default:
-        return <LiveConsole />;
+        return <LiveConsole isFullscreen={isFullscreen} />;
     }
   };
 
   return (
-    <div className="app-container" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-      <div className="sticky-header-container">
-        {/* Global Connection Bar */}
-        <ConnectionBar />
-      </div>
+    <div className="app-container" style={{ padding: isFullscreen ? '0' : '1rem', display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+      {!isFullscreen && (
+        <div className="sticky-header-container">
+          {/* Global Connection Bar */}
+          <ConnectionBar />
+        </div>
+      )}
 
       {/* Navigation Tabs */}
-      <nav className="glass-panel no-hover" style={{
-        margin: '0 0 1rem 0',
-        padding: '0.35rem',
-        borderRadius: '10px',
-        display: 'flex',
-        flexWrap: 'wrap',
-        gap: '0.25rem',
-        border: '1px solid var(--border-color)',
-        backgroundColor: 'rgba(25, 30, 45, 0.6)'
-      }}>
+      {!isFullscreen && (
+        <nav className="glass-panel no-hover" style={{
+          margin: '0 0 1rem 0',
+          padding: '0.35rem',
+          borderRadius: '10px',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '0.25rem',
+          border: '1px solid var(--border-color)',
+          backgroundColor: 'rgba(25, 30, 45, 0.6)'
+        }}>
         <button
           onClick={() => setActiveTab('liveconsole')}
           className={`nav-button ${activeTab === 'liveconsole' ? 'active' : ''}`}
@@ -452,7 +467,16 @@ export default function App() {
         >
           <Cpu size={14} /> Deploy Firmware
         </button>
+        <button
+          onClick={() => setIsFullscreen(true)}
+          className="nav-button"
+          style={{ marginLeft: 'auto' }}
+          title="Fullscreen Dashboard"
+        >
+          <Maximize2 size={14} /> Fullscreen
+        </button>
       </nav>
+      )}
 
       {/* Main Workspace with Drag & Drop Log Uploader */}
       <main
@@ -460,8 +484,37 @@ export default function App() {
         onDragOver={handleDrag}
         onDragLeave={handleDrag}
         onDrop={handleDrop}
-        style={{ flex: 1, position: 'relative' }}
+        style={{ flex: 1, position: 'relative', padding: isFullscreen ? '1rem' : '0' }}
       >
+        {isFullscreen && (
+          <button
+            onClick={() => setIsFullscreen(false)}
+            style={{
+              position: 'absolute',
+              top: '1rem',
+              right: '1rem',
+              zIndex: 9999,
+              background: 'rgba(15, 23, 42, 0.75)',
+              backdropFilter: 'blur(10px)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              borderRadius: '8px',
+              padding: '0.4rem 0.75rem',
+              color: 'var(--text-primary)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              cursor: 'pointer',
+              fontSize: '0.8rem',
+              fontWeight: '600',
+              boxShadow: 'var(--shadow-lg)',
+              transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+            }}
+            className="button"
+            title="Exit Fullscreen (Esc)"
+          >
+            <Minimize2 size={12} /> Exit Fullscreen
+          </button>
+        )}
         {dragActive && (
           <div
             style={{

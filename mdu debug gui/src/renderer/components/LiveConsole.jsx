@@ -3,7 +3,7 @@ import { useTelemetry } from '../context/TelemetryContext';
 import { Search, Play, Pause, Trash2, Filter, ShieldAlert, Activity, Sliders } from 'lucide-react';
 import LiveDashboard from './LiveDashboard';
 
-export default function LiveConsole() {
+export default function LiveConsole({ isFullscreen }) {
   const { connectionState, diagnostics } = useTelemetry();
   const [logs, setLogs] = useState([]);
   const [search, setSearch] = useState('');
@@ -91,7 +91,7 @@ export default function LiveConsole() {
   });
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: 'calc(100vh - 180px)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: isFullscreen ? 'calc(100vh - 4.5rem)' : 'calc(100vh - 180px)' }}>
       {/* View Switcher Tabs */}
       <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
         <button
@@ -113,7 +113,7 @@ export default function LiveConsole() {
       </div>
 
       {activeView === 'dashboard' ? (
-        <LiveDashboard />
+        <LiveDashboard isFullscreen={isFullscreen} />
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 350px', gap: '1rem', height: '100%', minHeight: 0 }}>
       {/* Console panel */}

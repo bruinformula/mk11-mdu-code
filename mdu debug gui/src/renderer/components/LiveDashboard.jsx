@@ -8,7 +8,7 @@ import {
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
-export default function LiveDashboard() {
+export default function LiveDashboard({ isFullscreen }) {
   const { latestValues, connectionState, diagnostics, logStatus } = useTelemetry();
   
   const mapContainerRef = useRef(null);
@@ -1468,7 +1468,7 @@ export default function LiveDashboard() {
         style={{
           position: 'absolute',
           top: '-3.25rem',
-          right: '0',
+          right: isFullscreen ? '10rem' : '0',
           padding: '0.45rem 0.75rem',
           display: 'flex',
           alignItems: 'center',
