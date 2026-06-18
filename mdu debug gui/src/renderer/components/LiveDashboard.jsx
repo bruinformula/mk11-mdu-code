@@ -405,7 +405,9 @@ export default function LiveDashboard({ isFullscreen }) {
     { key: '4-1', name: 'TSHMU Flow 1', type: 4, id: 1 },
     { key: '6-0', name: 'TSPMU FL', type: 6, id: 0 },
     { key: '6-1', name: 'TSPMU FR', type: 6, id: 1 },
-    { key: '7-0', name: 'GPS / SMU', type: 7, id: 0 }
+    { key: '7-0', name: 'COG IMU (SMU 0)', type: 7, id: 0 },
+    { key: '7-1', name: 'Front / GPS IMU (SMU 1)', type: 7, id: 1 },
+    { key: '7-2', name: 'Rear IMU (SMU 2)', type: 7, id: 2 }
   ];
 
   const getBoardStatus = (expected) => {
@@ -414,7 +416,11 @@ export default function LiveDashboard({ isFullscreen }) {
     }
     
     const board = diagnostics.boards.find(
-      b => b.boardType === expected.type && b.boardId === expected.id
+      b => {
+        const typeMatch = b.boardType === expected.type ||
+          ((expected.type === 1 || expected.type === 7) && (b.boardType === 1 || b.boardType === 7));
+        return typeMatch && b.boardId === expected.id;
+      }
     );
     
     if (!board) {
@@ -812,6 +818,8 @@ export default function LiveDashboard({ isFullscreen }) {
                       } else if (eb.type === 6) { // TSPMU
                         // If TSPMU only has slow frames, rate might be 0, but if we track it:
                         rates.push(`Tire: ~${Math.round(status.rate * 5)}Hz`);
+                      } else if (eb.type === 1 || eb.type === 7) { // SMU
+                        rates.push(`IMU: ~${Math.round(status.rate * 5)}Hz`);
                       }
                       
                       if (rates.length === 0) return null;

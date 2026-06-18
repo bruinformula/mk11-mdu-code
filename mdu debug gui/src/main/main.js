@@ -550,10 +550,10 @@ function registerIpcHandlers() {
           state[`sdu[${bid}].tire[3]`] = board.tireC.ambient;
         }
       } else if (bt === 4) { // TSHMU
-        if (board.flow1 !== undefined) state['tshmu.flow1'] = board.flow1;
-        if (board.flow2 !== undefined) state['tshmu.flow2'] = board.flow2;
-        if (board.jitter !== undefined) state['tshmu.jitter_us'] = board.jitter;
-        if (board.errorFlags !== undefined) state['tshmu.error_flags'] = board.errorFlags;
+        if (board.flow1 !== undefined) state[`tshmu[${bid}].flow1`] = board.flow1;
+        if (board.flow2 !== undefined) state[`tshmu[${bid}].flow2`] = board.flow2;
+        if (board.jitter !== undefined) state[`tshmu[${bid}].jitter_us`] = board.jitter;
+        if (board.errorFlags !== undefined) state[`tshmu[${bid}].error_flags`] = board.errorFlags;
       } else if (bt === 6) { // TSPMU
         if (board.pressure1 !== undefined) state[`tspmu[${bid}].p1`] = board.pressure1;
         if (board.pressure2 !== undefined) state[`tspmu[${bid}].p2`] = board.pressure2;
@@ -648,7 +648,8 @@ function registerIpcHandlers() {
       'tspmu[0].temps[0]': 0.0, 'tspmu[0].temps[1]': 0.0, 'tspmu[0].temps[2]': 0.0, 'tspmu[0].temps[3]': 0.0,
       'tspmu[1].p1': 0.0, 'tspmu[1].p2': 0.0,
       'tspmu[1].temps[0]': 0.0, 'tspmu[1].temps[1]': 0.0, 'tspmu[1].temps[2]': 0.0, 'tspmu[1].temps[3]': 0.0,
-      'tshmu.flow1': 0.0, 'tshmu.flow2': 0.0, 'tshmu.jitter_us': 0, 'tshmu.error_flags': 0,
+      'tshmu[0].flow1': 0.0, 'tshmu[0].flow2': 0.0, 'tshmu[0].jitter_us': 0, 'tshmu[0].error_flags': 0,
+      'tshmu[1].flow1': 0.0, 'tshmu[1].flow2': 0.0, 'tshmu[1].jitter_us': 0, 'tshmu[1].error_flags': 0,
       'bms.v': 0.0, 'bms.i': 0.0, 'bms.soc': 0.0, 'bms.avg_t': 0.0, 'bms.hi_t': 0.0, 'bms.lo_t': 0.0,
       'bms.avg_cv': 0.0, 'bms.hi_cv': 0.0, 'bms.lo_cv': 0.0,
       'inv.mot_t': 0.0, 'inv.cool_t': 0.0, 'inv.tq_cmd': 0.0, 'inv.tq_fb': 0.0, 'inv.idc': 0.0, 'inv.rpm': 0.0,
@@ -1267,7 +1268,8 @@ function registerIpcHandlers() {
       sdu: { name: 'SDU (Sensor Data Unit)', board_id_var: 'SDU_BOARD_ID', ids: ['FL', 'FR', 'RL', 'RR'], path: path.join(home, 'mk11-sdu') },
       mdu: { name: 'MDU (Master Data Unit)', path: path.join(home, 'mk11-mdu-code') },
       tspmu: { name: 'TSPMU (Tire System Pressure Monitoring Unit)', board_id_var: 'TSPMU_BOARD_ID', ids: ['0', '1'], path: path.join(home, 'mk11-daq-TSPMU-CODE') },
-      smu: { name: 'SMU (Sensor Measurement Unit / IMU)', board_id_var: 'SMU_BOARD_ID', ids: ['GPS', 'Mid IMU', 'Rear IMU'], path: path.join(home, 'mk11-smu') }
+      smu: { name: 'SMU (Sensor Measurement Unit / IMU)', board_id_var: 'SMU_BOARD_ID', ids: ['GPS / COG IMU', 'Front IMU', 'Rear IMU'], path: path.join(home, 'mk11-smu') },
+      tshmu: { name: 'TSHMU (Thermal & Sensor Hub Management Unit)', board_id_var: 'TSHMU_BOARD_ID', ids: ['0', '1'], path: path.join(home, 'mk11-tshmu') }
     };
     
     try {

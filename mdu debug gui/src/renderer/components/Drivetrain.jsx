@@ -87,7 +87,7 @@ export default function Drivetrain({ data, boardDropouts, startTs }) {
 
   // Dropout highlighter plugins
   const inverterPlugin = useMemo(() => createDropoutPlugin(boardDropouts?.inverter, startTs), [boardDropouts, startTs]);
-  const tshmuPlugin = useMemo(() => createDropoutPlugin(boardDropouts?.tshmu, startTs), [boardDropouts, startTs]);
+  const tshmuPlugin = useMemo(() => createDropoutPlugin(boardDropouts?.tshmu0, startTs), [boardDropouts, startTs]);
 
   // 1. Inverter and Motor Temperatures
   const tempChartData = useMemo(() => {

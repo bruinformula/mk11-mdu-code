@@ -163,6 +163,9 @@ export default function ImuMotion({ data, boardDropouts, startTs }) {
     cogLong: detectChannelScale(processedData, 'imu[0].ay'),
     frontLat: detectChannelScale(processedData, 'imu[1].ax'),
     frontLong: detectChannelScale(processedData, 'imu[1].ay'),
+    rearLat: detectChannelScale(processedData, 'imu[2].ax'),
+    rearLong: detectChannelScale(processedData, 'imu[2].az'),
+    rearVert: detectChannelScale(processedData, 'imu[2].ay'),
   }), [processedData]);
 
   // Cross-calibration of the COG IMU against the Front IMU (the trusted
@@ -248,15 +251,24 @@ export default function ImuMotion({ data, boardDropouts, startTs }) {
           borderWidth: 1.5,
           pointRadius: 0,
           tension: 0,
+        },
+        {
+          label: 'Rear IMU (+az)',
+          data: parseLinearData('imu[2].az', channelScales.rearLong),
+          borderColor: '#a855f7', // Purple
+          borderWidth: 1.5,
+          pointRadius: 0,
+          tension: 0,
         }
       ]
     };
   }, [processedData, startTs, channelScales, cogCalibration]);
 
-  // 3. Lateral G comparison across the COG and Front sensors, rotated into
+  // 3. Lateral G comparison across the COG, Front, and Rear sensors, rotated into
   // the car frame (positive = right):
   //   COG   imu[0].ax * +scale, then calibrated to the Front reference
   //   Front imu[1].ax * -scale (x points left)
+  //   Rear  imu[2].ax * -scale (x points left)
   const latComparisonChartData = useMemo(() => {
     const cal = cogCalibration.lat;
     return {
@@ -273,6 +285,14 @@ export default function ImuMotion({ data, boardDropouts, startTs }) {
           label: 'Front IMU (-ax)',
           data: parseLinearData('imu[1].ax', -channelScales.frontLat),
           borderColor: '#06b6d4',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          tension: 0,
+        },
+        {
+          label: 'Rear IMU (-ax)',
+          data: parseLinearData('imu[2].ax', -channelScales.rearLat),
+          borderColor: '#a855f7',
           borderWidth: 1.5,
           pointRadius: 0,
           tension: 0,
@@ -348,8 +368,14 @@ export default function ImuMotion({ data, boardDropouts, startTs }) {
         valid = ax !== null && ay !== null;
         lat = -(ax ?? 0) * channelScales.frontLat;
         long = -(ay ?? 0) * channelScales.frontLong;
+      } else if (index === 2) {
+        // Rear: lat = -ax (x -> left), long = +az (z -> front)
+        const ax = num(row['imu[2].ax']);
+        const az = num(row['imu[2].az']);
+        valid = ax !== null && az !== null;
+        lat = -(ax ?? 0) * channelScales.rearLat;
+        long = (az ?? 0) * channelScales.rearLong;
       }
-      // index 2 (Rear IMU) intentionally not handled — excluded from display.
     }
 
     const gX = lat; // car lateral, +right (already in Gs)
@@ -362,6 +388,7 @@ export default function ImuMotion({ data, boardDropouts, startTs }) {
 
   const cogCoords = getImuCoords(latestRow, 0);
   const frontCoords = getImuCoords(latestRow, 1);
+  const rearCoords = getImuCoords(latestRow, 2);
 
   return (
     <div className="animated-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
@@ -371,7 +398,7 @@ export default function ImuMotion({ data, boardDropouts, startTs }) {
         <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1rem', minHeight: '400px' }}>
           <div style={{ width: '100%', textAlign: 'center' }}>
             <h2 className="section-title" style={{ justifyContent: 'center', borderLeft: 'none', paddingLeft: 0 }}>G-Force Meter</h2>
-            <p className="text-slate-400" style={{ fontSize: '0.8rem', marginTop: '-0.5rem' }}>Real-time dual-IMU acceleration vector (COG + Front)</p>
+            <p className="text-slate-400" style={{ fontSize: '0.8rem', marginTop: '-0.5rem' }}>Real-time triple-IMU acceleration vector (COG + Front + Rear)</p>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'rgba(0, 0, 0, 0.2)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-color)', width: '100%', maxWidth: '260px' }}>
@@ -396,6 +423,9 @@ export default function ImuMotion({ data, boardDropouts, startTs }) {
 
               {/* Front G vector (Emerald Green) */}
               <circle cx={frontCoords.cx.toFixed(1)} cy={frontCoords.cy.toFixed(1)} r="4.5" fill="#00ff7f" stroke="#ffffff" strokeWidth="0.75" strokeOpacity="0.8" style={{ filter: 'drop-shadow(0 0 4px #00ff7f)', transition: 'cx 80ms ease, cy 80ms ease', opacity: frontCoords.valid ? 1 : 0.2 }}></circle>
+
+              {/* Rear G vector (Red) */}
+              <circle cx={rearCoords.cx.toFixed(1)} cy={rearCoords.cy.toFixed(1)} r="4.5" fill="#ff2a4d" stroke="#ffffff" strokeWidth="0.75" strokeOpacity="0.8" style={{ filter: 'drop-shadow(0 0 4px #ff2a4d)', transition: 'cx 80ms ease, cy 80ms ease', opacity: rearCoords.valid ? 1 : 0.2 }}></circle>
             </svg>
 
             {/* Vector Legend */}
@@ -416,6 +446,15 @@ export default function ImuMotion({ data, boardDropouts, startTs }) {
                 </div>
                 <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: frontCoords.valid ? 'var(--text-primary)' : 'var(--text-muted)' }}>
                   {frontCoords.valid ? `${frontCoords.gMag.toFixed(2)} G` : 'Offline'}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ff2a4d', boxShadow: '0 0 4px #ff2a4d' }} />
+                  <span style={{ color: 'var(--text-secondary)' }}>Rear</span>
+                </div>
+                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: rearCoords.valid ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                  {rearCoords.valid ? `${rearCoords.gMag.toFixed(2)} G` : 'Offline'}
                 </span>
               </div>
             </div>

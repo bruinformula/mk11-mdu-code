@@ -110,13 +110,16 @@ export default function CustomPlotter({ data, boardDropouts, startTs = 0 }) {
     if (colName.startsWith('sdu[1]')) return 'sdu1';
     if (colName.startsWith('sdu[2]')) return 'sdu2';
     if (colName.startsWith('sdu[3]')) return 'sdu3';
-    if (colName.startsWith('gps')) return 'gps';
+    if (colName.startsWith('gps')) return 'smu0';
+    if (colName.startsWith('imu[0]')) return 'smu0';
+    if (colName.startsWith('imu[1]')) return 'smu1';
+    if (colName.startsWith('imu[2]')) return 'smu2';
+    if (colName.startsWith('imu')) return 'imu';
     if (colName.startsWith('inv')) return 'inverter';
     if (colName.startsWith('bms')) return 'bms';
     if (colName.startsWith('tspmu[0]')) return 'tspmu0';
     if (colName.startsWith('tspmu[1]')) return 'tspmu1';
     if (colName.startsWith('tshmu')) return 'tshmu';
-    if (colName.startsWith('imu')) return 'imu';
     return null;
   };
 

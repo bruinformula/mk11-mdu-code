@@ -62,6 +62,24 @@ function detectBoardDropouts(data, boardType, globalGaps, startTs) {
     borderColor = 'rgba(6, 182, 212, 0.4)';
     textColor = '#06b6d4';
     label = 'GPS DROP';
+  } else if (boardType === 'smu0') {
+    cols = ['gps.lat', 'gps.lon', 'gps.vel', 'imu[0].ax', 'imu[0].ay', 'imu[0].az'];
+    color = 'rgba(6, 182, 212, 0.12)';
+    borderColor = 'rgba(6, 182, 212, 0.4)';
+    textColor = '#06b6d4';
+    label = 'COG IMU DROP';
+  } else if (boardType === 'smu1') {
+    cols = ['imu[1].ax', 'imu[1].ay', 'imu[1].az'];
+    color = 'rgba(16, 185, 129, 0.12)';
+    borderColor = 'rgba(16, 185, 129, 0.4)';
+    textColor = '#10b981';
+    label = 'FRONT IMU DROP';
+  } else if (boardType === 'smu2') {
+    cols = ['imu[2].ax', 'imu[2].ay', 'imu[2].az'];
+    color = 'rgba(139, 92, 246, 0.12)';
+    borderColor = 'rgba(139, 92, 246, 0.4)';
+    textColor = '#8b5cf6';
+    label = 'REAR IMU DROP';
   } else if (boardType === 'inverter') {
     cols = ['inv.tq_fb', 'inv.idc', 'inv.rpm', 'inv.mot_t'];
     color = 'rgba(239, 68, 68, 0.12)';
@@ -86,12 +104,18 @@ function detectBoardDropouts(data, boardType, globalGaps, startTs) {
     borderColor = 'rgba(16, 185, 129, 0.4)';
     textColor = '#10b981';
     label = 'TSPMU1 DROP';
-  } else if (boardType === 'tshmu') {
-    cols = ['tshmu.flow1', 'tshmu.flow2'];
+  } else if (boardType === 'tshmu0') {
+    cols = ['tshmu[0].flow1', 'tshmu[0].flow2'];
     color = 'rgba(236, 72, 153, 0.12)';
     borderColor = 'rgba(236, 72, 153, 0.4)';
     textColor = '#ec4899';
-    label = 'FLOW DROP';
+    label = 'FLOW0 DROP';
+  } else if (boardType === 'tshmu1') {
+    cols = ['tshmu[1].flow1', 'tshmu[1].flow2'];
+    color = 'rgba(236, 72, 153, 0.12)';
+    borderColor = 'rgba(236, 72, 153, 0.4)';
+    textColor = '#ec4899';
+    label = 'FLOW1 DROP';
   } else if (boardType === 'imu') {
     cols = ['imu.ax', 'imu.ay', 'imu.az'];
     color = 'rgba(234, 179, 8, 0.12)';
@@ -254,9 +278,8 @@ export default function App() {
     return gaps;
   }, [activeDataset]);
 
-  // Precompute board-specific dropouts
   const boardDropouts = useMemo(() => {
-    const boards = ['gps', 'inverter', 'imu', 'sdu0', 'sdu1', 'sdu2', 'sdu3', 'tspmu0', 'tspmu1', 'tshmu', 'bms'];
+    const boards = ['gps', 'inverter', 'imu', 'sdu0', 'sdu1', 'sdu2', 'sdu3', 'tspmu0', 'tspmu1', 'tshmu0', 'tshmu1', 'bms', 'smu0', 'smu1', 'smu2'];
     const result = {};
     boards.forEach(b => {
       result[b] = detectBoardDropouts(activeDataset, b, dropouts, startTs);
