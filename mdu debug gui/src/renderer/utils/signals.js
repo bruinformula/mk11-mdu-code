@@ -355,20 +355,20 @@ export const signalGroups = [
   },
   {
     id: 'imu_triple',
-    name: 'Triple IMU Sensors',
+    name: 'Triple SMU/IMU Sensors',
     signals: [
-      makeSignal('imu[0].ax', 'COG Accel X', 'g', '#00e5ff'),
-      makeSignal('imu[0].ay', 'COG Accel Y', 'g', '#00e5ff'),
-      makeSignal('imu[0].az', 'COG Accel Z', 'g', '#00e5ff'),
-      makeSignal('imu[0].pitch', 'COG Pitch', '°', '#00e5ff'),
-      makeSignal('imu[0].roll', 'COG Roll', '°', '#00e5ff'),
-      makeSignal('imu[0].yaw', 'COG Yaw', '°', '#00e5ff'),
-      makeSignal('imu[1].ax', 'Front Accel X', 'g', '#00ff7f'),
-      makeSignal('imu[1].ay', 'Front Accel Y', 'g', '#00ff7f'),
-      makeSignal('imu[1].az', 'Front Accel Z', 'g', '#00ff7f'),
-      makeSignal('imu[1].pitch', 'Front Pitch', '°', '#00ff7f'),
-      makeSignal('imu[1].roll', 'Front Roll', '°', '#00ff7f'),
-      makeSignal('imu[1].yaw', 'Front Yaw', '°', '#00ff7f'),
+      makeSignal('imu[0].ax', 'COG/GPS Front Accel X', 'g', '#00e5ff'),
+      makeSignal('imu[0].ay', 'COG/GPS Front Accel Y', 'g', '#00e5ff'),
+      makeSignal('imu[0].az', 'COG/GPS Front Accel Z', 'g', '#00e5ff'),
+      makeSignal('imu[0].pitch', 'COG/GPS Front Pitch', '°', '#00e5ff'),
+      makeSignal('imu[0].roll', 'COG/GPS Front Roll', '°', '#00e5ff'),
+      makeSignal('imu[0].yaw', 'COG/GPS Front Yaw', '°', '#00e5ff'),
+      makeSignal('imu[1].ax', 'Mid Accel X', 'g', '#00ff7f'),
+      makeSignal('imu[1].ay', 'Mid Accel Y', 'g', '#00ff7f'),
+      makeSignal('imu[1].az', 'Mid Accel Z', 'g', '#00ff7f'),
+      makeSignal('imu[1].pitch', 'Mid Pitch', '°', '#00ff7f'),
+      makeSignal('imu[1].roll', 'Mid Roll', '°', '#00ff7f'),
+      makeSignal('imu[1].yaw', 'Mid Yaw', '°', '#00ff7f'),
       makeSignal('imu[2].ax', 'Rear Accel X', 'g', '#ff2a4d'),
       makeSignal('imu[2].ay', 'Rear Accel Y', 'g', '#ff2a4d'),
       makeSignal('imu[2].az', 'Rear Accel Z', 'g', '#ff2a4d'),
@@ -413,12 +413,18 @@ export const signalGroups = [
 ['0', '1'].forEach((boardId, idx) => {
   signalGroups.push({
     id: `tshmu_${idx}`,
-    name: `TSHMU Board ${boardId} Flow`,
+    name: `TSHMU Board ${boardId}`,
     signals: [
       makeSignal(`tshmu[${idx}].flow1`, `Board ${boardId} Flow 1`, 'L/min', '#00e5ff'),
       makeSignal(`tshmu[${idx}].flow2`, `Board ${boardId} Flow 2`, 'L/min', '#00ff7f'),
       makeSignal(`tshmu[${idx}].jitter_us`, `Board ${boardId} Flow Jitter`, 'us', '#ffb800', { precision: 0 }),
       makeSignal(`tshmu[${idx}].error_flags`, `Board ${boardId} Flow Error Flags`, 'bits', '#ff70a6', { precision: 0 }),
+      makeSignal(`tshmu[${idx}].temp1`, `Board ${boardId} Temp 1`, '°C', '#70d6ff'),
+      makeSignal(`tshmu[${idx}].temp2`, `Board ${boardId} Temp 2`, '°C', '#9bf6ff'),
+      makeSignal(`tshmu[${idx}].temp3`, `Board ${boardId} Temp 3`, '°C', '#8cffc1'),
+      makeSignal(`tshmu[${idx}].temp4`, `Board ${boardId} Temp 4`, '°C', '#caffbf'),
+      makeSignal(`tshmu[${idx}].temp5`, `Board ${boardId} Temp 5`, '°C', '#ffd6a5'),
+      makeSignal(`tshmu[${idx}].temp6`, `Board ${boardId} Temp 6`, '°C', '#ff70a6'),
     ],
   });
 });
@@ -444,8 +450,9 @@ export const liveChartGroups = [
   { id: 'fusebox-temp', title: 'Fusebox Temperatures', signals: ['fusebox.dcdc_temp', 'fusebox.ambient_temp'] },
   { id: 'sdu-shock-pots', title: 'Shock Pots', signals: ['sdu[0].shock', 'sdu[1].shock', 'sdu[2].shock', 'sdu[3].shock'] },
   { id: 'sdu-wheel-speed', title: 'Wheel Speeds', signals: ['sdu[0].wrpm', 'sdu[1].wrpm', 'sdu[2].wrpm', 'sdu[3].wrpm'] },
-  { id: 'imu-lateral-comparison', title: 'Lateral Accel Comparison', signals: ['imu[0].ay', 'imu[1].ay', 'imu[2].ay'] },
-  { id: 'imu-longitudinal-comparison', title: 'Longitudinal Accel Comparison', signals: ['imu[0].ax', 'imu[1].ax', 'imu[2].ax'] },
+  { id: 'imu-lateral-comparison', title: 'Lateral Accel Comparison', signals: ['imu[0].ax', 'imu[1].ax', 'imu[2].ax'] },
+  { id: 'imu-longitudinal-comparison', title: 'Longitudinal Accel Comparison', signals: ['imu[0].ay', 'imu[1].ay', 'imu[2].ay'] },
+  { id: 'tshmu-temp', title: 'TSHMU Temperatures', signals: ['tshmu[0].temp1', 'tshmu[0].temp2', 'tshmu[0].temp3', 'tshmu[0].temp4', 'tshmu[0].temp5', 'tshmu[0].temp6'] },
 ];
 
 export function getSignalDefinition(signalId) {

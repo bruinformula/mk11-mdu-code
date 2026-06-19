@@ -20,7 +20,8 @@ export default function ZoomableLine({
   data,
   plugins = [],
   title = '',
-  description = ''
+  description = '',
+  onHoverIndex
 }) {
   const chartRef = useRef(null);
   const dragStateRef = useRef(null);
@@ -98,10 +99,19 @@ export default function ZoomableLine({
     if (!pt) return;
     const { x, y, chart } = pt;
 
+    let hoveredIdx = null;
     if (isInChartArea(chart, x, y)) {
       chart.$crosshairX = x;
+      const elements = chart.getElementsAtEventForMode(evt.nativeEvent, 'index', { intersect: false }, true);
+      if (elements && elements.length > 0) {
+        hoveredIdx = elements[0].index;
+      }
     } else {
       chart.$crosshairX = null;
+    }
+
+    if (onHoverIndex) {
+      onHoverIndex(hoveredIdx);
     }
 
     const ds = dragStateRef.current;
@@ -129,7 +139,7 @@ export default function ZoomableLine({
       }
     }
     scheduleRender();
-  }, [getChartPoint, isInChartArea, scheduleRender]);
+  }, [getChartPoint, isInChartArea, scheduleRender, onHoverIndex]);
 
   const handleMouseDown = useCallback((evt) => {
     if (evt.button !== 0) return;
@@ -181,7 +191,10 @@ export default function ZoomableLine({
       chart.$crosshairX = null;
       scheduleRender();
     }
-  }, [scheduleRender]);
+    if (onHoverIndex) {
+      onHoverIndex(null);
+    }
+  }, [scheduleRender, onHoverIndex]);
 
   const handleDoubleClick = useCallback(() => {
     setXRange({ min: null, max: null });

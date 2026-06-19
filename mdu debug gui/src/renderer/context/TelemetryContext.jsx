@@ -34,7 +34,9 @@ const initialSignalState = {
 
   // TSHMU
   'tshmu[0].flow1': 0.0, 'tshmu[0].flow2': 0.0, 'tshmu[0].jitter_us': 0, 'tshmu[0].error_flags': 0,
+  'tshmu[0].temp1': 0.0, 'tshmu[0].temp2': 0.0, 'tshmu[0].temp3': 0.0, 'tshmu[0].temp4': 0.0, 'tshmu[0].temp5': 0.0, 'tshmu[0].temp6': 0.0,
   'tshmu[1].flow1': 0.0, 'tshmu[1].flow2': 0.0, 'tshmu[1].jitter_us': 0, 'tshmu[1].error_flags': 0,
+  'tshmu[1].temp1': 0.0, 'tshmu[1].temp2': 0.0, 'tshmu[1].temp3': 0.0, 'tshmu[1].temp4': 0.0, 'tshmu[1].temp5': 0.0, 'tshmu[1].temp6': 0.0,
 
   // Inverter New Signals
   'inv.all.control_board_temp': 0.0, 'inv.all.rtd1_temp': 0.0, 'inv.all.rtd2_temp': 0.0, 'inv.all.stall_burst_model_temp': 0.0,
@@ -336,6 +338,14 @@ function updateStateFromBoard(state, board, id, dataBytes) {
       if (board.flow2 !== undefined) state[`tshmu[${bid}].flow2`] = board.flow2;
       if (board.jitter !== undefined) state[`tshmu[${bid}].jitter_us`] = board.jitter;
       if (board.errorFlags !== undefined) state[`tshmu[${bid}].error_flags`] = board.errorFlags;
+      if (board.temp1 !== undefined) {
+        state[`tshmu[${bid}].temp1`] = board.temp1;
+        state[`tshmu[${bid}].temp2`] = board.temp2;
+        state[`tshmu[${bid}].temp3`] = board.temp3;
+        state[`tshmu[${bid}].temp4`] = board.temp4;
+        state[`tshmu[${bid}].temp5`] = board.temp5;
+        state[`tshmu[${bid}].temp6`] = board.temp6;
+      }
     } else if (bt === 6) { // TSPMU
       if (board.pressure1 !== undefined) state[`tspmu[${bid}].p1`] = board.pressure1;
       if (board.pressure2 !== undefined) state[`tspmu[${bid}].p2`] = board.pressure2;
@@ -392,9 +402,15 @@ function updateStateFromBoard(state, board, id, dataBytes) {
         state[`${stateIdx}.ax`] = board.accelX / 1000.0;
         state[`${stateIdx}.ay`] = board.accelY / 1000.0;
         state[`${stateIdx}.az`] = board.accelZ / 1000.0;
-        state[`${stateIdx}.pitch`] = board.veloX / 100.0;
-        state[`${stateIdx}.roll`] = board.veloY / 100.0;
-        state[`${stateIdx}.yaw`] = board.veloZ / 100.0;
+        state[`${stateIdx}.pitch`] = board.veloB / 100.0;
+        state[`${stateIdx}.roll`] = board.veloA / 100.0;
+        state[`${stateIdx}.yaw`] = board.veloC / 100.0;
+
+        if (bid === 0) {
+          state['imu.pitch'] = board.veloB / 100.0;
+          state['imu.roll'] = board.veloA / 100.0;
+          state['imu.yaw'] = board.veloC / 100.0;
+        }
       }
     }
   } else if (id !== undefined && dataBytes) {

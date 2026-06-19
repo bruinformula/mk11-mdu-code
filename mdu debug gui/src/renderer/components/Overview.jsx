@@ -247,19 +247,19 @@ export default function Overview({ data, dropouts = [], startTs = 0 }) {
           </p>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyBetween: 'space-between', padding: '0.75rem', background: 'rgba(0,0,0,0.2)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-              <span style={{ fontSize: '0.875rem' }}>COG IMU (SMU 0)</span>
+              <span style={{ fontSize: '0.875rem' }}>COG/GPS Front SMU/IMU (SMU 0)</span>
               <span className={`corner-label ${stats.activeBoards.smu0 ? 'corner-fr' : 'corner-fl'}`} style={{ marginLeft: 'auto' }}>
                 {stats.activeBoards.smu0 ? 'Active' : 'Offline'}
               </span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyBetween: 'space-between', padding: '0.75rem', background: 'rgba(0,0,0,0.2)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-              <span style={{ fontSize: '0.875rem' }}>Front / GPS IMU (SMU 1)</span>
+              <span style={{ fontSize: '0.875rem' }}>Mid SMU/IMU (SMU 1)</span>
               <span className={`corner-label ${stats.activeBoards.smu1 ? 'corner-rl' : 'corner-fl'}`} style={{ marginLeft: 'auto' }}>
                 {stats.activeBoards.smu1 ? 'Active' : 'Offline'}
               </span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyBetween: 'space-between', padding: '0.75rem', background: 'rgba(0,0,0,0.2)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-              <span style={{ fontSize: '0.875rem' }}>Rear IMU (SMU 2)</span>
+              <span style={{ fontSize: '0.875rem' }}>Rear SMU/IMU (SMU 2)</span>
               <span className={`corner-label ${stats.activeBoards.smu2 ? 'corner-rr' : 'corner-fl'}`} style={{ marginLeft: 'auto' }}>
                 {stats.activeBoards.smu2 ? 'Active' : 'Offline'}
               </span>
