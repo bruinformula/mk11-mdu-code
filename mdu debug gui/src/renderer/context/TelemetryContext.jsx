@@ -450,6 +450,11 @@ export function TelemetryProvider({ children }) {
   const [diagnostics, setDiagnostics] = useState({});
   const [logStatus, setLogStatus] = useState({ active: false, filePath: null, linesWritten: 0, bytesWritten: 0 });
   
+  // Auto-logging states
+  const [autoLogEnabled, setAutoLogEnabled] = useState(false);
+  const [autoLogFolder, setAutoLogFolder] = useState('');
+  const wasConnectedRef = useRef(false);
+
   const logStatusRef = useRef(logStatus);
   useEffect(() => {
     logStatusRef.current = logStatus;
@@ -606,7 +611,49 @@ export function TelemetryProvider({ children }) {
     const savedFolder = localStorage.getItem('mdu_data_folder') || '/Users/larry/mk11-data-visualization/data';
     setFolderPath(savedFolder);
     scanFolder(savedFolder);
+    setAutoLogEnabled(localStorage.getItem('mdu_auto_log_enabled') === 'true');
+    setAutoLogFolder(localStorage.getItem('mdu_auto_log_folder') || '');
   }, []);
+
+  // Auto Log connection transition listener effect
+  useEffect(() => {
+    const isConnected = connectionState.connected || wifiState === 'connected';
+
+    if (isConnected && !wasConnectedRef.current) {
+      // Just transitioned to connected
+      if (autoLogEnabled && !logStatusRef.current.active) {
+        const folder = autoLogFolder || folderPath || '/Users/larry/mk11-data-visualization/data';
+        const now = new Date();
+        const compact = now.toISOString().replace(/[:]/g, '-').replace(/\.\d{3}Z$/, 'Z');
+        const autoLogFilePath = `${folder}/mdu-auto-${compact}.jsonl`;
+        startLogging(autoLogFilePath).catch(err => console.error('Failed to auto-start log:', err));
+      }
+    } else if (!isConnected && wasConnectedRef.current) {
+      // Just transitioned to disconnected
+      if (logStatusRef.current.active) {
+        stopLogging().catch(err => console.error('Failed to auto-stop log:', err));
+      }
+    }
+
+    wasConnectedRef.current = isConnected;
+  }, [connectionState.connected, wifiState, autoLogEnabled, autoLogFolder, folderPath]);
+
+  const updateAutoLogEnabled = (enabled) => {
+    setAutoLogEnabled(enabled);
+    localStorage.setItem('mdu_auto_log_enabled', enabled ? 'true' : 'false');
+  };
+
+  const selectAutoLogFolder = async () => {
+    try {
+      const selected = await window.mduDebug.selectDirectory();
+      if (selected) {
+        setAutoLogFolder(selected);
+        localStorage.setItem('mdu_auto_log_folder', selected);
+      }
+    } catch (e) {
+      console.error('Failed to select auto-log folder:', e);
+    }
+  };
 
   const clearReconnectTimer = () => {
     if (reconnectTimerRef.current) {
@@ -960,11 +1007,16 @@ export function TelemetryProvider({ children }) {
       if (Array.isArray(frames)) {
         for (const frame of frames) {
           if (frame && frame.ok) {
+            const frameId = frame.frame?.identifier ?? 
+                            (frame.frame?.identifierHex ? parseInt(frame.frame.identifierHex, 16) : undefined) ?? 
+                            frame.board?.identifier;
+            const dataBytes = frame.frame?.dataBytes ?? frame.board?.dataBytes;
+            
             updateStateFromBoard(
               latestStateRef.current,
               frame.board,
-              frame.identifier || frame.board?.identifier,
-              frame.dataBytes || frame.board?.dataBytes
+              frameId,
+              dataBytes
             );
           }
         }
@@ -1285,6 +1337,10 @@ export function TelemetryProvider({ children }) {
         connectionState,
         diagnostics,
         logStatus,
+        autoLogEnabled,
+        setAutoLogEnabled: updateAutoLogEnabled,
+        autoLogFolder,
+        selectAutoLogFolder,
         isRawCanDataset,
         isReplaying,
         playbackTime,
