@@ -143,3 +143,71 @@ void CAN_To_USB_Process(void) {
     }
   }
 }
+
+// Global buffer for SLCAN parsing
+static char slcan_buf[32];
+static int slcan_idx = 0;
+
+static uint8_t HexCharToNibble(char c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+  return 0;
+}
+
+extern uint16_t USB_Driver_Available(void);
+extern uint16_t USB_Driver_Read(uint8_t *buf, uint16_t len);
+extern FDCAN_HandleTypeDef hfdcan1;
+
+void USB_To_CAN_Process(void) {
+  uint16_t avail = USB_Driver_Available();
+  if (avail == 0) return;
+
+  uint8_t c;
+  while (USB_Driver_Read(&c, 1) == 1) {
+    if (c == '\r' || c == '\n') {
+      if (slcan_idx > 0) {
+        slcan_buf[slcan_idx] = '\0';
+        
+        // Parse basic SLCAN: t[ID3][Len1][Data...]
+        if ((slcan_buf[0] == 't' || slcan_buf[0] == 'T') && slcan_idx >= 5) {
+          FDCAN_TxHeaderTypeDef txHeader;
+          txHeader.IdType = FDCAN_STANDARD_ID;
+          txHeader.TxFrameType = FDCAN_DATA_FRAME;
+          txHeader.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
+          txHeader.BitRateSwitch = FDCAN_BRS_OFF;
+          txHeader.FDFormat = FDCAN_FD_CAN;
+          txHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
+          txHeader.MessageMarker = 0;
+
+          // Parse ID (3 hex chars)
+          uint32_t id = (HexCharToNibble(slcan_buf[1]) << 8) | 
+                        (HexCharToNibble(slcan_buf[2]) << 4) | 
+                        HexCharToNibble(slcan_buf[3]);
+          txHeader.Identifier = id;
+
+          // Parse Len (1 hex char)
+          uint8_t dlc = HexCharToNibble(slcan_buf[4]);
+          txHeader.DataLength = dlc << 16; // Simple map to DLC bytes (0-8 works for FDCAN_DLC_BYTES_x)
+
+          // Parse Data
+          uint8_t data[8] = {0};
+          if (dlc <= 8 && slcan_idx >= 5 + (dlc * 2)) {
+            for (int i = 0; i < dlc; i++) {
+              data[i] = (HexCharToNibble(slcan_buf[5 + i*2]) << 4) | HexCharToNibble(slcan_buf[6 + i*2]);
+            }
+            // Add to Tx FIFO Q
+            HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &txHeader, data);
+          }
+        }
+        slcan_idx = 0;
+      }
+    } else {
+      if (slcan_idx < (int)(sizeof(slcan_buf) - 1)) {
+        slcan_buf[slcan_idx++] = c;
+      } else {
+        slcan_idx = 0; // Overflow, reset
+      }
+    }
+  }
+}

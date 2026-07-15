@@ -16,6 +16,7 @@ extern volatile uint32_t fdcan1_debug_cb;
 HAL_StatusTypeDef CAN_Init(FDCAN_HandleTypeDef *fdcan);
 void CAN_Process(uint32_t now_ms);
 void CAN_To_USB_Process(void);
+void USB_To_CAN_Process(void);
 
 #ifdef __cplusplus
 }

@@ -519,6 +519,7 @@ int main(void)
 
     // Call the SLCAN converter directly
     CAN_To_USB_Process();
+    USB_To_CAN_Process();
 
     // Automatic CAN Bus-Off Recovery with a 500ms debounce timer
     static uint32_t last_recovery_tick = 0;
