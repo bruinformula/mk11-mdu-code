@@ -741,29 +741,29 @@ class DeviceMonitor extends EventEmitter {
           rxWrite += chunk.length;
 
           while (rxWrite - rxRead > 0) {
-            const syncIndex = rxBuffer.indexOf(0xAA, rxRead);
+            const syncIndex = rxBuffer.indexOf(0x55, rxRead);
             
             if (syncIndex === -1 || syncIndex >= rxWrite) {
               rxRead = rxWrite; 
               break;
             }
 
-            // Check for the second sync byte (0x55)
-            if (syncIndex + 1 < rxWrite && rxBuffer[syncIndex + 1] !== 0x55) {
-              rxRead = syncIndex + 1; // Skip bad 0xAA
+            // Check for the second sync byte (0xAA)
+            if (syncIndex + 1 < rxWrite && rxBuffer[syncIndex + 1] !== 0xAA) {
+              rxRead = syncIndex + 1; // Skip bad 0x55
               continue;
             }
 
             rxRead = syncIndex;
             const available = rxWrite - rxRead;
 
-            // Need at least 6 bytes (0xAA, 0x55, ID_HI, ID_LO, DLC, CHK)
-            if (available < 6) {
+            // Need at least 5 bytes (0x55, 0xAA, ID_LO, ID_HI, DLC)
+            if (available < 5) {
               break;
             }
 
             const dataLength = rxBuffer[rxRead + 4];
-            const frameLength = 6 + dataLength;
+            const frameLength = 5 + dataLength;
 
             if (available < frameLength) {
               break;
@@ -773,7 +773,7 @@ class DeviceMonitor extends EventEmitter {
             const slcan = parseBinaryFrame(frameBuffer);
             
             if (!slcan.ok) {
-               // Only log if it had the 0xAA 0x55 sync but failed validation to prevent log noise
+               // Only log if it had the 0x55 0xAA sync but failed validation
                if (slcan.reason !== 'too-short' && slcan.reason !== 'invalid-sync') {
                  console.log('[DEBUG] Rejected binary frame:', slcan.reason, 'Length:', frameLength, 'Buffer:', frameBuffer.toString('hex'));
                }

@@ -86,25 +86,16 @@ function parseSlcanFrame(rawLine) {
 }
 
 function parseBinaryFrame(buffer) {
-  if (buffer.length < 6) return { ok: false, reason: 'too-short' };
-  if (buffer[0] !== 0xAA || buffer[1] !== 0x55) return { ok: false, reason: 'invalid-sync' };
+  if (buffer.length < 5) return { ok: false, reason: 'too-short' };
+  if (buffer[0] !== 0x55 || buffer[1] !== 0xAA) return { ok: false, reason: 'invalid-sync' };
 
-  const idHi = buffer[2];
-  const idLo = buffer[3];
+  const idLo = buffer[2];
+  const idHi = buffer[3];
   const identifier = (idHi << 8) | idLo;
   const dataLength = buffer[4];
   
-  if (buffer.length !== 6 + dataLength) {
+  if (buffer.length !== 5 + dataLength) {
     return { ok: false, reason: 'length-mismatch' };
-  }
-
-  // Checksum: XOR of everything from ID_HI to last data byte
-  let chk = 0;
-  for (let i = 2; i < 5 + dataLength; i++) {
-    chk ^= buffer[i];
-  }
-  if (chk !== buffer[5 + dataLength]) {
-    return { ok: false, reason: 'invalid-checksum' };
   }
 
   const dataBytes = [];
