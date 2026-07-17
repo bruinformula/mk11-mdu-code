@@ -63,6 +63,12 @@ const initialSignalState = {
   'fusebox.all.fusebox_state': 0, 'fusebox.all.dcdc_voltage': 0.0, 'fusebox.all.battery_voltage': 0.0, 'fusebox.all.lvb_soc': 0, 'fusebox.all.dcdc_temp': 0.0,
   'fusebox.all.accy_fan_power': 0.0, 'fusebox.all.tractive_fan_power': 0.0, 'fusebox.all.tractive_pumps_power': 0.0, 'fusebox.all.charging_power': 0.0,
   'fusebox.all.ambient_temp': 0.0,
+
+  // Reception Tracking
+  'sdu[0].rx_count': 0, 'sdu[1].rx_count': 0, 'sdu[2].rx_count': 0, 'sdu[3].rx_count': 0,
+  'tspmu[0].rx_count': 0, 'tspmu[1].rx_count': 0,
+  'tshmu[0].rx_count': 0, 'tshmu[1].rx_count': 0,
+  'gps.rx_count': 0, 'bms.rx_count': 0, 'inv.rx_count': 0, 'fusebox.rx_count': 0, 'vcu.rx_count': 0,
 };
 
 function decodeStandardCan(id, dataBytes) {
@@ -324,6 +330,7 @@ function updateStateFromBoard(state, board, id, dataBytes) {
     const bid = board.boardId;
     
     if (bt === 2) { // SDU
+      state[`sdu[${bid}].rx_count`] = (state[`sdu[${bid}].rx_count`] || 0) + 1;
       if (board.shockMm !== undefined) state[`sdu[${bid}].shock`] = board.shockMm;
       if (board.brakeC !== undefined) state[`sdu[${bid}].brake`] = board.brakeC;
       if (board.rpm !== undefined) state[`sdu[${bid}].wrpm`] = board.rpm;
@@ -334,6 +341,7 @@ function updateStateFromBoard(state, board, id, dataBytes) {
         state[`sdu[${bid}].tire[3]`] = board.tireC.ambient;
       }
     } else if (bt === 4) { // TSHMU
+      state[`tshmu[${bid}].rx_count`] = (state[`tshmu[${bid}].rx_count`] || 0) + 1;
       if (board.flow1 !== undefined) state[`tshmu[${bid}].flow1`] = board.flow1;
       if (board.flow2 !== undefined) state[`tshmu[${bid}].flow2`] = board.flow2;
       if (board.jitter !== undefined) state[`tshmu[${bid}].jitter_us`] = board.jitter;
@@ -347,6 +355,7 @@ function updateStateFromBoard(state, board, id, dataBytes) {
         state[`tshmu[${bid}].temp6`] = board.temp6;
       }
     } else if (bt === 6) { // TSPMU
+      state[`tspmu[${bid}].rx_count`] = (state[`tspmu[${bid}].rx_count`] || 0) + 1;
       if (board.pressure1 !== undefined) state[`tspmu[${bid}].p1`] = board.pressure1;
       if (board.pressure2 !== undefined) state[`tspmu[${bid}].p2`] = board.pressure2;
       if (board.tempBlocks && board.tempBlocks[0]) {
@@ -361,6 +370,7 @@ function updateStateFromBoard(state, board, id, dataBytes) {
         state[`tspmu[${bid}].temps[3]`] = board.tspmuTemp4;
       }
     } else if (bt === 7 || bt === 1) { // GPS / SMU
+      state['gps.rx_count'] = (state['gps.rx_count'] || 0) + 1;
       if (board.gpsPos) {
         state['gps.lat'] = board.gpsPos.latDeg;
         state['gps.lon'] = board.gpsPos.lonDeg;
@@ -418,6 +428,13 @@ function updateStateFromBoard(state, board, id, dataBytes) {
     if (dec) {
       for (const [k, v] of Object.entries(dec)) {
         state[k] = v;
+      }
+      if (id >= 1712 && id <= 1714) {
+        state['bms.rx_count'] = (state['bms.rx_count'] || 0) + 1;
+      } else if (id >= 160 && id <= 166) {
+        state['inv.rx_count'] = (state['inv.rx_count'] || 0) + 1;
+      } else if (id === 1264 || id === 1266) {
+        state['fusebox.rx_count'] = (state['fusebox.rx_count'] || 0) + 1;
       }
     }
   }
