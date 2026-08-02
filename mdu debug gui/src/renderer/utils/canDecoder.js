@@ -220,9 +220,11 @@ function decodeGpsNav(data) {
     headingQuality: data[19],
     baselineM: getUnsigned32LE(data, 20) / 1000.0,
     pitchDeg: getSigned32LE(data, 24) / 100.0,
+    bodySlipDeg: getSigned32LE(data, 28) / 100.0,
     errorFlags: data[63],
   };
 }
+
 
 // ---------------------------------------------------------------------------
 // IMU simple frames (0x4F5-0x4FA) — 6-byte accel / attitude frames

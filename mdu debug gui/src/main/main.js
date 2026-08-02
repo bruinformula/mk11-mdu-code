@@ -593,6 +593,7 @@ function registerIpcHandlers() {
           state['gps.heading_quality'] = board.gpsNav.headingQuality;
           state['gps.baseline_m'] = board.gpsNav.baselineM;
           state['gps.pitch_deg'] = board.gpsNav.pitchDeg;
+          state['gps.body_slip_deg'] = board.gpsNav.bodySlipDeg;
           state['gps.error_flags'] = board.gpsNav.errorFlags;
         } else if (board.latitude_deg !== undefined) {
           state['gps.lat'] = board.latitude_deg;
@@ -644,7 +645,7 @@ function registerIpcHandlers() {
       'gps.lat': 0.0, 'gps.lon': 0.0, 'gps.alt': 0.0, 'gps.vel': 0.0, 'gps.hdg': 0.0,
       'gps.fix': 0, 'gps.fix_quality': 0, 'gps.rtk_state': 'no_fix', 'gps.sats': 0, 'gps.hdop': 99.99,
       'gps.heading_valid': 0, 'gps.heading_quality': 0, 'gps.heading_source': 'course_over_ground',
-      'gps.heading_accuracy_deg': 0.0, 'gps.baseline_m': 0.0, 'gps.pitch_deg': 0.0, 'gps.error_flags': 0,
+      'gps.heading_accuracy_deg': 0.0, 'gps.baseline_m': 0.0, 'gps.pitch_deg': 0.0, 'gps.body_slip_deg': 0.0, 'gps.error_flags': 0,
       'imu.ax': 0.0, 'imu.ay': 0.0, 'imu.az': 1.0,
       'imu.pitch': 0.0, 'imu.roll': 0.0, 'imu.yaw': 0.0,
       'imu[0].ax': 0.0, 'imu[0].ay': 0.0, 'imu[0].az': 1.0, 'imu[0].pitch': 0.0, 'imu[0].roll': 0.0, 'imu[0].yaw': 0.0,

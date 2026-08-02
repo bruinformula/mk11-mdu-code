@@ -340,9 +340,11 @@ function decodeGpsNav(data) {
     headingQuality: data[19],
     baselineM: getU32(20) / 1000.0,
     pitchDeg: getS32(24) / 100.0,
+    bodySlipDeg: getS32(28) / 100.0,
     errorFlags: data[63]
   };
 }
+
 
 function parseFast(match, rawLine) {
   const board = Number.parseInt(match[1], 10);

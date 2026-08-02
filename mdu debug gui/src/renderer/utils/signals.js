@@ -45,7 +45,9 @@ export const signalGroups = [
       makeSignal('gps.heading_accuracy_deg', 'Heading Accuracy', 'deg', '#00ffff', { precision: 2 }),
       makeSignal('gps.baseline_m', 'Baseline Length', 'm', '#ff2a4d', { precision: 3 }),
       makeSignal('gps.pitch_deg', 'GPS Pitch', 'deg', '#70d6ff', { precision: 2 }),
+      makeSignal('gps.body_slip_deg', 'Body Slip Angle', 'deg', '#ff2a4d', { precision: 2 }),
       makeSignal('gps.error_flags', 'GPS Error Flags', 'bits', '#ff70a6', { precision: 0 }),
+
     ],
   },
   {
