@@ -338,6 +338,28 @@ export default function ImuMotion({ data, boardDropouts, startTs }) {
     ? processedData[hoveredIndex]
     : (processedData && processedData.length > 0 ? processedData[processedData.length - 1] : null);
 
+  const getGpsVal = (key, decimals = 1, fallback = '--') => {
+    if (!activeRow) return fallback;
+    const v = parseFloat(activeRow[key]);
+    if (isNaN(v)) return fallback;
+    return v.toFixed(decimals);
+  };
+
+  const getRtkQualityLabel = () => {
+    if (!activeRow) return 'OFFLINE';
+    const q = parseInt(activeRow['gps.fix_quality'], 10);
+    if (isNaN(q)) return 'OFFLINE';
+    return {
+      0: 'NO FIX',
+      1: 'GPS',
+      2: 'DGPS',
+      4: 'RTK FIXED',
+      5: 'RTK FLOAT',
+    }[q] || `Q${q}`;
+  };
+
+  const isHeadingValid = activeRow && parseInt(activeRow['gps.heading_valid'], 10) === 1;
+
   const maxG = 2.0;
 
   // Reads one row and returns the car-frame G vector for the given IMU.
@@ -460,6 +482,106 @@ export default function ImuMotion({ data, boardDropouts, startTs }) {
                   {rearCoords.valid ? `${rearCoords.gMag.toFixed(2)} G` : 'Offline'}
                 </span>
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* GPS & RTK Diagnostics Card */}
+        <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', minHeight: '400px' }}>
+          <div style={{ width: '100%' }}>
+            <h2 className="section-title" style={{ borderLeft: 'none', paddingLeft: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Compass size={18} style={{ color: '#00e5ff' }} /> GPS & Dual-Antenna RTK
+            </h2>
+            <p className="text-slate-400" style={{ fontSize: '0.8rem', marginTop: '-0.25rem' }}>Real-time GPS status and moving-base heading analytics</p>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', flex: 1, justifyContent: 'center' }}>
+            {/* Status Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
+              
+              {/* Left Column: GPS Position */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', background: 'rgba(0, 0, 0, 0.15)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.03)' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Positioning</span>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>GPS Fix:</span>
+                    <strong style={{ 
+                      color: {
+                        'RTK FIXED': '#00ff7f',
+                        'RTK FLOAT': '#ffd670',
+                        'GPS': '#70d6ff',
+                        'DGPS': '#70d6ff',
+                        'NO FIX': '#ff3b30',
+                        'OFFLINE': 'var(--text-muted)'
+                      }[getRtkQualityLabel()] || '#fff'
+                    }}>
+                      {getRtkQualityLabel()}
+                    </strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Satellites:</span>
+                    <strong style={{ color: '#fff' }}>{getGpsVal('gps.sats', 0, '0')}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>HDOP:</span>
+                    <strong style={{ color: '#fff' }}>{getGpsVal('gps.hdop', 2, '0.00')}</strong>
+                  </div>
+                </div>
+
+                <div style={{ borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.2rem', fontSize: '0.75rem', fontFamily: 'var(--font-mono)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Lat:</span>
+                    <span style={{ color: 'var(--text-secondary)' }}>{getGpsVal('gps.lat', 6, '0.000000')}°</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Lon:</span>
+                    <span style={{ color: 'var(--text-secondary)' }}>{getGpsVal('gps.lon', 6, '0.000000')}°</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Alt:</span>
+                    <span style={{ color: 'var(--text-secondary)' }}>{getGpsVal('gps.alt', 2, '0.00')} m</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column: Moving Base Heading */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', background: 'rgba(0, 0, 0, 0.15)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.03)' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Heading & RTK</span>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Antenna Link:</span>
+                    <strong style={{ color: isHeadingValid ? '#00ff7f' : '#ff3b30' }}>
+                      {isHeadingValid ? 'OK' : 'DISCONNECTED'}
+                    </strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Yaw (Hdg):</span>
+                    <strong style={{ color: '#fff' }}>{getGpsVal('gps.hdg', 2, '0.00')}°</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Pitch:</span>
+                    <strong style={{ color: '#fff' }}>{getGpsVal('gps.pitch_deg', 2, '0.00')}°</strong>
+                  </div>
+                </div>
+
+                <div style={{ borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.2rem', fontSize: '0.75rem', fontFamily: 'var(--font-mono)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Baseline:</span>
+                    <span style={{ color: 'var(--text-secondary)' }}>{getGpsVal('gps.baseline_m', 3, '0.000')} m</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Velocity:</span>
+                    <span style={{ color: 'var(--text-secondary)' }}>{getGpsVal('gps.vel', 2, '0.00')} m/s</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Quality Code:</span>
+                    <span style={{ color: 'var(--text-secondary)' }}>{getGpsVal('gps.heading_quality', 0, '0')}</span>
+                  </div>
+                </div>
+              </div>
+
             </div>
           </div>
         </div>

@@ -717,7 +717,7 @@ function registerIpcHandlers() {
       if (binIdx > this.currentBinIdx) {
         if (this.currentBinIdx !== -1) {
           for (let b = this.currentBinIdx; b < binIdx; b++) {
-            const tsSeconds = (this.startMs + b * 100) / 1000;
+            const tsSeconds = (b * 100) / 1000;
             this.rows.push({
               ts: tsSeconds.toFixed(3),
               ...this.latestState
@@ -732,7 +732,7 @@ function registerIpcHandlers() {
 
     finish() {
       if (this.currentBinIdx !== -1) {
-        const tsSeconds = (this.startMs + this.currentBinIdx * 100) / 1000;
+        const tsSeconds = (this.currentBinIdx * 100) / 1000;
         this.rows.push({
           ts: tsSeconds.toFixed(3),
           ...this.latestState

@@ -158,21 +158,62 @@ function decodeTspmuPressureBlocks(data) {
   return blocks;
 }
 
-function decodeTshmuTempBlocks(data) {
+function decodeTshmuTempBlocks(data, boardId = 0) {
   const blocks = [];
+  
+  let r_series, r0, beta, offset_c;
+  if (boardId === 0) {
+    r_series = [10000.0, 10000.0, 10000.0, 10000.0, 10000.0, 10000.0];
+    r0 = [50000.0, 10000.0, 10000.0, 10000.0, 10000.0, 10000.0];
+    beta = [3950.0, 3694.0, 3694.0, 3694.0, 3694.0, 3694.0];
+    offset_c = [0.0, -1.7, -1.7, -1.7, -1.7, -1.7];
+  } else {
+    r_series = [10000.0, 10000.0, 10000.0, 10000.0, 10000.0, 10000.0];
+    r0 = [10000.0, 10000.0, 10000.0, 10000.0, 10000.0, 10000.0];
+    beta = [3694.0, 3694.0, 3694.0, 3694.0, 3694.0, 3694.0];
+    offset_c = [-1.7, -1.7, -1.7, -1.7, -1.7, -1.7];
+  }
+  
+  const celsiusToVoltage = (celsius, rSeries, rZero, b, vref, offset) => {
+    try {
+      const true_celsius = celsius - offset;
+      if (true_celsius <= -40.0) return vref - 0.001;
+      if (true_celsius >= 125.0) return 0.0;
+      const T = true_celsius + 273.15;
+      const invT = 1.0 / T;
+      const exponent = (invT - (1.0 / 298.15)) * b;
+      const R = rZero * Math.exp(exponent);
+      const voltage = (R * vref) / (rSeries + R);
+      return Math.round(voltage * 10000) / 10000;
+    } catch (e) {
+      return 0.0;
+    }
+  };
+
   for (let index = 0; index < 4; index += 1) {
     const offset = 6 + index * 13;
     if (offset + 12 >= data.length) {
       break;
     }
-    const temp1 = toSigned16(data[offset] | (data[offset + 1] << 8)) / 1000.0;
-    const temp2 = toSigned16(data[offset + 2] | (data[offset + 3] << 8)) / 1000.0;
-    const temp3 = toSigned16(data[offset + 4] | (data[offset + 5] << 8)) / 1000.0;
-    const temp4 = toSigned16(data[offset + 6] | (data[offset + 7] << 8)) / 1000.0;
-    const temp5 = toSigned16(data[offset + 8] | (data[offset + 9] << 8)) / 1000.0;
-    const temp6 = toSigned16(data[offset + 10] | (data[offset + 11] << 8)) / 1000.0;
+    
+    const temps = [
+      toSigned16(data[offset] | (data[offset + 1] << 8)) / 10.0,
+      toSigned16(data[offset + 2] | (data[offset + 3] << 8)) / 10.0,
+      toSigned16(data[offset + 4] | (data[offset + 5] << 8)) / 10.0,
+      toSigned16(data[offset + 6] | (data[offset + 7] << 8)) / 10.0,
+      toSigned16(data[offset + 8] | (data[offset + 9] << 8)) / 10.0,
+      toSigned16(data[offset + 10] | (data[offset + 11] << 8)) / 10.0,
+    ];
+    
+    const volts = temps.map((t, idx) => celsiusToVoltage(t, r_series[idx], r0[idx], beta[idx], 3.3, offset_c[idx]));
+    
     const jitterMs = toSigned8(data[offset + 12]);
-    blocks.push({ index, temp1, temp2, temp3, temp4, temp5, temp6, jitterMs });
+    blocks.push({ 
+      index, 
+      temp1: temps[0], temp2: temps[1], temp3: temps[2], temp4: temps[3], temp5: temps[4], temp6: temps[5], 
+      volt1: volts[0], volt2: volts[1], volt3: volts[2], volt4: volts[3], volt5: volts[4], volt6: volts[5], 
+      jitterMs 
+    });
   }
   return blocks;
 }
@@ -203,28 +244,61 @@ function decodeFlowBlocks(data) {
   return blocks;
 }
 
-function decodeTspmuTempBlocks(data) {
+function decodeTspmuTempBlocks(data, boardId = 0) {
   const blocks = [];
+  
+  let r_series, r0, beta;
+  if (boardId === 0) {
+    r_series = [5070.0, 5090.0, 5060.0, 5090.0];
+    r0 = [9645.2, 9645.2, 9645.2, 9645.2];
+    beta = [4243.5, 4243.5, 4243.5, 4243.5];
+  } else {
+    r_series = [5108.0, 5119.0, 5118.0, 5103.0];
+    r0 = [10300.0, 10300.0, 10300.0, 10300.0];
+    beta = [4406.6, 4406.6, 4406.6, 4406.6];
+  }
+  
+  const celsiusToVoltage = (celsius, rSeries, rZero, b, vref) => {
+    try {
+      if (celsius <= -40.0) return vref - 0.001;
+      if (celsius >= 125.0) return 0.0;
+      const T = celsius + 273.15;
+      const invT = 1.0 / T;
+      const exponent = (invT - (1.0 / 298.15)) * b;
+      const R = rZero * Math.exp(exponent);
+      const voltage = (R * vref) / (rSeries + R);
+      return Math.round(voltage * 10000) / 10000;
+    } catch (e) {
+      return 0.0;
+    }
+  };
+
   for (let index = 0; index < 6; index += 1) {
     const offset = 4 + index * 9;
     if (offset + 8 >= data.length) {
       break;
     }
-    const rawT1 = data[offset] | (data[offset + 1] << 8);
-    const rawT2 = data[offset + 2] | (data[offset + 3] << 8);
-    const rawT3 = data[offset + 4] | (data[offset + 5] << 8);
-    const rawT4 = data[offset + 6] | (data[offset + 7] << 8);
-    const temp1 = toSigned16(rawT1) / 10.0;
-    const temp2 = toSigned16(rawT2) / 10.0;
-    const temp3 = toSigned16(rawT3) / 10.0;
-    const temp4 = toSigned16(rawT4) / 10.0;
+    
+    const temps = [
+      toSigned16(data[offset] | (data[offset + 1] << 8)) / 10.0,
+      toSigned16(data[offset + 2] | (data[offset + 3] << 8)) / 10.0,
+      toSigned16(data[offset + 4] | (data[offset + 5] << 8)) / 10.0,
+      toSigned16(data[offset + 6] | (data[offset + 7] << 8)) / 10.0,
+    ];
+    
+    const volts = temps.map((t, idx) => celsiusToVoltage(t, r_series[idx], r0[idx], beta[idx], 3.0539));
+    
     const jitterMs = toSigned8(data[offset + 8]);
     blocks.push({
       index,
-      temp1,
-      temp2,
-      temp3,
-      temp4,
+      temp1: temps[0],
+      temp2: temps[1],
+      temp3: temps[2],
+      temp4: temps[3],
+      volt1: volts[0],
+      volt2: volts[1],
+      volt3: volts[2],
+      volt4: volts[3],
       jitterMs,
     });
   }
@@ -1002,6 +1076,12 @@ function parseSlcanToBoard(slcan, rawLine) {
             temp4: latest.temp4 ?? 0,
             temp5: latest.temp5 ?? 0,
             temp6: latest.temp6 ?? 0,
+            volt1: latest.volt1 ?? 0,
+            volt2: latest.volt2 ?? 0,
+            volt3: latest.volt3 ?? 0,
+            volt4: latest.volt4 ?? 0,
+            volt5: latest.volt5 ?? 0,
+            volt6: latest.volt6 ?? 0,
             jitterMs: latest.jitterMs ?? 0,
             tempBlocks,
           }
@@ -1071,6 +1151,10 @@ function parseSlcanToBoard(slcan, rawLine) {
             tspmuTemp2: tempBlocks[0]?.temp2 ?? 0,
             tspmuTemp3: tempBlocks[0]?.temp3 ?? 0,
             tspmuTemp4: tempBlocks[0]?.temp4 ?? 0,
+            tspmuVolt1: tempBlocks[0]?.volt1 ?? 0,
+            tspmuVolt2: tempBlocks[0]?.volt2 ?? 0,
+            tspmuVolt3: tempBlocks[0]?.volt3 ?? 0,
+            tspmuVolt4: tempBlocks[0]?.volt4 ?? 0,
             jitterMs: tempBlocks[0]?.jitterMs ?? 0,
             tempBlocks,
           }

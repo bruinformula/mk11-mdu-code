@@ -108,12 +108,12 @@ function decodeTshmuTempBlocks(data) {
     if (o + 12 >= data.length) break;
     blocks.push({
       index: i,
-      temp1: toSigned16(data[o] | (data[o + 1] << 8)) / 1000.0,
-      temp2: toSigned16(data[o + 2] | (data[o + 3] << 8)) / 1000.0,
-      temp3: toSigned16(data[o + 4] | (data[o + 5] << 8)) / 1000.0,
-      temp4: toSigned16(data[o + 6] | (data[o + 7] << 8)) / 1000.0,
-      temp5: toSigned16(data[o + 8] | (data[o + 9] << 8)) / 1000.0,
-      temp6: toSigned16(data[o + 10] | (data[o + 11] << 8)) / 1000.0,
+      temp1: toSigned16(data[o] | (data[o + 1] << 8)) / 10.0,
+      temp2: toSigned16(data[o + 2] | (data[o + 3] << 8)) / 10.0,
+      temp3: toSigned16(data[o + 4] | (data[o + 5] << 8)) / 10.0,
+      temp4: toSigned16(data[o + 6] | (data[o + 7] << 8)) / 10.0,
+      temp5: toSigned16(data[o + 8] | (data[o + 9] << 8)) / 10.0,
+      temp6: toSigned16(data[o + 10] | (data[o + 11] << 8)) / 10.0,
       jitterMs: toSigned8(data[o + 12]),
     });
   }

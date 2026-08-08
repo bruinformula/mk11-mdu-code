@@ -353,6 +353,14 @@ function updateStateFromBoard(state, board, id, dataBytes) {
         state[`tshmu[${bid}].temp4`] = board.temp4;
         state[`tshmu[${bid}].temp5`] = board.temp5;
         state[`tshmu[${bid}].temp6`] = board.temp6;
+        if (board.volt1 !== undefined) {
+          state[`tshmu[${bid}].volt1`] = board.volt1;
+          state[`tshmu[${bid}].volt2`] = board.volt2;
+          state[`tshmu[${bid}].volt3`] = board.volt3;
+          state[`tshmu[${bid}].volt4`] = board.volt4;
+          state[`tshmu[${bid}].volt5`] = board.volt5;
+          state[`tshmu[${bid}].volt6`] = board.volt6;
+        }
       }
     } else if (bt === 6) { // TSPMU
       state[`tspmu[${bid}].rx_count`] = (state[`tspmu[${bid}].rx_count`] || 0) + 1;
@@ -363,11 +371,23 @@ function updateStateFromBoard(state, board, id, dataBytes) {
         state[`tspmu[${bid}].temps[1]`] = board.tempBlocks[0].temp2;
         state[`tspmu[${bid}].temps[2]`] = board.tempBlocks[0].temp3;
         state[`tspmu[${bid}].temps[3]`] = board.tempBlocks[0].temp4;
+        if (board.tempBlocks[0].volt1 !== undefined) {
+          state[`tspmu[${bid}].volts[0]`] = board.tempBlocks[0].volt1;
+          state[`tspmu[${bid}].volts[1]`] = board.tempBlocks[0].volt2;
+          state[`tspmu[${bid}].volts[2]`] = board.tempBlocks[0].volt3;
+          state[`tspmu[${bid}].volts[3]`] = board.tempBlocks[0].volt4;
+        }
       } else if (board.tspmuTemp1 !== undefined) {
         state[`tspmu[${bid}].temps[0]`] = board.tspmuTemp1;
         state[`tspmu[${bid}].temps[1]`] = board.tspmuTemp2;
         state[`tspmu[${bid}].temps[2]`] = board.tspmuTemp3;
         state[`tspmu[${bid}].temps[3]`] = board.tspmuTemp4;
+        if (board.tspmuVolt1 !== undefined) {
+          state[`tspmu[${bid}].volts[0]`] = board.tspmuVolt1;
+          state[`tspmu[${bid}].volts[1]`] = board.tspmuVolt2;
+          state[`tspmu[${bid}].volts[2]`] = board.tspmuVolt3;
+          state[`tspmu[${bid}].volts[3]`] = board.tspmuVolt4;
+        }
       }
     } else if (bt === 7 || bt === 1) { // GPS / SMU
       state['gps.rx_count'] = (state['gps.rx_count'] || 0) + 1;

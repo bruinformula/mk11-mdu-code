@@ -406,6 +406,10 @@ export const signalGroups = [
       makeSignal(`tspmu[${idx}].temps[1]`, `Board ${boardId} Temp 2`, '°C', '#9bf6ff'),
       makeSignal(`tspmu[${idx}].temps[2]`, `Board ${boardId} Temp 3`, '°C', '#8cffc1'),
       makeSignal(`tspmu[${idx}].temps[3]`, `Board ${boardId} Temp 4`, '°C', '#caffbf'),
+      makeSignal(`tspmu[${idx}].volts[0]`, `Board ${boardId} Volt 1`, 'V', '#70d6ff'),
+      makeSignal(`tspmu[${idx}].volts[1]`, `Board ${boardId} Volt 2`, 'V', '#9bf6ff'),
+      makeSignal(`tspmu[${idx}].volts[2]`, `Board ${boardId} Volt 3`, 'V', '#8cffc1'),
+      makeSignal(`tspmu[${idx}].volts[3]`, `Board ${boardId} Volt 4`, 'V', '#caffbf'),
     ],
   });
 });
@@ -413,18 +417,24 @@ export const signalGroups = [
 ['0', '1'].forEach((boardId, idx) => {
   signalGroups.push({
     id: `tshmu_${idx}`,
-    name: `TSHMU Board ${boardId}`,
+    name: `TSHMU Board ${boardId} Flow`,
     signals: [
       makeSignal(`tshmu[${idx}].flow1`, `Board ${boardId} Flow 1`, 'L/min', '#00e5ff'),
       makeSignal(`tshmu[${idx}].flow2`, `Board ${boardId} Flow 2`, 'L/min', '#00ff7f'),
-      makeSignal(`tshmu[${idx}].jitter_us`, `Board ${boardId} Flow Jitter`, 'us', '#ffb800', { precision: 0 }),
-      makeSignal(`tshmu[${idx}].error_flags`, `Board ${boardId} Flow Error Flags`, 'bits', '#ff70a6', { precision: 0 }),
       makeSignal(`tshmu[${idx}].temp1`, `Board ${boardId} Temp 1`, '°C', '#70d6ff'),
       makeSignal(`tshmu[${idx}].temp2`, `Board ${boardId} Temp 2`, '°C', '#9bf6ff'),
       makeSignal(`tshmu[${idx}].temp3`, `Board ${boardId} Temp 3`, '°C', '#8cffc1'),
       makeSignal(`tshmu[${idx}].temp4`, `Board ${boardId} Temp 4`, '°C', '#caffbf'),
-      makeSignal(`tshmu[${idx}].temp5`, `Board ${boardId} Temp 5`, '°C', '#ffd6a5'),
-      makeSignal(`tshmu[${idx}].temp6`, `Board ${boardId} Temp 6`, '°C', '#ff70a6'),
+      makeSignal(`tshmu[${idx}].temp5`, `Board ${boardId} Temp 5`, '°C', '#bdb2ff'),
+      makeSignal(`tshmu[${idx}].temp6`, `Board ${boardId} Temp 6`, '°C', '#ffd6a5'),
+      makeSignal(`tshmu[${idx}].volt1`, `Board ${boardId} Volt 1`, 'V', '#70d6ff'),
+      makeSignal(`tshmu[${idx}].volt2`, `Board ${boardId} Volt 2`, 'V', '#9bf6ff'),
+      makeSignal(`tshmu[${idx}].volt3`, `Board ${boardId} Volt 3`, 'V', '#8cffc1'),
+      makeSignal(`tshmu[${idx}].volt4`, `Board ${boardId} Volt 4`, 'V', '#caffbf'),
+      makeSignal(`tshmu[${idx}].volt5`, `Board ${boardId} Volt 5`, 'V', '#bdb2ff'),
+      makeSignal(`tshmu[${idx}].volt6`, `Board ${boardId} Volt 6`, 'V', '#ffd6a5'),
+      makeSignal(`tshmu[${idx}].jitter_us`, `Board ${boardId} Flow Jitter`, 'us', '#ffb800', { precision: 0 }),
+      makeSignal(`tshmu[${idx}].error_flags`, `Board ${boardId} Flow Error Flags`, 'bits', '#ff70a6', { precision: 0 }),
     ],
   });
 });

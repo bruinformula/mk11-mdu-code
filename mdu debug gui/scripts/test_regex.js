@@ -1,6 +1,6 @@
 'use strict';
 
-const { parseMduLine } = require('/Users/larry/mk11-mdu-code/mdu debug gui/src/main/mdu-frame');
+const { parseMduLine } = require('../src/main/mdu-frame');
 
 console.log('--- TEST: Reconstructing 3-bit rolling counter from 2-bit printed Seq ---');
 

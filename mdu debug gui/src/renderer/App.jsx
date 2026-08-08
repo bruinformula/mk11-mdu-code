@@ -446,7 +446,7 @@ export default function App() {
           onClick={() => setActiveTab('imu')}
           className={`nav-button ${activeTab === 'imu' ? 'active' : ''}`}
         >
-          <Compass size={14} /> IMU & Motion
+          <Compass size={14} /> IMU & GPS
         </button>
         <button
           onClick={() => setActiveTab('tractive')}
