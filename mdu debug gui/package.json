@@ -13,8 +13,7 @@
     "check": "node scripts/check.js",
     "pack": "npm run build:renderer && electron-builder --dir",
     "dist": "npm run build:renderer && electron-builder --mac",
-    "build": "npm run dist",
-    "postinstall": "node scripts/postinstall.js"
+    "build": "npm run dist"
   },
   "build": {
     "appId": "com.bfr.mk11.mdu-debug-gui",
